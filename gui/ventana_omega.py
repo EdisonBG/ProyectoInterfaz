@@ -68,10 +68,10 @@ class VentanaOmega(tk.Frame):
         Busca el PanelOmega por id_omega y aplica los parametros recibidos.
         """
         try:
-            p = int(id_omega)
+            idx = int(id_omega)
         except Exception:
             return
-        panel = self.paneles.get(p)
+        panel = self.paneles.get(idx)
 
         if panel is not None and hasattr(panel, "aplicar_parametros"):
             panel.aplicar_parametros(svn, p, i, d)
