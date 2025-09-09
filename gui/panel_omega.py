@@ -21,6 +21,10 @@ class PanelOmega(ttk.Frame):
         self._ultimo_setpoint_enviado = None
         self.estado_omega = tk.BooleanVar(value=False)  # Run=False al inicio
 
+        # Flag para no disparar envio de cambio de modo en la primera dibujada
+        self._modo_inicializado = False
+        self._ultimo_modo_enviado = None  # 'PID' o 'Rampa'
+
         # === Layout base ===
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
@@ -29,13 +33,13 @@ class PanelOmega(ttk.Frame):
         ttk.Label(self, text=f"Omega {id_omega}", font=("Arial", 14, "bold"))\
             .grid(row=0, column=0, columnspan=2, pady=(6, 8))
 
-        # === Selector PID / Rampa ===
+        # selector PID/Rampa
         selector = ttk.Frame(self)
         selector.grid(row=1, column=0, columnspan=2, pady=(0, 6))
         ttk.Radiobutton(selector, text="PID", variable=self.modo_control,
-                        value="PID", command=self.actualizar_vista).pack(side="left", padx=6)
+                        value="PID", command=self._on_modo_cambiado).pack(side="left", padx=6)
         ttk.Radiobutton(selector, text="Rampa", variable=self.modo_control,
-                        value="Rampa", command=self.actualizar_vista).pack(side="left", padx=6)
+                        value="Rampa", command=self._on_modo_cambiado).pack(side="left", padx=6)
 
         # =================================================================
         # =================== CONTENEDOR PID (solo setpoint + botones) =====
@@ -154,6 +158,33 @@ class PanelOmega(ttk.Frame):
         # Ajustar visibilidad de parametros segun memoria
         self._aplicar_visibilidad_parametros()
 
+        self._modo_inicializado = True
+        self._ultimo_modo_enviado = self.modo_control.get()
+
+    # ======= cambio PID/Rampa por el usuario =======
+    def _on_modo_cambiado(self):
+        """
+        1) Reacomoda la UI.
+        2) Envia el comando de cambio de modo SOLO si ya se inicializo y hay cambio real.
+           $;2;ID_OMEGA;1|3;6;!
+        """
+        self.actualizar_vista()
+        self._enviar_cambio_modo()  # centralizado con salvaguardas
+
+    def _enviar_cambio_modo(self):
+        """Envio protegido de cambio de modo (evita dobles y el primer armado)."""
+        if not self._modo_inicializado:
+            return
+        modo_actual = self.modo_control.get()          # 'PID' o 'Rampa'
+        if modo_actual == self._ultimo_modo_enviado:
+            return
+        modo_code = "1" if modo_actual == "PID" else "3"
+        msg = f"$;2;{self.id_omega};{modo_code};6;!"
+        print("[TX] Cambio de modo:", msg)
+        if hasattr(self.controlador, "enviar_a_arduino"):
+            self.controlador.enviar_a_arduino(msg)
+        self._ultimo_modo_enviado = modo_actual
+
     # ====================== Toggle Run/Stop ==========================
     def _texto_toggle(self) -> str:
         return "Run" if not self.estado_omega.get() else "Stop"
@@ -195,13 +226,12 @@ class PanelOmega(ttk.Frame):
     def _aplicar_visibilidad_parametros(self):
         """
         Oculta los parametros si memoria=M4; los muestra en M0-M3.
-        La ubicacion (fila) la resuelve actualizar_vista() al reubicar.
+
         """
         if self.memoria.get().upper().strip() == "M4":
             self.frame_param.grid_remove()
         else:
-            # Lo volvemos a mostrar en la fila apropiada segun modo:
-            # actualizar_vista() recoloca todo, asi que aqui solo aseguramos que exista.
+
             if not self.frame_param.winfo_ismapped():
                 self.frame_param.grid()  # sera recolocado por actualizar_vista
 
@@ -247,6 +277,7 @@ class PanelOmega(ttk.Frame):
                                  padx=5, pady=(6, 10), sticky="w")
 
     # =================== Lectura de valores ==========================
+
     def _indice_memoria(self) -> int:
         try:
             val = self.combo_mem.get().strip().upper()
@@ -326,10 +357,28 @@ class PanelOmega(ttk.Frame):
         self._auto_win = VentanaAutotuning(self, self.id_omega, self.arduino)
 
     def abrir_ventana_rampa(self):
+        """
+        Abre (o levanta) la ventana de rampa.
+        NOTA: La ventana, en su __init__, ya envia $;2;ID;4;3;! para solicitar datos.
+        """
         if getattr(self, "_rampa_win", None) and self._rampa_win.winfo_exists():
             self._rampa_win.lift()
             return
         self._rampa_win = VentanaRampa(self, self.id_omega, self.arduino)
+        # Registrar en la App para poder actualizarla cuando llegue la respuesta
+        app = getattr(self, "controlador", None)
+        if app is not None:
+            if not hasattr(app, "_rampa_wins"):
+                app._rampa_wins = {}
+            app._rampa_wins[self.id_omega] = self._rampa_win
+
+        # Registrar en la App para poder actualizarla cuando llegue la respuesta
+        app = getattr(self, "controlador", None)
+        if app is not None:
+            # Diccionario por id_omega -> ventana
+            if not hasattr(app, "_rampa_wins"):
+                app._rampa_wins = {}
+            app._rampa_wins[self.id_omega] = self._rampa_win
 
     def enviar_autotuning_directo(self):
         mem_idx = self._indice_memoria()

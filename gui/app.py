@@ -203,6 +203,30 @@ class Aplicacion(tk.Tk):
                         "[INFO] Parametros PID recibidos pero VentanaOmega no esta lista")
                 return
 
+            # --- Ruteo rampa: $;2;ID;3;SPx8;Tx8;PASO;!
+            elif partes[0] == "2" and partes[2] == "3" and len(partes) >= 20:
+                try:
+                    id_omega_rx = int(partes[1])
+                except Exception:
+                    id_omega_rx = None
+
+                # sp0..sp7 estan en [3:11], t0..t7 en [11:19], paso en [19]
+                sp_list = partes[3:11]
+                t_list = partes[11:19]
+                paso = partes[19]
+
+                # Si hay una VentanaRampa abierta para ese ID -> actualizarla
+                attr = f"_rampa_win_{id_omega_rx}"
+                win = getattr(self, attr, None)
+                if win is not None and hasattr(win, "aplicar_rampa"):
+                    win.aplicar_rampa(sp_list, t_list, paso)
+                    return
+
+                # Si no hay ventana rampa abierta, no es error: el usuario puede abrirla luego.
+                print("[RX rampa] Datos recibidos para Omega",
+                      id_omega_rx, "sin ventana activa")
+                return
+
             # ------------------------------------------------------------
             # TODO: agregar aqui otros ruteos para distintos comandos:
             # if partes[0] == "3": ...  (valvulas)
