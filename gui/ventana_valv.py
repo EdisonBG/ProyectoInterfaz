@@ -259,19 +259,20 @@ class VentanaValv(tk.Frame):
             self.controlador.enviar_a_arduino(mensaje)
 
     # ================= Solenoide (ID 5) =================
-    def _leer_presion_entera_capada(self, v) -> int:
+    def _leer_presion_float_capada(self, v) -> float:
         """
-        Devuelve presion entera en bar (capada a 25). Acepta str/int/float/None.
-        Si no es valida -> 25 (default).
+        Devuelve presión float con 1 decimal, capada a 25.0.
+        Acepta str/int/float/None. Si no es válida -> 25.0 (default).
         """
         try:
             s = "25" if v is None else str(v).strip() or "25"
-            p = int(float(s))      # truncado
+            p = float(s)
         except Exception:
-            p = 25
-        if p > 25:
-            p = 25
-        return p
+            p = 25.0
+        if p > 25.0:
+            p = 25.0
+        # redondear a 1 decimal
+        return round(p, 1)
 
     def _aplicar_presion_y_enviar_auto(self, valor):
         """
@@ -279,14 +280,16 @@ class VentanaValv(tk.Frame):
         2) Actualiza self.sol_presion
         3) Envia AUTOMATICO: $;3;5;0;P;!
         """
-        p = self._leer_presion_entera_capada(valor)
+        p = self._leer_presion_float_capada(valor)
         self.sol_presion = p
-        # reflejar visualmente (por si hubo capado)
+        # reflejar con un decimal
         self.entry_p_seg.delete(0, tk.END)
-        self.entry_p_seg.insert(0, str(p))
+        self.entry_p_seg.insert(0, f"{p:.1f}")
 
-        msg = f"$;3;5;0;{p};!"
-        print("[TX] Solenoide (auto, presion set):", msg)
+        # escalar ×10 al enviar
+        p10 = int(round(p * 10))
+        msg = f"$;3;5;0;{p10};!"
+        print(" Solenoide (auto, presion set):", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
 
@@ -298,19 +301,19 @@ class VentanaValv(tk.Frame):
          - Envia: $;3;5;1;{1|2};P;!
            (1=abierta, 2=cerrada)
         """
-        p = self._leer_presion_entera_capada(self.entry_p_seg.get())
+        p = self._leer_presion_float_capada(self.entry_p_seg.get())
         self.sol_presion = p
-        # reflejar entry (por si hubo capado)
         self.entry_p_seg.delete(0, tk.END)
-        self.entry_p_seg.insert(0, str(p))
+        self.entry_p_seg.insert(0, f"{p:.1f}")
 
         nuevo = not self.sol_abierta.get()
         self.sol_abierta.set(nuevo)
         self.btn_sol_toggle.configure(text=self._texto_sol())
 
         estado = "1" if nuevo else "2"   # 1=abierta, 2=cerrada
-        msg = f"$;3;5;1;{estado};{p};!"
-        print("[TX] Solenoide (manual):", msg)
+        p10 = int(round(p * 10))
+        msg = f"$;3;5;1;{estado};{p10};!"
+        print("Solenoide (manual):", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
 
