@@ -115,130 +115,99 @@ class Aplicacion(tk.Tk):
     def _manejar_mensaje(self, msg: str):
         """
         Punto central para procesar mensajes que llegan del Arduino.
-        Formato general esperado: $;...;!
-        Ejemplo AT (respuesta con 4 setpoints):
-        $;2;ID_OMEGA;2;sp0;sp1;sp2;sp3;!
         """
         try:
-            # normaliza espacios/nuevas lineas
             limpio = msg.strip()
             if not (limpio.startswith("$") and limpio.endswith("!")):
-                # si no respeta el enmarcado, ignorar
                 return
 
-            # quita delimitadores $ y !
             cuerpo = limpio[1:-1]
-
-            # separa por ; y elimina tokens vacios (por el ; despues de $)
             partes = [p for p in cuerpo.split(";") if p != ""]
-
-            # si no hay lo minimo, salir
             if len(partes) < 3:
                 return
 
             # ------------------------------------------------------------
-            # Ruteo por comando. partes[0] suele ser el "ID de comando".
-            # Para Omega (2) y subcomando 2 (autotuning data esperada):
-            # esperado: ['2', 'ID_OMEGA', '2', 'sp0', 'sp1', 'sp2', 'sp3']
+            # 1) Rampa (respuesta a $;2;ID;4;3;!):
+            #    $;2;ID;3;SP0..SP7;T0..T7;PASO;!
+            #    => total 20 campos
             # ------------------------------------------------------------
+            if partes[0] == "2" and len(partes) == 20 and partes[2] == "3":
+                try:
+                    id_omega_rx = int(partes[1])
+                except Exception:
+                    id_omega_rx = None
 
-            # === Caso 1: Autotuning (lectura de memorias) ===
-            # esperado: ['2', 'ID_OMEGA', '2', 'sp0', 'sp1', 'sp2', 'sp3']
-            if partes[0] == "2" and partes[2] == "2" and len(partes) == 7:
-                # parsea id de omega
+                sp_list = partes[3:11]   # 8 SP
+                t_list  = partes[11:19]  # 8 T
+                paso    = partes[19]     # paso final
+
+                attr = f"_rampa_win_{id_omega_rx}"
+                win = getattr(self, attr, None)
+                if win is not None and hasattr(win, "aplicar_rampa"):
+                    # 🟢 Actualiza la ventana rampa abierta
+                    win.aplicar_rampa(sp_list, t_list, paso)
+                else:
+                    print(f"[RX rampa] sin ventana activa para Omega {id_omega_rx}")
+                return
+
+            # ------------------------------------------------------------
+            # 2) Autotuning (lectura de memorias) – tu caso original
+            #    $;2;ID;2;sp0;sp1;sp2;sp3;!  => 7 campos
+            # ------------------------------------------------------------
+            if partes[0] == "2" and len(partes) == 7 and partes[2] == "2":
                 try:
                     id_omega_rx = int(partes[1])
                 except Exception:
                     id_omega_rx = None
 
                 sp_list = partes[3:7]
-
-                # si hay ventana de autotuning abierta y corresponde al id, actualizarla
                 win = getattr(self, "_autotuning_win", None)
-                print("actualizar setpoints memorias")
                 if win is not None and getattr(win, "id_omega", None) == id_omega_rx:
                     win.actualizar_setpoints(sp_list)
                 return
 
-                # === Caso 2: Estado de temperatura para Omega 1 y 2 (al entrar a ventana) ===
-            # esperado:
-            # ['2',
-            #   m1, sp1, mem1, svn1, p1, i1, d1,
-            #   m2, sp2, mem2, svn2, p2, i2, d2]
-            # donde mX es 0 (PID) o 3 (Rampa). En PID spX >= 0; en Rampa spX == -1.
-            elif partes[0] == "2" and len(partes) >= 15:
-                # tomar exactamente 14 campos para robustez
+            # ------------------------------------------------------------
+            # 3) Estado de temperatura de Omega1 y Omega2 (al entrar)
+            #    $;2; m1; sp1; mem1; svn1; p1; i1; d1;  m2; sp2; mem2; svn2; p2; i2; d2; !
+            #    => total 15 campos (1 cmd + 14 datos)
+            # ------------------------------------------------------------
+            if partes[0] == "2" and len(partes) == 15:
                 data = partes[1:15]
                 o1 = data[0:7]
                 o2 = data[7:14]
-
-                # opcion: validacion rapida de modo (no bloquear si viene raro)
-                # si no es 0/3 igual intentamos actualizar
-                # aplicar en la ventana si existe
                 vo = self._ventanas.get("VentanaOmega")
                 if vo is not None and hasattr(vo, "aplicar_estado_omegas"):
                     vo.aplicar_estado_omegas(o1, o2)
                 else:
-                    # si la ventana aun no existe, puedes cachear aqui si lo deseas
-                    # por ahora, solo se informa para debug
-                    print(
-                        "[INFO] Estado Omega recibido pero VentanaOmega no esta instanciada")
+                    print("[INFO] Estado Omega recibido pero VentanaOmega no esta instanciada")
                 return
 
-            # === Caso 3: Respuesta parametros PID de una memoria ===
-            # esperado: ['2', 'ID_OMEGA', 'svn', 'P', 'I', 'D']
-            elif partes[0] == "2" and len(partes) == 6:
+            # ------------------------------------------------------------
+            # 4) Parametros PID de una memoria
+            #    $;2;ID;svn;p;i;d;!  => 6 campos
+            # ------------------------------------------------------------
+            if partes[0] == "2" and len(partes) == 6:
                 try:
                     id_omega_rx = int(partes[1])
                 except Exception:
                     id_omega_rx = None
 
                 svn, p, i, d = partes[2], partes[3], partes[4], partes[5]
-
                 vo = self._ventanas.get("VentanaOmega")
                 if vo is not None and hasattr(vo, "actualizar_parametros_omega") and id_omega_rx is not None:
                     vo.actualizar_parametros_omega(id_omega_rx, svn, p, i, d)
                 else:
-                    print(
-                        "[INFO] Parametros PID recibidos pero VentanaOmega no esta lista")
-                return
-
-            # --- Ruteo rampa: $;2;ID;3;SPx8;Tx8;PASO;!
-            elif partes[0] == "2" and partes[2] == "3" and len(partes) >= 20:
-                try:
-                    id_omega_rx = int(partes[1])
-                except Exception:
-                    id_omega_rx = None
-
-                # sp0..sp7 estan en [3:11], t0..t7 en [11:19], paso en [19]
-                sp_list = partes[3:11]
-                t_list = partes[11:19]
-                paso = partes[19]
-
-                # Si hay una VentanaRampa abierta para ese ID -> actualizarla
-                attr = f"_rampa_win_{id_omega_rx}"
-                win = getattr(self, attr, None)
-                if win is not None and hasattr(win, "aplicar_rampa"):
-                    win.aplicar_rampa(sp_list, t_list, paso)
-                    return
-
-                # Si no hay ventana rampa abierta, no es error: el usuario puede abrirla luego.
-                print("[RX rampa] Datos recibidos para Omega",
-                      id_omega_rx, "sin ventana activa")
+                    print("[INFO] Parametros PID recibidos pero VentanaOmega no esta lista")
                 return
 
             # ------------------------------------------------------------
-            # TODO: agregar aqui otros ruteos para distintos comandos:
-            # if partes[0] == "3": ...  (valvulas)
-            # if partes[0] == "1": ...  (MFC)
-            # etc.
+            # Otros comandos (valvulas=3, MFC=1, etc.)...
             # ------------------------------------------------------------
-
-            # Si llega algo no reconocido, mostrarlo para debug
             print("[RX NO RUTEADO]", partes)
 
         except Exception as e:
             print(f"[RX ERROR] {e}")
+
 
     def _on_close(self):
         """
