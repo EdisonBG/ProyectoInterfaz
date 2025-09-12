@@ -144,7 +144,7 @@ class Aplicacion(tk.Tk):
                 attr = f"_rampa_win_{id_omega_rx}"
                 win = getattr(self, attr, None)
                 if win is not None and hasattr(win, "aplicar_rampa"):
-                    # 🟢 Actualiza la ventana rampa abierta
+                    # Actualiza la ventana rampa abierta
                     win.aplicar_rampa(sp_list, t_list, paso)
                 else:
                     print(f"[RX rampa] sin ventana activa para Omega {id_omega_rx}")
