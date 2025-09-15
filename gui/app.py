@@ -199,6 +199,20 @@ class Aplicacion(tk.Tk):
                 else:
                     print("[INFO] Parametros PID recibidos pero VentanaOmega no esta lista")
                 return
+            
+            # === CMD 5: Variables de proceso (monitor principal) ===
+            # Esperado:
+            # ['5', Tω1, Tω2, Th1, Th2, Tc1, Tc2, Pmez*10, Ph2*10, Psal*10,
+            #        Q_O2, Q_CO2, Q_N2, Q_H2, PotW, HorasOn]
+            if partes[0] == "5" and len(partes) >= 16:
+                vp = self._ventanas.get("VentanaPrincipal") if hasattr(self, "_ventanas") else None
+                if vp is not None and hasattr(vp, "aplicar_datos_cmd5"):
+                    vp.aplicar_datos_cmd5(partes)
+                else:
+                    # si aún no está creada, simplemente ignore (o guarda último frame si querés)
+                    pass
+                return
+
 
             # ------------------------------------------------------------
             # Otros comandos (valvulas=3, MFC=1, etc.)...

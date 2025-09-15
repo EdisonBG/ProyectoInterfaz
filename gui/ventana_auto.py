@@ -81,7 +81,7 @@ class EtapaAccordion(ttk.Frame):
     Métodos principales:
       - set_collapsed(True/False): pliega/despliega
       - is_complete() -> bool: valida que la etapa esté lista para ejecutarse
-      - collect_payload(idx) -> dict: datos listos para construir el mensaje.
+      - collect_payload(idx) -> dict: datos normalizados (se usan para construir el TX y la lógica local).
     """
 
     def __init__(self, master, indice: int, *args, **kwargs):
@@ -422,12 +422,12 @@ class VentanaAuto(tk.Frame):
 
     Ejecución:
       - Recorre sólo las etapas completas (en orden).
-      - En cada etapa envía:
-        $;4;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
-           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_SP2!
-      - Durante la etapa alterna A↔B usando TA/TB. En cada cambio:
-        $;3;1;0;POS;!
-        (sólo V. entrada; el Arduino resuelve la salida)
+      - Al iniciar cada etapa, envía:
+        $;4;POS_INI;PS*10;P1_ON;P2_ON;MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;T1_SP;T2_SP;!
+      - Alterna A↔B usando TA/TB de forma local (no se envían).
+      - Peristálticas: si ON con tiempo, al finalizar se envía:
+        $;3;6;0;2;!  (P1 OFF auto)
+        $;3;7;0;2;!  (P2 OFF auto)
       - Contador 1 Hz con `after` (sin threads). Pausa/Reanuda/Detiene.
     """
 
@@ -449,6 +449,14 @@ class VentanaAuto(tk.Frame):
         self._seg_pos = "A"          # "A" o "B"
         self._seg_tA = 0             # seg duración A
         self._seg_tB = 0             # seg duración B
+
+        # timers de peristálticas por etapa
+        self._p1_on = False
+        self._p2_on = False
+        self._p1_remaining = 0
+        self._p2_remaining = 0
+        self._p1_off_sent = False
+        self._p2_off_sent = False
 
         self._build_ui()
 
@@ -648,15 +656,23 @@ class VentanaAuto(tk.Frame):
         self._seg_pos = "A" if data["pos_ini"] == 1 else "B"
         self._seg_remaining = self._seg_tA if self._seg_pos == "A" else self._seg_tB
 
+        # Timers de peristálticas (solo locales, no viajan en el $;4)
+        self._p1_on = bool(data["p1_on"])
+        self._p2_on = bool(data["p2_on"])
+        self._p1_remaining = int(data["p1_t"]) * 60 if self._p1_on else 0
+        self._p2_remaining = int(data["p2_t"]) * 60 if self._p2_on else 0
+        self._p1_off_sent = False
+        self._p2_off_sent = False
+
         # Monitor inicial
         self.var_mon_etapa.set(f"{idx}/{len(self._etapas_order)}")
         self.var_mon_pos.set(self._seg_pos)
         self.var_mon_rest_etapa.set(mmss(self._stage_remaining))
         self.var_mon_rest_seg.set(mmss(self._seg_remaining))
-        self.var_mon_p1.set("ON" if data["p1_on"] else "OFF")
-        self.var_mon_p2.set("ON" if data["p2_on"] else "OFF")
+        self.var_mon_p1.set("ON" if self._p1_on else "OFF")
+        self.var_mon_p2.set("ON" if self._p2_on else "OFF")
 
-        # 1) Enviar mensaje de etapa ($;4;...!)
+        # 1) Enviar mensaje de etapa ($;4;...!) — SIN tiempos
         self._tx_etapa(data)
 
         # 2) Arrancar el loop de 1Hz
@@ -664,23 +680,39 @@ class VentanaAuto(tk.Frame):
             self._tick()
 
     def _tick(self):
-        """Avanza 1 segundo: maneja cambio A↔B y fin de etapa; reprograma mientras siga activa."""
+        """Avanza 1 segundo: maneja cambio A↔B, peristálticas y fin de etapa."""
         if not self._run_active or self._paused:
             return
 
-        # Si se acabó la etapa: avanzar
+        # Fin de etapa -> siguiente
         if self._stage_remaining <= 0:
             self._iniciar_siguiente_etapa()
             return
 
-        # Manejo de segmento actual (A o B)
+        # Alternancia A/B local (no viaja por serial)
         if self._seg_remaining <= 0:
-            # Cambiar de posición y reiniciar segmento si aún queda tiempo de etapa
             self._seg_pos = "B" if self._seg_pos == "A" else "A"
             self._send_valve_position(self._seg_pos)
             self._seg_remaining = self._seg_tB if self._seg_pos == "B" else self._seg_tA
 
-        # Decrementos
+        # Timers de peristálticas locales -> auto OFF
+        if self._p1_on and self._p1_remaining > 0:
+            self._p1_remaining -= 1
+            if self._p1_remaining <= 0 and not self._p1_off_sent:
+                self._tx_peri_auto_off(6)  # ID=6
+                self._p1_off_sent = True
+                self._p1_on = False
+                self.var_mon_p1.set("OFF")
+
+        if self._p2_on and self._p2_remaining > 0:
+            self._p2_remaining -= 1
+            if self._p2_remaining <= 0 and not self._p2_off_sent:
+                self._tx_peri_auto_off(7)  # ID=7
+                self._p2_off_sent = True
+                self._p2_on = False
+                self.var_mon_p2.set("OFF")
+
+        # Decrementos generales
         self._stage_remaining -= 1
         self._seg_remaining -= 1
 
@@ -702,21 +734,24 @@ class VentanaAuto(tk.Frame):
 
     def _tx_etapa(self, d: dict):
         """
-        Construye y envía:
-        $;4;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
-           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_SP2!
+        Construye y envía (nuevo formato, sin tiempos):
+        $;4;POS_INI;PS*10;P1_ON;P2_ON;MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;T1_SP;T2_SP;!
         """
         partes = [
             "$;4",
-            str(d["tmin"]), str(d["pos_ini"]),
-            str(d["ta"]), str(d["tb"]), str(d["ps10"]),
-            str(d["p1_on"]), str(d["p1_t"]),
-            str(d["p2_on"]), str(d["p2_t"]),
+            str(d["pos_ini"]), str(d["ps10"]),
+            str(d["p1_on"]), str(d["p2_on"]),
             str(d["mfc1"]), str(d["mfc2"]), str(d["mfc3"]), str(d["mfc4"]),
             str(d["t1_sp"]), str(d["t2_sp"]),
         ]
-        msg = ";".join(partes) + "!"
+        msg = ";".join(partes) + ";!"
         self._tx(msg)
+
+    def _tx_peri_auto_off(self, peri_id: int):
+        """Envía auto-OFF para la peristáltica indicada (6 o 7)."""
+        if peri_id not in (6, 7):
+            return
+        self._tx(f"$;3;{peri_id};0;2;!")
 
     def _send_valve_position(self, pos: str):
         """Envía cambio de posición para V. entrada: $;3;1;0;POS;!   (POS: 1=A, 2=B)"""
@@ -887,7 +922,7 @@ class VentanaAuto(tk.Frame):
             set_entry(e.mfc[mid]["ent"], row.get(flw_key, "0"))
             e._norm_flow(mid)
 
-        # Temperatura (sin memorias)
+        # Temperatura
         set_entry(e.ent_t1_sp, row.get("t1_sp", "0"))
         e._norm_sp(e.ent_t1_sp)
 
