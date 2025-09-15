@@ -50,6 +50,9 @@ MFC_DEFAULTS = {
     4: ("H2", MFC4_LIMITS),
 }
 
+MAX_SP = 600         # setpoint hornos
+MAX_PRES = 20.0      # presión máxima (bar, 1 decimal)
+
 
 def flujo_a_pwm(flujo_ml_min: float, maximo: int) -> int:
     """
@@ -70,35 +73,35 @@ class EtapaAccordion(ttk.Frame):
     Un panel plegable ("acordeón") que representa una etapa del proceso.
     Contiene:
       - Tiempo de proceso (min)
-      - Válvulas: posición inicial A/B, tiempo A, tiempo B, presión seg (0..25, 1 decimal),
+      - Válvulas: posición inicial A/B, tiempo A, tiempo B, presión seg (0..20.0, 1 decimal),
                   peristáltica 1 (toggle + tiempo), peristáltica 2 (toggle + tiempo)
       - MFC 1..4: selector de gas + flujo (con leyenda min/max)
-      - Temperatura: Horno1 (SP + Mem), Horno2 (SP + Mem)
+      - Temperatura: Horno1 SP, Horno2 SP
 
     Métodos principales:
       - set_collapsed(True/False): pliega/despliega
       - is_complete() -> bool: valida que la etapa esté lista para ejecutarse
-      - collect_payload(idx) -> dict: devuelve los datos listos para construir el mensaje $;4;...!
+      - collect_payload(idx) -> dict: datos listos para construir el mensaje.
     """
 
     def __init__(self, master, indice: int, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.indice = indice  # 1..6
-        self.collapsed = tk.BooleanVar(value=False)
+        self._collapsed = True  # arrancar colapsado
 
         # ---------- Cabecera (botón para colapsar/expandir) ----------
         header = ttk.Frame(self)
         header.pack(fill="x")
 
         self.btn_toggle = ttk.Button(
-            header, text=f"Etapa {self.indice} ▾",
+            header, text=f"Etapa {self.indice} ▸",
             command=self._toggle_collapse
         )
         self.btn_toggle.pack(side="left", padx=4, pady=(6, 2))
 
         # ---------- Contenido ----------
         self.body = ttk.Frame(self)
-        self.body.pack(fill="x", padx=8, pady=(2, 8))
+        # inicia colapsado: no se empaqueta todavía
 
         # Bloque 1: Tiempo de proceso
         b1 = ttk.LabelFrame(self.body, text="Tiempo de proceso")
@@ -106,33 +109,32 @@ class EtapaAccordion(ttk.Frame):
         ttk.Label(b1, text="Minutos:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
         self.ent_tmin = ttk.Entry(b1, width=8)
         self.ent_tmin.grid(row=0, column=1, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_tmin, entero=True)
+        self._bind_numeric(self.ent_tmin, entero=True, on_norm=lambda: self._norm_int_min1(self.ent_tmin))
 
         # Bloque 2: Válvulas
         b2 = ttk.LabelFrame(self.body, text="Válvulas")
         b2.pack(fill="x", pady=4)
 
         ttk.Label(b2, text="Posición inicial:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
-        self.cmb_pos_ini = ttk.Combobox(b2, state="readonly", width=6,
-                                        values=("A", "B"))
+        self.cmb_pos_ini = ttk.Combobox(b2, state="readonly", width=6, values=("A", "B"))
         self.cmb_pos_ini.set("A")
         self.cmb_pos_ini.grid(row=0, column=1, padx=4, pady=4, sticky="w")
 
         ttk.Label(b2, text="Tiempo en A (min):").grid(row=1, column=0, padx=4, pady=4, sticky="e")
         self.ent_ta = ttk.Entry(b2, width=8)
         self.ent_ta.grid(row=1, column=1, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_ta, entero=True)
+        self._bind_numeric(self.ent_ta, entero=True, on_norm=lambda: self._norm_int_min1(self.ent_ta))
 
         ttk.Label(b2, text="Tiempo en B (min):").grid(row=2, column=0, padx=4, pady=4, sticky="e")
         self.ent_tb = ttk.Entry(b2, width=8)
         self.ent_tb.grid(row=2, column=1, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_tb, entero=True)
+        self._bind_numeric(self.ent_tb, entero=True, on_norm=lambda: self._norm_int_min1(self.ent_tb))
 
         ttk.Label(b2, text="Presión seguridad (bar):").grid(row=0, column=2, padx=4, pady=4, sticky="e")
         self.ent_ps = ttk.Entry(b2, width=8)
         self.ent_ps.grid(row=0, column=3, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_ps, entero=False, max_dec=1)
-        ttk.Label(b2, text="(máx 25.0)").grid(row=0, column=4, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_ps, entero=False, max_dec=1, on_norm=self._norm_pressure)
+        ttk.Label(b2, text="(máx 20.0)").grid(row=0, column=4, padx=4, pady=4, sticky="w")
 
         # Peristálticas
         self.peri1_on = tk.BooleanVar(value=False)
@@ -143,14 +145,14 @@ class EtapaAccordion(ttk.Frame):
         self.ent_p1_t = ttk.Entry(b2, width=8, state="disabled")
         self.ent_p1_t.grid(row=1, column=3, padx=4, pady=4, sticky="w")
         ttk.Label(b2, text="min").grid(row=1, column=4, padx=0, pady=4, sticky="w")
-        self._bind_numeric(self.ent_p1_t, entero=True)
+        self._bind_numeric(self.ent_p1_t, entero=True, on_norm=lambda: self._norm_int_min1(self.ent_p1_t))
 
         ttk.Checkbutton(b2, text="Peristáltica 2", variable=self.peri2_on, command=self._update_peri_states)\
             .grid(row=2, column=2, padx=4, pady=4, sticky="w")
         self.ent_p2_t = ttk.Entry(b2, width=8, state="disabled")
         self.ent_p2_t.grid(row=2, column=3, padx=4, pady=4, sticky="w")
         ttk.Label(b2, text="min").grid(row=2, column=4, padx=0, pady=4, sticky="w")
-        self._bind_numeric(self.ent_p2_t, entero=True)
+        self._bind_numeric(self.ent_p2_t, entero=True, on_norm=lambda: self._norm_int_min1(self.ent_p2_t))
 
         # Bloque 3: MFCs
         b3 = ttk.LabelFrame(self.body, text="MFC (flujo mL/min)")
@@ -158,95 +160,91 @@ class EtapaAccordion(ttk.Frame):
 
         self.mfc = {}  # id -> dict con widgets y límites
         for row, mfc_id in enumerate((1, 2, 3, 4)):
-            ttk.Label(b3, text=f"MFC{mfc_id} Gas:").grid(row=row, column=0, padx=4, pady=4, sticky="e")
+            ttk.Label(b3, text=f"MFC{mfc_id} Gas:").grid(row=row*2, column=0, padx=4, pady=4, sticky="e")
             cmb = ttk.Combobox(b3, state="readonly", width=8, values=GASES)
             default_gas, limits = MFC_DEFAULTS[mfc_id]
             cmb.set(default_gas)
-            cmb.grid(row=row, column=1, padx=4, pady=4, sticky="w")
+            cmb.grid(row=row*2, column=1, padx=4, pady=4, sticky="w")
 
-            ttk.Label(b3, text=f"MFC{mfc_id} Flujo:").grid(row=row, column=2, padx=4, pady=4, sticky="e")
+            ttk.Label(b3, text=f"MFC{mfc_id} Flujo:").grid(row=row*2, column=2, padx=4, pady=4, sticky="e")
             ent = ttk.Entry(b3, width=10)
-            ent.grid(row=row, column=3, padx=4, pady=4, sticky="w")
-            self._bind_numeric(ent, entero=True)
+            ent.grid(row=row*2, column=3, padx=4, pady=4, sticky="w")
+            self._bind_numeric(ent, entero=True, on_norm=lambda mid=mfc_id: self._norm_flow(mid))
 
             lbl = ttk.Label(b3, text=self._legend_for(mfc_id, default_gas))
-            lbl.grid(row=row, column=4, padx=4, pady=4, sticky="w")
+            lbl.grid(row=row*2+1, column=3, padx=4, pady=(0, 6), sticky="w")
 
             # callback al cambiar gas
             cmb.bind("<<ComboboxSelected>>",
-                     lambda _e, mid=mfc_id, cb=cmb, lab=lbl, en=ent: self._on_mfc_gas_change(mid, cb, lab, en))
+                     lambda _e, mid=mfc_id, cb=cmb, lab=lbl: self._on_mfc_gas_change(mid, cb, lab))
 
-            self.mfc[mfc_id] = {
-                "cmb": cmb, "ent": ent, "lbl": lbl, "limits": limits
-            }
+            self.mfc[mfc_id] = {"cmb": cmb, "ent": ent, "lbl": lbl, "limits": limits}
 
         # Bloque 4: Temperatura
         b4 = ttk.LabelFrame(self.body, text="Temperatura")
         b4.pack(fill="x", pady=4)
 
-        # Horno 1
         ttk.Label(b4, text="Horno 1 SP:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
         self.ent_t1_sp = ttk.Entry(b4, width=8)
         self.ent_t1_sp.grid(row=0, column=1, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_t1_sp, entero=True)
-        ttk.Label(b4, text="Mem:").grid(row=0, column=2, padx=4, pady=4, sticky="e")
-        self.cmb_t1_mem = ttk.Combobox(b4, state="readonly", width=6, values=("M0", "M1", "M2", "M3", "M4"))
-        self.cmb_t1_mem.set("M0")
-        self.cmb_t1_mem.grid(row=0, column=3, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_t1_sp, entero=True, on_norm=lambda: self._norm_sp(self.ent_t1_sp))
 
-        # Horno 2
-        ttk.Label(b4, text="Horno 2 SP:").grid(row=1, column=0, padx=4, pady=4, sticky="e")
+        ttk.Label(b4, text=f"(0 – {MAX_SP})").grid(row=1, column=1, padx=4, sticky="w")
+
+        ttk.Label(b4, text="Horno 2 SP:").grid(row=0, column=2, padx=4, pady=4, sticky="e")
         self.ent_t2_sp = ttk.Entry(b4, width=8)
-        self.ent_t2_sp.grid(row=1, column=1, padx=4, pady=4, sticky="w")
-        self._bind_numeric(self.ent_t2_sp, entero=True)
-        ttk.Label(b4, text="Mem:").grid(row=1, column=2, padx=4, pady=4, sticky="e")
-        self.cmb_t2_mem = ttk.Combobox(b4, state="readonly", width=6, values=("M0", "M1", "M2", "M3", "M4"))
-        self.cmb_t2_mem.set("M0")
-        self.cmb_t2_mem.grid(row=1, column=3, padx=4, pady=4, sticky="w")
+        self.ent_t2_sp.grid(row=0, column=3, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_t2_sp, entero=True, on_norm=lambda: self._norm_sp(self.ent_t2_sp))
+
+        ttk.Label(b4, text=f"(0 – {MAX_SP})").grid(row=1, column=3, padx=4, sticky="w")
 
     # ---------- helpers UI ----------
     def _toggle_collapse(self):
         """Plega/despliega el cuerpo del acordeón."""
-        if self.collapsed.get():
+        if self._collapsed:
             # expandir
             self.body.pack(fill="x", padx=8, pady=(2, 8))
             self.btn_toggle.configure(text=f"Etapa {self.indice} ▾")
-            self.collapsed.set(False)
+            self._collapsed = False
         else:
             # colapsar
             self.body.forget()
             self.btn_toggle.configure(text=f"Etapa {self.indice} ▸")
-            self.collapsed.set(True)
+            self._collapsed = True
 
     def set_collapsed(self, value: bool):
         """Fuerza el estado colapsado/expandido."""
-        if value != self.collapsed.get():
+        if value and not self._collapsed:
+            self._toggle_collapse()
+        elif not value and self._collapsed:
             self._toggle_collapse()
 
-    def _bind_numeric(self, entry: ttk.Entry, *, entero: bool, max_dec: int = 0):
+    def _bind_numeric(self, entry: ttk.Entry, *, entero: bool, max_dec: int = 0, on_norm=None):
         """
-        Adjunta TecladoNumerico al click y valida contenido numérico.
+        Adjunta TecladoNumerico al click, valida mientras escribe y normaliza al salir.
         - entero=True => solo enteros; entero=False => admite decimal (max_dec decimales).
+        - on_norm: callback para aplicar el clamp y reflejar en UI.
         """
-        entry.bind("<Button-1>", lambda e, ent=entry: TecladoNumerico(self, ent))
+        entry.bind("<Button-1>", lambda e, ent=entry, cb=on_norm:
+                   TecladoNumerico(self, ent, on_submit=lambda v: (ent.delete(0, tk.END), ent.insert(0, str(v)), cb() if cb else None)))
         vcmd = (self.register(self._validate_numeric), "%P", "%d", int(entero), max_dec)
         entry.configure(validate="key", validatecommand=vcmd)
+        if on_norm:
+            entry.bind("<FocusOut>", lambda _e: on_norm())
 
     @staticmethod
     def _validate_numeric(new_text: str, action: str, es_entero: int, max_dec: int):
         """Valida números mientras se escribe (permite vacío)."""
         if action == "0":  # borrado siempre ok
             return True
-        txt = new_text.strip()
+        txt = (new_text or "").strip()
         if not txt:
             return True
         try:
             if es_entero:
                 int(float(txt))
             else:
-                # limitar decimales
-                f = float(txt)
-                s = f"{f:.10f}"
+                float(txt)
                 if "." in txt:
                     dec = txt.split(".", 1)[1]
                     if len(dec) > int(max_dec):
@@ -259,23 +257,66 @@ class EtapaAccordion(ttk.Frame):
         lim = MFC_DEFAULTS[mfc_id][1][gas]
         return f"min: 0   max: {lim}"
 
-    def _on_mfc_gas_change(self, mfc_id: int, cmb: ttk.Combobox, lbl: ttk.Label, ent: ttk.Entry):
+    def _on_mfc_gas_change(self, mfc_id: int, cmb: ttk.Combobox, lbl: ttk.Label):
         """Actualiza leyenda de max y recorta el flujo si excede el nuevo máximo."""
         gas = cmb.get()
         lim = MFC_DEFAULTS[mfc_id][1][gas]
         lbl.configure(text=f"min: 0   max: {lim}")
-        try:
-            val = int(float(ent.get().strip() or 0))
-        except Exception:
-            val = 0
-        if val > lim:
-            ent.delete(0, tk.END)
-            ent.insert(0, str(lim))
+        self._norm_flow(mfc_id)
 
     def _update_peri_states(self):
         """Habilita/deshabilita los entries de tiempo de peristálticas según su toggle."""
         self.ent_p1_t.configure(state=("normal" if self.peri1_on.get() else "disabled"))
         self.ent_p2_t.configure(state=("normal" if self.peri2_on.get() else "disabled"))
+        # al habilitar, clamp inmediato
+        if self.peri1_on.get():
+            self._norm_int_min1(self.ent_p1_t)
+        if self.peri2_on.get():
+            self._norm_int_min1(self.ent_p2_t)
+
+    # ---------- normalizadores que reflejan en UI ----------
+    def _norm_int_min1(self, entry: ttk.Entry):
+        txt = (entry.get() or "").strip()
+        try:
+            n = int(float(txt))
+        except Exception:
+            n = 1
+        n = max(1, n)
+        entry.delete(0, tk.END)
+        entry.insert(0, str(n))
+
+    def _norm_pressure(self):
+        txt = (self.ent_ps.get() or "").strip()
+        try:
+            v = float(txt)
+        except Exception:
+            v = 0.0
+        v = clamp(round(v, 1), 0.0, MAX_PRES)
+        self.ent_ps.delete(0, tk.END)
+        self.ent_ps.insert(0, f"{v:.1f}")
+
+    def _norm_sp(self, entry: ttk.Entry):
+        txt = (entry.get() or "").strip()
+        try:
+            n = int(float(txt))
+        except Exception:
+            n = 0
+        n = clamp(n, 0, MAX_SP)
+        entry.delete(0, tk.END)
+        entry.insert(0, str(n))
+
+    def _norm_flow(self, mfc_id: int):
+        gas = self.mfc[mfc_id]["cmb"].get()
+        lim = MFC_DEFAULTS[mfc_id][1][gas]
+        ent = self.mfc[mfc_id]["ent"]
+        txt = (ent.get() or "").strip()
+        try:
+            n = int(float(txt))
+        except Exception:
+            n = 0
+        n = clamp(n, 0, lim)
+        ent.delete(0, tk.END)
+        ent.insert(0, str(n))
 
     # ---------- validación y recolección ----------
     def _int_or_zero(self, entry: ttk.Entry) -> int:
@@ -298,11 +339,10 @@ class EtapaAccordion(ttk.Frame):
 
     def is_complete(self) -> bool:
         """
-        Reglas mínimas para considerar la etapa "lista":
+        Mínimos para considerar la etapa "lista":
           - tmin > 0
           - tiempos A y B > 0
           - si peri ON => su tiempo > 0
-          - las demás entradas pueden ser 0 (se envía 0 igualmente)
         """
         tmin = self._int_or_zero(self.ent_tmin)
         ta = self._int_or_zero(self.ent_ta)
@@ -317,56 +357,42 @@ class EtapaAccordion(ttk.Frame):
 
     def collect_payload(self, idx_etapa: int) -> dict:
         """
-        Devuelve un dict con todos los datos de la etapa normalizados:
+        Devuelve un dict con todos los datos normalizados:
           - tmin, pos_ini (1=A,2=B), ta, tb
-          - ps10 (int, presión*10 con tope 25.0)
-          - p1_on, p1_t, p2_on, p2_t (enteros; si OFF => 0)
-          - mfc_pwm[1..4] (int 0..255)
-          - temp: t1_sp, t1_mem (0..4), t2_sp, t2_mem
+          - ps10 (int, presión*10 con tope 20.0)
+          - p1_on, p1_t, p2_on, p2_t
+          - mfc1..mfc4: PWM (0..255)
+          - t1_sp, t2_sp
         """
-        # Tiempos
-        tmin = clamp(self._int_or_zero(self.ent_tmin), 0, 10**6)
-        ta = clamp(self._int_or_zero(self.ent_ta), 0, 10**6)
-        tb = clamp(self._int_or_zero(self.ent_tb), 0, 10**6)
+        # Tiempos (clamp en UI ya hecho por normalizadores)
+        tmin = clamp(self._int_or_zero(self.ent_tmin), 1, 10**6)
+        ta = clamp(self._int_or_zero(self.ent_ta), 1, 10**6)
+        tb = clamp(self._int_or_zero(self.ent_tb), 1, 10**6)
 
         # Posición inicial
         pos_ini = 1 if self.cmb_pos_ini.get().strip().upper() == "A" else 2
 
-        # Presión (cap 25.0, 1 decimal) -> entero *10
-        ps = self._float_or_zero(self.ent_ps)
-        ps = clamp(round(ps, 1), 0.0, 25.0)
+        # Presión -> entero x10
+        ps = clamp(round(self._float_or_zero(self.ent_ps), 1), 0.0, MAX_PRES)
         ps10 = int(round(ps * 10))
 
         # Peristálticas
         p1_on = 1 if self.peri1_on.get() else 0
         p2_on = 1 if self.peri2_on.get() else 0
-        p1_t = self._int_or_zero(self.ent_p1_t) if p1_on else 0
-        p2_t = self._int_or_zero(self.ent_p2_t) if p2_on else 0
+        p1_t = clamp(self._int_or_zero(self.ent_p1_t), 1, 10**6) if p1_on else 0
+        p2_t = clamp(self._int_or_zero(self.ent_p2_t), 1, 10**6) if p2_on else 0
 
         # MFCs -> PWM
         mfc_pwm = {}
         for mfc_id in (1, 2, 3, 4):
             gas = self.mfc[mfc_id]["cmb"].get()
             lim = MFC_DEFAULTS[mfc_id][1][gas]
-            try:
-                flujo = int(float((self.mfc[mfc_id]["ent"].get() or "0").strip()))
-            except Exception:
-                flujo = 0
-            flujo = clamp(flujo, 0, lim)
-            pwm = flujo_a_pwm(flujo, lim)
-            mfc_pwm[mfc_id] = pwm
+            flujo = clamp(self._int_or_zero(self.mfc[mfc_id]["ent"]), 0, lim)
+            mfc_pwm[mfc_id] = flujo_a_pwm(flujo, lim)
 
-        # Temperatura (SP entero, mem M0..M4)
-        def mem_to_idx(cmb):
-            try:
-                return int(cmb.get().strip().upper().replace("M", ""))
-            except Exception:
-                return 0
-
-        t1_sp = clamp(self._int_or_zero(self.ent_t1_sp), 0, 600)
-        t2_sp = clamp(self._int_or_zero(self.ent_t2_sp), 0, 600)
-        t1_mem = clamp(mem_to_idx(self.cmb_t1_mem), 0, 4)
-        t2_mem = clamp(mem_to_idx(self.cmb_t2_mem), 0, 4)
+        # Temperatura (SP entero, clamp)
+        t1_sp = clamp(self._int_or_zero(self.ent_t1_sp), 0, MAX_SP)
+        t2_sp = clamp(self._int_or_zero(self.ent_t2_sp), 0, MAX_SP)
 
         return {
             "i": idx_etapa,
@@ -379,8 +405,7 @@ class EtapaAccordion(ttk.Frame):
             "p2_on": p2_on, "p2_t": p2_t,
             "mfc1": mfc_pwm[1], "mfc2": mfc_pwm[2],
             "mfc3": mfc_pwm[3], "mfc4": mfc_pwm[4],
-            "t1_sp": t1_sp, "t1_mem": t1_mem,
-            "t2_sp": t2_sp, "t2_mem": t2_mem,
+            "t1_sp": t1_sp, "t2_sp": t2_sp,
         }
 
 
@@ -398,8 +423,8 @@ class VentanaAuto(tk.Frame):
     Ejecución:
       - Recorre sólo las etapas completas (en orden).
       - En cada etapa envía:
-        $;4;i;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
-           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_MEM1;TEMP_SP2;TEMP_MEM2!
+        $;4;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
+           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_SP2!
       - Durante la etapa alterna A↔B usando TA/TB. En cada cambio:
         $;3;1;0;POS;!
         (sólo V. entrada; el Arduino resuelve la salida)
@@ -464,12 +489,13 @@ class VentanaAuto(tk.Frame):
         canvas.grid(row=1, column=0, sticky="nsew")
         vsb.grid(row=1, column=1, sticky="ns")
 
-        # Etapas 1..6 (acordeón)
+        # Etapas 1..6 (acordeón) — INICIAN COLAPSADAS
         self.etapas = []
         for i in range(1, 7):
             etapa = EtapaAccordion(self.stage_holder, i)
             etapa.pack(fill="x", pady=4)
             self.etapas.append(etapa)
+        self._set_all_collapsed(True)
 
     def _build_controls(self, parent):
         wrap = ttk.Frame(parent)
@@ -531,17 +557,13 @@ class VentanaAuto(tk.Frame):
             e.set_collapsed(value)
 
     def _cmd_validar(self):
-        """Valida todas las etapas y resalta errores mínimos con mensajes claros."""
-        errores = []
-        for e in self.etapas:
-            if not e.is_complete():
-                # No es fatal: sólo informamos qué etapa falta completar
-                errores.append(str(e.indice))
-        if errores:
+        """Valida todas las etapas y resalta cuáles están incompletas (se ignorarán al iniciar)."""
+        incompletas = [str(e.indice) for e in self.etapas if not e.is_complete()]
+        if incompletas:
             messagebox.showwarning(
                 "Validación",
                 "Las siguientes etapas no están completas (se ignorarán al iniciar): "
-                + ", ".join(errores)
+                + ", ".join(incompletas)
             )
         else:
             messagebox.showinfo("Validación", "Todas las etapas están completas.")
@@ -681,15 +703,17 @@ class VentanaAuto(tk.Frame):
     def _tx_etapa(self, d: dict):
         """
         Construye y envía:
-        $;4;i;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
-           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_MEM1;TEMP_SP2;TEMP_MEM2!
+        $;4;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
+           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_SP2!
         """
         partes = [
-            "$;4", str(d["i"]), str(d["tmin"]), str(d["pos_ini"]),
+            "$;4",
+            str(d["tmin"]), str(d["pos_ini"]),
             str(d["ta"]), str(d["tb"]), str(d["ps10"]),
-            str(d["p1_on"]), str(d["p1_t"]), str(d["p2_on"]), str(d["p2_t"]),
+            str(d["p1_on"]), str(d["p1_t"]),
+            str(d["p2_on"]), str(d["p2_t"]),
             str(d["mfc1"]), str(d["mfc2"]), str(d["mfc3"]), str(d["mfc4"]),
-            str(d["t1_sp"]), str(d["t1_mem"]), str(d["t2_sp"]), str(d["t2_mem"])
+            str(d["t1_sp"]), str(d["t2_sp"]),
         ]
         msg = ";".join(partes) + "!"
         self._tx(msg)
@@ -728,7 +752,7 @@ class VentanaAuto(tk.Frame):
             "mfc2_gas", "mfc2_flujo",
             "mfc3_gas", "mfc3_flujo",
             "mfc4_gas", "mfc4_flujo",
-            "t1_sp", "t1_mem", "t2_sp", "t2_mem"
+            "t1_sp", "t2_sp"
         ]
 
         try:
@@ -736,7 +760,6 @@ class VentanaAuto(tk.Frame):
                 w = csv.writer(f)
                 w.writerow(headers)
                 for e in self.etapas:
-                    # recolectar "crudo" (sin PWM) para guardar editable
                     row = self._row_from_etapa_for_csv(e)
                     w.writerow(row)
             messagebox.showinfo("Preset", "Preset guardado correctamente.")
@@ -767,68 +790,89 @@ class VentanaAuto(tk.Frame):
 
     def _row_from_etapa_for_csv(self, e: EtapaAccordion):
         """Extrae valores amigables para CSV (sin PWM)."""
-        # básicos
-        tmin = e.ent_tmin.get().strip()
+        def get_entry(ent: ttk.Entry, default="0"):
+            v = (ent.get() or "").strip()
+            return v if v else default
+
+        tmin = get_entry(e.ent_tmin, "")
         pos_ini = "1" if e.cmb_pos_ini.get() == "A" else "2"
-        ta = e.ent_ta.get().strip()
-        tb = e.ent_tb.get().strip()
-        # presión *10
+        ta = get_entry(e.ent_ta, "")
+        tb = get_entry(e.ent_tb, "")
+
+        # presión *10 (máx 20.0)
         try:
             ps = float((e.ent_ps.get() or "0").strip())
         except Exception:
             ps = 0.0
-        ps = clamp(round(ps, 1), 0.0, 25.0)
+        ps = clamp(round(ps, 1), 0.0, MAX_PRES)
         ps10 = str(int(round(ps * 10)))
 
         # peri
         p1_on = "1" if e.peri1_on.get() else "0"
-        p1_t = e.ent_p1_t.get().strip() if e.peri1_on.get() else "0"
+        p1_t = get_entry(e.ent_p1_t, "0") if e.peri1_on.get() else "0"
         p2_on = "1" if e.peri2_on.get() else "0"
-        p2_t = e.ent_p2_t.get().strip() if e.peri2_on.get() else "0"
+        p2_t = get_entry(e.ent_p2_t, "0") if e.peri2_on.get() else "0"
 
         # mfc gas + flujo
         def gf(mid):
-            return e.mfc[mid]["cmb"].get(), (e.mfc[mid]["ent"].get().strip() or "0")
+            gas = e.mfc[mid]["cmb"].get()
+            flw = (e.mfc[mid]["ent"].get() or "0").strip() or "0"
+            return gas, flw
 
         m1g, m1f = gf(1)
         m2g, m2f = gf(2)
         m3g, m3f = gf(3)
         m4g, m4f = gf(4)
 
-        # temp
-        t1_sp = e.ent_t1_sp.get().strip() or "0"
-        t1_mem = e.cmb_t1_mem.get().strip().upper().replace("M", "")
-        t2_sp = e.ent_t2_sp.get().strip() or "0"
-        t2_mem = e.cmb_t2_mem.get().strip().upper().replace("M", "")
+        # temperatura
+        t1_sp = get_entry(e.ent_t1_sp, "0")
+        t2_sp = get_entry(e.ent_t2_sp, "0")
 
         return [
             str(e.indice), tmin, pos_ini, ta, tb, ps10, p1_on, p1_t, p2_on, p2_t,
             m1g, m1f, m2g, m2f, m3g, m3f, m4g, m4f,
-            t1_sp, t1_mem, t2_sp, t2_mem
+            t1_sp, t2_sp
         ]
 
     def _apply_csv_row_to_etapa(self, e: EtapaAccordion, row: dict):
-        """Vuelca una fila del CSV sobre la UI de la etapa."""
+        """Vuelca una fila del CSV sobre la UI de la etapa (con clamps visuales)."""
         def set_entry(ent: ttk.Entry, val: str):
             ent.delete(0, tk.END)
             ent.insert(0, val or "")
 
+        # básicos
         set_entry(e.ent_tmin, row.get("tmin", ""))
+        e._norm_int_min1(e.ent_tmin)
+
         e.cmb_pos_ini.set("A" if row.get("pos_ini", "1") == "1" else "B")
+
         set_entry(e.ent_ta, row.get("ta", ""))
+        e._norm_int_min1(e.ent_ta)
+
         set_entry(e.ent_tb, row.get("tb", ""))
+        e._norm_int_min1(e.ent_tb)
+
+        # presión (ps10 -> float con 1 decimal, máx 20.0)
         try:
             ps10 = int(row.get("ps10", "0"))
-            ps = clamp(ps10 / 10.0, 0.0, 25.0)
-            set_entry(e.ent_ps, f"{ps:.1f}".rstrip("0").rstrip("."))
+            ps = clamp(ps10 / 10.0, 0.0, MAX_PRES)
+            set_entry(e.ent_ps, f"{ps:.1f}")
         except Exception:
-            set_entry(e.ent_ps, "0")
+            set_entry(e.ent_ps, "0.0")
+        e._norm_pressure()
 
+        # peristálticas
         e.peri1_on.set(row.get("p1_on", "0") == "1")
         e.peri2_on.set(row.get("p2_on", "0") == "1")
         e._update_peri_states()
+
         set_entry(e.ent_p1_t, row.get("p1_t", "0") if e.peri1_on.get() else "")
+        if e.peri1_on.get():
+            e._norm_int_min1(e.ent_p1_t)
+
         set_entry(e.ent_p2_t, row.get("p2_t", "0") if e.peri2_on.get() else "")
+        if e.peri2_on.get():
+            e._norm_int_min1(e.ent_p2_t)
 
         # MFCs
         for mid in (1, 2, 3, 4):
@@ -838,11 +882,14 @@ class VentanaAuto(tk.Frame):
             if gas not in GASES:
                 gas = MFC_DEFAULTS[mid][0]
             e.mfc[mid]["cmb"].set(gas)
-            e._on_mfc_gas_change(mid, e.mfc[mid]["cmb"], e.mfc[mid]["lbl"], e.mfc[mid]["ent"])
-            set_entry(e.mfc[mid]["ent"], row.get(flw_key, "0"))
+            e._on_mfc_gas_change(mid, e.mfc[mid]["cmb"], e.mfc[mid]["lbl"])
 
-        # Temperatura
+            set_entry(e.mfc[mid]["ent"], row.get(flw_key, "0"))
+            e._norm_flow(mid)
+
+        # Temperatura (sin memorias)
         set_entry(e.ent_t1_sp, row.get("t1_sp", "0"))
-        e.cmb_t1_mem.set(f"M{row.get('t1_mem', '0')}")
+        e._norm_sp(e.ent_t1_sp)
+
         set_entry(e.ent_t2_sp, row.get("t2_sp", "0"))
-        e.cmb_t2_mem.set(f"M{row.get('t2_mem', '0')}")
+        e._norm_sp(e.ent_t2_sp)

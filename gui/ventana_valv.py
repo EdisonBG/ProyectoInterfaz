@@ -17,10 +17,10 @@ class VentanaValv(tk.Frame):
 
     - Solenoide (ID 5):
       * Toggle manual (Abrir/Cerrar)  : $;3;5;1;{1|2};P;!
-        (1=abierta, 2=cerrada; P = presion seguridad entera [bar], default 25, tope 25)
+        (1=abierta, 2=cerrada; P = presion seguridad entera [bar], default 20, tope 20)
       * Presion automatica (al modificar entry): $;3;5;0;P;!
-        (0=modo automatico; P entera [bar], default 25, tope 25)
-      * El entry se actualiza visualmente al tope si excede 25.
+        (0=modo automatico; P entera [bar], default 20, tope 20)
+      * El entry se actualiza visualmente al tope si excede 20.
 
     - Bombas peristalticas 1 y 2 (IDs 6 y 7):
       * Toggle ON/OFF: $;3;{6|7};1;{1|2};!  (1=ON, 2=OFF)
@@ -43,7 +43,7 @@ class VentanaValv(tk.Frame):
 
         # Estado Solenoide (True=abierta, False=cerrada) y presion actual
         self.sol_abierta = tk.BooleanVar(value=False)
-        self.sol_presion = 25  # por defecto 25 bar (entero)
+        self.sol_presion = 20  # por defecto 20 bar (entero)
 
         # Estados peristalticas: True=ON, False=OFF
         self.per1_on = tk.BooleanVar(value=False)
@@ -146,7 +146,7 @@ class VentanaValv(tk.Frame):
         self.btn_sol_toggle.grid(
             row=0, column=0, columnspan=2, padx=5, pady=(8, 12), sticky="w")
 
-        # Entry de presion seguridad (entera, por defecto 25)
+        # Entry de presion seguridad (entera, por defecto 20)
         ttk.Label(sec_sol, text="Presion de seguridad (bar):").grid(
             row=1, column=0, padx=5, pady=5, sticky="e"
         )
@@ -261,22 +261,22 @@ class VentanaValv(tk.Frame):
     # ================= Solenoide (ID 5) =================
     def _leer_presion_float_capada(self, v) -> float:
         """
-        Devuelve presión float con 1 decimal, capada a 25.0.
-        Acepta str/int/float/None. Si no es válida -> 25.0 (default).
+        Devuelve presión float con 1 decimal, capada a 20.0.
+        Acepta str/int/float/None. Si no es válida -> 20.0 (default).
         """
         try:
-            s = "25" if v is None else str(v).strip() or "25"
+            s = "20" if v is None else str(v).strip() or "20"
             p = float(s)
         except Exception:
-            p = 25.0
-        if p > 25.0:
-            p = 25.0
+            p = 20.0
+        if p > 20.0:
+            p = 20.0
         # redondear a 1 decimal
         return round(p, 1)
 
     def _aplicar_presion_y_enviar_auto(self, valor):
         """
-        1) Aplica presion al Entry (cap 25)
+        1) Aplica presion al Entry (cap 20)
         2) Actualiza self.sol_presion
         3) Envia AUTOMATICO: $;3;5;0;P;!
         """
@@ -296,7 +296,7 @@ class VentanaValv(tk.Frame):
     def _toggle_sol(self):
         """
         Toggle manual de la solenoide:
-         - Usa presion actual del entry (cap 25, default 25)
+         - Usa presion actual del entry (cap 20, default 20)
          - Cambia estado local y texto boton
          - Envia: $;3;5;1;{1|2};P;!
            (1=abierta, 2=cerrada)
