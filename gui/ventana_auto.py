@@ -1,862 +1,848 @@
 # gui/ventana_auto.py
-import os
 import csv
-import time
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 from .barra_navegacion import BarraNavegacion
-
-# Teclado numerico (si existe)
-try:
-    from .teclado_numerico import TecladoNumerico
-    _HAS_TECLADO = True
-except Exception:
-    _HAS_TECLADO = False
+from .teclado_numerico import TecladoNumerico
 
 
-# ========================= Utiles de MFC / PWM =========================
-def clamp(v, lo, hi):
-    return max(lo, min(hi, v))
+# ========================== Utilidades comunes ==========================
+
+def clamp(v, a, b):
+    """Recorta v al rango [a, b]."""
+    return a if v < a else (b if v > b else v)
 
 
-def flujo_a_pwm(flujo: int, max_flujo: int) -> int:
-    """
-    Convierte flujo [0..max_flujo] a PWM [0..255] de forma lineal.
-    Saturado y redondeado.
-    """
-    mf = max(1, int(max_flujo))  # evitar div/0
-    f = clamp(int(flujo), 0, mf)
-    return int(round(f * 255.0 / mf))
+def mmss(seg):
+    """Convierte segundos a 'MM:SS'."""
+    seg = max(0, int(seg))
+    m, s = divmod(seg, 60)
+    return f"{m:02d}:{s:02d}"
 
 
-# Gases soportados
-GASES = ["O2", "N2", "H2", "CO2", "CO", "Aire"]
+# =================== Tabla de máximos por gas y MFC =====================
 
-# Tablas de máximos por MFC (según acordado)
-MFC_MAX = {
-    1: {"O2": 10000, "N2": 10000, "H2": 10100, "CO2": 7370,  "CO": 10000, "Aire": 10060},  # defecto O2
-    2: {"O2": 9920,  "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060},  # defecto CO2
-    3: {"O2": 9920,  "N2": 10000, "H2": 10100, "CO2": 7370,  "CO": 10000, "Aire": 10060},  # defecto N2
-    4: {"O2": 9920,  "N2": 10000, "H2": 10000, "CO2": 7370,  "CO": 10000, "Aire": 10060},  # defecto H2
+GASES = ("O2", "N2", "H2", "CO2", "CO", "Aire")
+
+# MFC1 (por defecto O2)
+MFC1_LIMITS = {
+    "O2": 10000, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
+}
+# MFC2 (por defecto CO2)
+MFC2_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060
+}
+# MFC3 (por defecto N2)
+MFC3_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
+}
+# MFC4 (por defecto H2)
+MFC4_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10000, "CO2": 7370, "CO": 10000, "Aire": 10060
 }
 
-MFC_DEF_GAS = {1: "O2", 2: "CO2", 3: "N2", 4: "H2"}
+MFC_DEFAULTS = {
+    1: ("O2", MFC1_LIMITS),
+    2: ("CO2", MFC2_LIMITS),
+    3: ("N2", MFC3_LIMITS),
+    4: ("H2", MFC4_LIMITS),
+}
 
 
-# ========================= Panel de una Etapa =========================
-class _EtapaPanel(ttk.LabelFrame):
+def flujo_a_pwm(flujo_ml_min: float, maximo: int) -> int:
     """
-    Panel de configuración de una etapa:
+    Convierte flujo (mL/min) -> PWM [0..255] usando mapeo lineal 0..max -> 0..255.
+    - flujo fuera de rango se recorta.
+    - Resultado se redondea al entero más cercano y se recorta a [0,255].
+    """
+    maximo = max(1, int(maximo))  # evitar división por cero
+    f = clamp(float(flujo_ml_min), 0.0, float(maximo))
+    pwm = round((f / float(maximo)) * 255.0)
+    return int(clamp(pwm, 0, 255))
+
+
+# ========================= Etapa (acordeón) =============================
+
+class EtapaAccordion(ttk.Frame):
+    """
+    Un panel plegable ("acordeón") que representa una etapa del proceso.
+    Contiene:
       - Tiempo de proceso (min)
-      - Válvulas: Pos inicial (A/B), Tiempo en A/B (min), Presión (1 decimal máx 25.0)
-        Peristálticas 1/2: ON/OFF + tiempo (min, habilitado si ON)
-      - MFC 1..4: combo gas + flujo + leyenda min/max (según gas/MFC)
-      - Temperatura: Horno1 (SP, Mem M0..M4), Horno2 (SP, Mem M0..M4)
+      - Válvulas: posición inicial A/B, tiempo A, tiempo B, presión seg (0..25, 1 decimal),
+                  peristáltica 1 (toggle + tiempo), peristáltica 2 (toggle + tiempo)
+      - MFC 1..4: selector de gas + flujo (con leyenda min/max)
+      - Temperatura: Horno1 (SP + Mem), Horno2 (SP + Mem)
+
+    Métodos principales:
+      - set_collapsed(True/False): pliega/despliega
+      - is_complete() -> bool: valida que la etapa esté lista para ejecutarse
+      - collect_payload(idx) -> dict: devuelve los datos listos para construir el mensaje $;4;...!
     """
-    def __init__(self, master, idx: int):
-        super().__init__(master, text=f"Etapa {idx}")
-        self.idx = idx
 
-        # ---- Grilla base
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
+    def __init__(self, master, indice: int, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.indice = indice  # 1..6
+        self.collapsed = tk.BooleanVar(value=False)
 
-        row = 0
+        # ---------- Cabecera (botón para colapsar/expandir) ----------
+        header = ttk.Frame(self)
+        header.pack(fill="x")
 
-        # ===== Tiempo de proceso =====
-        frm_t = ttk.Frame(self)
-        frm_t.grid(row=row, column=0, columnspan=2, sticky="ew", padx=6, pady=(6, 4))
-        ttk.Label(frm_t, text="Tiempo de proceso (min):").grid(row=0, column=0, sticky="e")
-        self.ent_tiempo = ttk.Entry(frm_t, width=8)
-        self.ent_tiempo.grid(row=0, column=1, sticky="w", padx=4)
-        if _HAS_TECLADO:
-            self.ent_tiempo.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_tiempo))
+        self.btn_toggle = ttk.Button(
+            header, text=f"Etapa {self.indice} ▾",
+            command=self._toggle_collapse
+        )
+        self.btn_toggle.pack(side="left", padx=4, pady=(6, 2))
 
-        row += 1
+        # ---------- Contenido ----------
+        self.body = ttk.Frame(self)
+        self.body.pack(fill="x", padx=8, pady=(2, 8))
 
-        # ===== Válvulas =====
-        frm_v = ttk.LabelFrame(self, text="Válvulas")
-        frm_v.grid(row=row, column=0, sticky="ew", padx=6, pady=6)
-        frm_v.grid_columnconfigure(1, weight=1)
+        # Bloque 1: Tiempo de proceso
+        b1 = ttk.LabelFrame(self.body, text="Tiempo de proceso")
+        b1.pack(fill="x", pady=4)
+        ttk.Label(b1, text="Minutos:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
+        self.ent_tmin = ttk.Entry(b1, width=8)
+        self.ent_tmin.grid(row=0, column=1, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_tmin, entero=True)
 
-        ttk.Label(frm_v, text="Posición inicial:").grid(row=0, column=0, sticky="e")
-        self.cmb_pos_ini = ttk.Combobox(frm_v, values=["A", "B"], state="readonly", width=5)
+        # Bloque 2: Válvulas
+        b2 = ttk.LabelFrame(self.body, text="Válvulas")
+        b2.pack(fill="x", pady=4)
+
+        ttk.Label(b2, text="Posición inicial:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
+        self.cmb_pos_ini = ttk.Combobox(b2, state="readonly", width=6,
+                                        values=("A", "B"))
         self.cmb_pos_ini.set("A")
-        self.cmb_pos_ini.grid(row=0, column=1, sticky="w", padx=4)
+        self.cmb_pos_ini.grid(row=0, column=1, padx=4, pady=4, sticky="w")
 
-        ttk.Label(frm_v, text="Tiempo en A (min):").grid(row=1, column=0, sticky="e")
-        self.ent_tA = ttk.Entry(frm_v, width=8)
-        self.ent_tA.grid(row=1, column=1, sticky="w", padx=4)
+        ttk.Label(b2, text="Tiempo en A (min):").grid(row=1, column=0, padx=4, pady=4, sticky="e")
+        self.ent_ta = ttk.Entry(b2, width=8)
+        self.ent_ta.grid(row=1, column=1, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_ta, entero=True)
 
-        ttk.Label(frm_v, text="Tiempo en B (min):").grid(row=2, column=0, sticky="e")
-        self.ent_tB = ttk.Entry(frm_v, width=8)
-        self.ent_tB.grid(row=2, column=1, sticky="w", padx=4)
+        ttk.Label(b2, text="Tiempo en B (min):").grid(row=2, column=0, padx=4, pady=4, sticky="e")
+        self.ent_tb = ttk.Entry(b2, width=8)
+        self.ent_tb.grid(row=2, column=1, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_tb, entero=True)
 
-        if _HAS_TECLADO:
-            self.ent_tA.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_tA))
-            self.ent_tB.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_tB))
-
-        ttk.Label(frm_v, text="Presión seguridad (bar, máx 25.0):").grid(row=3, column=0, sticky="e")
-        self.ent_pres = ttk.Entry(frm_v, width=8)
-        self.ent_pres.grid(row=3, column=1, sticky="w", padx=4)
-        ttk.Label(frm_v, text="* 1 decimal, tope 25.0").grid(row=4, column=0, columnspan=2, sticky="w", padx=2)
-        if _HAS_TECLADO:
-            self.ent_pres.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_pres))
+        ttk.Label(b2, text="Presión seguridad (bar):").grid(row=0, column=2, padx=4, pady=4, sticky="e")
+        self.ent_ps = ttk.Entry(b2, width=8)
+        self.ent_ps.grid(row=0, column=3, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_ps, entero=False, max_dec=1)
+        ttk.Label(b2, text="(máx 25.0)").grid(row=0, column=4, padx=4, pady=4, sticky="w")
 
         # Peristálticas
-        ttk.Separator(frm_v, orient="horizontal").grid(row=5, column=0, columnspan=2, sticky="ew", pady=6)
+        self.peri1_on = tk.BooleanVar(value=False)
+        self.peri2_on = tk.BooleanVar(value=False)
 
-        self.peri1_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm_v, text="Peristáltica 1 ON", variable=self.peri1_var,
-                        command=self._toggle_p1).grid(row=6, column=0, sticky="w", columnspan=2)
-        ttk.Label(frm_v, text="Tiempo P1 (min):").grid(row=7, column=0, sticky="e")
-        self.ent_p1_t = ttk.Entry(frm_v, width=8, state="disabled")
-        self.ent_p1_t.grid(row=7, column=1, sticky="w", padx=4)
-        if _HAS_TECLADO:
-            self.ent_p1_t.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_p1_t))
+        ttk.Checkbutton(b2, text="Peristáltica 1", variable=self.peri1_on, command=self._update_peri_states)\
+            .grid(row=1, column=2, padx=4, pady=4, sticky="w")
+        self.ent_p1_t = ttk.Entry(b2, width=8, state="disabled")
+        self.ent_p1_t.grid(row=1, column=3, padx=4, pady=4, sticky="w")
+        ttk.Label(b2, text="min").grid(row=1, column=4, padx=0, pady=4, sticky="w")
+        self._bind_numeric(self.ent_p1_t, entero=True)
 
-        self.peri2_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(frm_v, text="Peristáltica 2 ON", variable=self.peri2_var,
-                        command=self._toggle_p2).grid(row=8, column=0, sticky="w", columnspan=2)
-        ttk.Label(frm_v, text="Tiempo P2 (min):").grid(row=9, column=0, sticky="e")
-        self.ent_p2_t = ttk.Entry(frm_v, width=8, state="disabled")
-        self.ent_p2_t.grid(row=9, column=1, sticky="w", padx=4)
-        if _HAS_TECLADO:
-            self.ent_p2_t.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_p2_t))
+        ttk.Checkbutton(b2, text="Peristáltica 2", variable=self.peri2_on, command=self._update_peri_states)\
+            .grid(row=2, column=2, padx=4, pady=4, sticky="w")
+        self.ent_p2_t = ttk.Entry(b2, width=8, state="disabled")
+        self.ent_p2_t.grid(row=2, column=3, padx=4, pady=4, sticky="w")
+        ttk.Label(b2, text="min").grid(row=2, column=4, padx=0, pady=4, sticky="w")
+        self._bind_numeric(self.ent_p2_t, entero=True)
 
-        # ===== MFC =====
-        frm_m = ttk.LabelFrame(self, text="MFC (flujo mL/min)")
-        frm_m.grid(row=row, column=1, sticky="ew", padx=6, pady=6)
-        frm_m.grid_columnconfigure(1, weight=1)
+        # Bloque 3: MFCs
+        b3 = ttk.LabelFrame(self.body, text="MFC (flujo mL/min)")
+        b3.pack(fill="x", pady=4)
 
-        self.mfc_vars = {}
-        for mfc_id, base_row in zip((1, 2, 3, 4), (0, 3, 6, 9)):
-            ttk.Label(frm_m, text=f"MFC{mfc_id} Gas:").grid(row=base_row, column=0, sticky="e")
-            gas_var = tk.StringVar(value=MFC_DEF_GAS[mfc_id])
-            cmb = ttk.Combobox(frm_m, values=GASES, textvariable=gas_var, state="readonly", width=8)
-            cmb.grid(row=base_row, column=1, sticky="w")
+        self.mfc = {}  # id -> dict con widgets y límites
+        for row, mfc_id in enumerate((1, 2, 3, 4)):
+            ttk.Label(b3, text=f"MFC{mfc_id} Gas:").grid(row=row, column=0, padx=4, pady=4, sticky="e")
+            cmb = ttk.Combobox(b3, state="readonly", width=8, values=GASES)
+            default_gas, limits = MFC_DEFAULTS[mfc_id]
+            cmb.set(default_gas)
+            cmb.grid(row=row, column=1, padx=4, pady=4, sticky="w")
 
-            ttk.Label(frm_m, text=f"MFC{mfc_id} Flujo:").grid(row=base_row+1, column=0, sticky="e")
-            ent = ttk.Entry(frm_m, width=10)
-            ent.grid(row=base_row+1, column=1, sticky="w", padx=2)
-            if _HAS_TECLADO:
-                ent.bind("<Button-1>", lambda e, entry=ent: TecladoNumerico(self, entry))
+            ttk.Label(b3, text=f"MFC{mfc_id} Flujo:").grid(row=row, column=2, padx=4, pady=4, sticky="e")
+            ent = ttk.Entry(b3, width=10)
+            ent.grid(row=row, column=3, padx=4, pady=4, sticky="w")
+            self._bind_numeric(ent, entero=True)
 
-            ley = ttk.Label(frm_m, text=self._leyenda_mfc(mfc_id, gas_var.get()))
-            ley.grid(row=base_row+2, column=0, columnspan=2, sticky="w", padx=2)
+            lbl = ttk.Label(b3, text=self._legend_for(mfc_id, default_gas))
+            lbl.grid(row=row, column=4, padx=4, pady=4, sticky="w")
 
-            def on_gas_change(_ev=None, _m=mfc_id, _var=gas_var, _ley=ley):
-                _ley.configure(text=self._leyenda_mfc(_m, _var.get()))
+            # callback al cambiar gas
+            cmb.bind("<<ComboboxSelected>>",
+                     lambda _e, mid=mfc_id, cb=cmb, lab=lbl, en=ent: self._on_mfc_gas_change(mid, cb, lab, en))
 
-            cmb.bind("<<ComboboxSelected>>", on_gas_change)
-            self.mfc_vars[mfc_id] = {"gas": gas_var, "entry": ent, "ley": ley}
+            self.mfc[mfc_id] = {
+                "cmb": cmb, "ent": ent, "lbl": lbl, "limits": limits
+            }
 
-        row += 1
-
-        # ===== Temperatura =====
-        frm_t2 = ttk.LabelFrame(self, text="Temperatura")
-        frm_t2.grid(row=row, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 8))
-        for c in range(4):
-            frm_t2.grid_columnconfigure(c, weight=1)
+        # Bloque 4: Temperatura
+        b4 = ttk.LabelFrame(self.body, text="Temperatura")
+        b4.pack(fill="x", pady=4)
 
         # Horno 1
-        ttk.Label(frm_t2, text="Horno 1 SP:").grid(row=0, column=0, sticky="e")
-        self.ent_sp1 = ttk.Entry(frm_t2, width=8)
-        self.ent_sp1.grid(row=0, column=1, sticky="w", padx=3)
-        ttk.Label(frm_t2, text="Mem:").grid(row=0, column=2, sticky="e")
-        self.cmb_mem1 = ttk.Combobox(frm_t2, values=[f"M{i}" for i in range(5)], state="readonly", width=5)
-        self.cmb_mem1.set("M0")
-        self.cmb_mem1.grid(row=0, column=3, sticky="w")
-        if _HAS_TECLADO:
-            self.ent_sp1.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_sp1))
+        ttk.Label(b4, text="Horno 1 SP:").grid(row=0, column=0, padx=4, pady=4, sticky="e")
+        self.ent_t1_sp = ttk.Entry(b4, width=8)
+        self.ent_t1_sp.grid(row=0, column=1, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_t1_sp, entero=True)
+        ttk.Label(b4, text="Mem:").grid(row=0, column=2, padx=4, pady=4, sticky="e")
+        self.cmb_t1_mem = ttk.Combobox(b4, state="readonly", width=6, values=("M0", "M1", "M2", "M3", "M4"))
+        self.cmb_t1_mem.set("M0")
+        self.cmb_t1_mem.grid(row=0, column=3, padx=4, pady=4, sticky="w")
 
         # Horno 2
-        ttk.Label(frm_t2, text="Horno 2 SP:").grid(row=1, column=0, sticky="e")
-        self.ent_sp2 = ttk.Entry(frm_t2, width=8)
-        self.ent_sp2.grid(row=1, column=1, sticky="w", padx=3)
-        ttk.Label(frm_t2, text="Mem:").grid(row=1, column=2, sticky="e")
-        self.cmb_mem2 = ttk.Combobox(frm_t2, values=[f"M{i}" for i in range(5)], state="readonly", width=5)
-        self.cmb_mem2.set("M0")
-        self.cmb_mem2.grid(row=1, column=3, sticky="w")
-        if _HAS_TECLADO:
-            self.ent_sp2.bind("<Button-1>", lambda e: TecladoNumerico(self, self.ent_sp2))
+        ttk.Label(b4, text="Horno 2 SP:").grid(row=1, column=0, padx=4, pady=4, sticky="e")
+        self.ent_t2_sp = ttk.Entry(b4, width=8)
+        self.ent_t2_sp.grid(row=1, column=1, padx=4, pady=4, sticky="w")
+        self._bind_numeric(self.ent_t2_sp, entero=True)
+        ttk.Label(b4, text="Mem:").grid(row=1, column=2, padx=4, pady=4, sticky="e")
+        self.cmb_t2_mem = ttk.Combobox(b4, state="readonly", width=6, values=("M0", "M1", "M2", "M3", "M4"))
+        self.cmb_t2_mem.set("M0")
+        self.cmb_t2_mem.grid(row=1, column=3, padx=4, pady=4, sticky="w")
 
-    def _toggle_p1(self):
-        self.ent_p1_t.configure(state="normal" if self.peri1_var.get() else "disabled")
+    # ---------- helpers UI ----------
+    def _toggle_collapse(self):
+        """Plega/despliega el cuerpo del acordeón."""
+        if self.collapsed.get():
+            # expandir
+            self.body.pack(fill="x", padx=8, pady=(2, 8))
+            self.btn_toggle.configure(text=f"Etapa {self.indice} ▾")
+            self.collapsed.set(False)
+        else:
+            # colapsar
+            self.body.forget()
+            self.btn_toggle.configure(text=f"Etapa {self.indice} ▸")
+            self.collapsed.set(True)
 
-    def _toggle_p2(self):
-        self.ent_p2_t.configure(state="normal" if self.peri2_var.get() else "disabled")
+    def set_collapsed(self, value: bool):
+        """Fuerza el estado colapsado/expandido."""
+        if value != self.collapsed.get():
+            self._toggle_collapse()
 
-    def _leyenda_mfc(self, mfc_id: int, gas: str) -> str:
-        maxv = MFC_MAX[mfc_id].get(gas, 10000)
-        return f"min: 0   max: {maxv}"
+    def _bind_numeric(self, entry: ttk.Entry, *, entero: bool, max_dec: int = 0):
+        """
+        Adjunta TecladoNumerico al click y valida contenido numérico.
+        - entero=True => solo enteros; entero=False => admite decimal (max_dec decimales).
+        """
+        entry.bind("<Button-1>", lambda e, ent=entry: TecladoNumerico(self, ent))
+        vcmd = (self.register(self._validate_numeric), "%P", "%d", int(entero), max_dec)
+        entry.configure(validate="key", validatecommand=vcmd)
 
-    # ----- Lectura y validación de la etapa -----
-    def _int_pos(self, entry, *, minv=0, allow_zero=True, name=""):
-        txt = (entry.get() or "").strip()
+    @staticmethod
+    def _validate_numeric(new_text: str, action: str, es_entero: int, max_dec: int):
+        """Valida números mientras se escribe (permite vacío)."""
+        if action == "0":  # borrado siempre ok
+            return True
+        txt = new_text.strip()
+        if not txt:
+            return True
         try:
-            v = int(float(txt))
+            if es_entero:
+                int(float(txt))
+            else:
+                # limitar decimales
+                f = float(txt)
+                s = f"{f:.10f}"
+                if "." in txt:
+                    dec = txt.split(".", 1)[1]
+                    if len(dec) > int(max_dec):
+                        return False
         except Exception:
-            raise ValueError(f"{name}: valor entero inválido")
-        if (not allow_zero and v <= 0) or (v < minv):
-            raise ValueError(f"{name}: debe ser >= {minv + (0 if allow_zero else 1)}")
-        return v
+            return False
+        return True
 
-    def _float_1dec_cap(self, entry, *, cap=25.0, name=""):
-        txt = (entry.get() or "").strip()
+    def _legend_for(self, mfc_id: int, gas: str) -> str:
+        lim = MFC_DEFAULTS[mfc_id][1][gas]
+        return f"min: 0   max: {lim}"
+
+    def _on_mfc_gas_change(self, mfc_id: int, cmb: ttk.Combobox, lbl: ttk.Label, ent: ttk.Entry):
+        """Actualiza leyenda de max y recorta el flujo si excede el nuevo máximo."""
+        gas = cmb.get()
+        lim = MFC_DEFAULTS[mfc_id][1][gas]
+        lbl.configure(text=f"min: 0   max: {lim}")
         try:
-            v = float(txt)
+            val = int(float(ent.get().strip() or 0))
         except Exception:
-            raise ValueError(f"{name}: valor numérico inválido")
-        if v < 0:
-            raise ValueError(f"{name}: no puede ser negativo")
-        if v > cap:
-            v = cap
-        entry.delete(0, tk.END)
-        entry.insert(0, f"{v:.1f}")
-        return round(v, 1)
+            val = 0
+        if val > lim:
+            ent.delete(0, tk.END)
+            ent.insert(0, str(lim))
 
-    def _read_sp_trunc600(self, entry, name="SP"):
+    def _update_peri_states(self):
+        """Habilita/deshabilita los entries de tiempo de peristálticas según su toggle."""
+        self.ent_p1_t.configure(state=("normal" if self.peri1_on.get() else "disabled"))
+        self.ent_p2_t.configure(state=("normal" if self.peri2_on.get() else "disabled"))
+
+    # ---------- validación y recolección ----------
+    def _int_or_zero(self, entry: ttk.Entry) -> int:
         txt = (entry.get() or "").strip()
+        if not txt:
+            return 0
         try:
-            v = int(float(txt))
-        except Exception:
-            raise ValueError(f"{name}: entero requerido")
-        if v < 0:
-            raise ValueError(f"{name}: no puede ser negativo")
-        if v > 600:
-            v = 600
-            entry.delete(0, tk.END)
-            entry.insert(0, str(v))
-        return v
-
-    def _read_mem_idx(self, combo):
-        try:
-            return int(combo.get().strip().upper().replace("M", ""))
+            return int(float(txt))
         except Exception:
             return 0
 
-    def _leer_mfc_pwm(self, mfc_id: int):
-        gas = self.mfc_vars[mfc_id]["gas"].get()
-        maxv = MFC_MAX[mfc_id].get(gas, 10000)
-        txt = (self.mfc_vars[mfc_id]["entry"].get() or "").strip()
+    def _float_or_zero(self, entry: ttk.Entry) -> float:
+        txt = (entry.get() or "").strip()
         if not txt:
-            flujo = 0
-        else:
-            try:
-                flujo = int(float(txt))
-            except Exception:
-                raise ValueError(f"MFC{mfc_id} Flujo inválido")
-        flujo = clamp(flujo, 0, maxv)
-        # reflejar clamp si cambió
-        self.mfc_vars[mfc_id]["entry"].delete(0, tk.END)
-        self.mfc_vars[mfc_id]["entry"].insert(0, str(flujo))
-        return flujo_a_pwm(flujo, maxv)
+            return 0.0
+        try:
+            return float(txt)
+        except Exception:
+            return 0.0
 
-    def leer_y_validar(self) -> dict:
-        data = {}
-        data["tmin"] = self._int_pos(self.ent_tiempo, minv=1, allow_zero=False, name="Tiempo de proceso")
+    def is_complete(self) -> bool:
+        """
+        Reglas mínimas para considerar la etapa "lista":
+          - tmin > 0
+          - tiempos A y B > 0
+          - si peri ON => su tiempo > 0
+          - las demás entradas pueden ser 0 (se envía 0 igualmente)
+        """
+        tmin = self._int_or_zero(self.ent_tmin)
+        ta = self._int_or_zero(self.ent_ta)
+        tb = self._int_or_zero(self.ent_tb)
+        if tmin <= 0 or ta <= 0 or tb <= 0:
+            return False
+        if self.peri1_on.get() and self._int_or_zero(self.ent_p1_t) <= 0:
+            return False
+        if self.peri2_on.get() and self._int_or_zero(self.ent_p2_t) <= 0:
+            return False
+        return True
 
-        pos = self.cmb_pos_ini.get().strip().upper()
-        data["pos_ini"] = 1 if pos == "A" else 2
-        data["tA"] = self._int_pos(self.ent_tA, minv=1, allow_zero=False, name="Tiempo en A")
-        data["tB"] = self._int_pos(self.ent_tB, minv=1, allow_zero=False, name="Tiempo en B")
-        pres = self._float_1dec_cap(self.ent_pres, cap=25.0, name="Presión seguridad")
-        data["pres_x10"] = int(round(pres * 10))
+    def collect_payload(self, idx_etapa: int) -> dict:
+        """
+        Devuelve un dict con todos los datos de la etapa normalizados:
+          - tmin, pos_ini (1=A,2=B), ta, tb
+          - ps10 (int, presión*10 con tope 25.0)
+          - p1_on, p1_t, p2_on, p2_t (enteros; si OFF => 0)
+          - mfc_pwm[1..4] (int 0..255)
+          - temp: t1_sp, t1_mem (0..4), t2_sp, t2_mem
+        """
+        # Tiempos
+        tmin = clamp(self._int_or_zero(self.ent_tmin), 0, 10**6)
+        ta = clamp(self._int_or_zero(self.ent_ta), 0, 10**6)
+        tb = clamp(self._int_or_zero(self.ent_tb), 0, 10**6)
 
-        data["p1_on"] = 1 if self.peri1_var.get() else 0
-        data["p1_t"] = self._int_pos(self.ent_p1_t, minv=0, allow_zero=True, name="Tiempo P1") if data["p1_on"] else 0
-        data["p2_on"] = 1 if self.peri2_var.get() else 0
-        data["p2_t"] = self._int_pos(self.ent_p2_t, minv=0, allow_zero=True, name="Tiempo P2") if data["p2_on"] else 0
+        # Posición inicial
+        pos_ini = 1 if self.cmb_pos_ini.get().strip().upper() == "A" else 2
 
-        data["mfc1_pwm"] = self._leer_mfc_pwm(1)
-        data["mfc2_pwm"] = self._leer_mfc_pwm(2)
-        data["mfc3_pwm"] = self._leer_mfc_pwm(3)
-        data["mfc4_pwm"] = self._leer_mfc_pwm(4)
+        # Presión (cap 25.0, 1 decimal) -> entero *10
+        ps = self._float_or_zero(self.ent_ps)
+        ps = clamp(round(ps, 1), 0.0, 25.0)
+        ps10 = int(round(ps * 10))
 
-        data["sp1"]  = self._read_sp_trunc600(self.ent_sp1, "Horno1 SP")
-        data["mem1"] = self._read_mem_idx(self.cmb_mem1)
-        data["sp2"]  = self._read_sp_trunc600(self.ent_sp2, "Horno2 SP")
-        data["mem2"] = self._read_mem_idx(self.cmb_mem2)
+        # Peristálticas
+        p1_on = 1 if self.peri1_on.get() else 0
+        p2_on = 1 if self.peri2_on.get() else 0
+        p1_t = self._int_or_zero(self.ent_p1_t) if p1_on else 0
+        p2_t = self._int_or_zero(self.ent_p2_t) if p2_on else 0
 
-        return data
-
-    # ----- CSV helpers -----
-    def to_row(self):
-        gas1 = self.mfc_vars[1]["gas"].get()
-        gas2 = self.mfc_vars[2]["gas"].get()
-        gas3 = self.mfc_vars[3]["gas"].get()
-        gas4 = self.mfc_vars[4]["gas"].get()
-        return [
-            (self.ent_tiempo.get() or "").strip(),
-            self.cmb_pos_ini.get(), (self.ent_tA.get() or "").strip(), (self.ent_tB.get() or "").strip(),
-            (self.ent_pres.get() or "").strip(),
-            "1" if self.peri1_var.get() else "0", (self.ent_p1_t.get() or "").strip(),
-            "1" if self.peri2_var.get() else "0", (self.ent_p2_t.get() or "").strip(),
-            gas1, (self.mfc_vars[1]["entry"].get() or "").strip(),
-            gas2, (self.mfc_vars[2]["entry"].get() or "").strip(),
-            gas3, (self.mfc_vars[3]["entry"].get() or "").strip(),
-            gas4, (self.mfc_vars[4]["entry"].get() or "").strip(),
-            (self.ent_sp1.get() or "").strip(), self.cmb_mem1.get(),
-            (self.ent_sp2.get() or "").strip(), self.cmb_mem2.get(),
-        ]
-
-    def from_row(self, row):
-        if len(row) < 22:
-            return
-        it = iter(row)
-        self.ent_tiempo.delete(0, tk.END); self.ent_tiempo.insert(0, next(it, ""))
-        self.cmb_pos_ini.set(next(it, "A"))
-        self.ent_tA.delete(0, tk.END); self.ent_tA.insert(0, next(it, ""))
-        self.ent_tB.delete(0, tk.END); self.ent_tB.insert(0, next(it, ""))
-        self.ent_pres.delete(0, tk.END); self.ent_pres.insert(0, next(it, ""))
-
-        self.peri1_var.set(next(it, "0") == "1"); self._toggle_p1()
-        self.ent_p1_t.delete(0, tk.END); self.ent_p1_t.insert(0, next(it, ""))
-
-        self.peri2_var.set(next(it, "0") == "1"); self._toggle_p2()
-        self.ent_p2_t.delete(0, tk.END); self.ent_p2_t.insert(0, next(it, ""))
-
+        # MFCs -> PWM
+        mfc_pwm = {}
         for mfc_id in (1, 2, 3, 4):
-            gas = next(it, MFC_DEF_GAS[mfc_id])
-            self.mfc_vars[mfc_id]["gas"].set(gas)
-            self.mfc_vars[mfc_id]["ley"].configure(text=self._leyenda_mfc(mfc_id, gas))
-            flow = next(it, "")
-            self.mfc_vars[mfc_id]["entry"].delete(0, tk.END)
-            self.mfc_vars[mfc_id]["entry"].insert(0, flow)
-
-        self.ent_sp1.delete(0, tk.END); self.ent_sp1.insert(0, next(it, ""))
-        self.cmb_mem1.set(next(it, "M0"))
-        self.ent_sp2.delete(0, tk.END); self.ent_sp2.insert(0, next(it, ""))
-        self.cmb_mem2.set(next(it, "M0"))
-
-
-# ========================= Runner preciso (no bloqueante) =========================
-class _StageRunner:
-    """
-    Coordina el envío de etapas y los timers internos (válvulas A/B, peristálticas) con precisión:
-    - Usa time.monotonic() para calcular residuales al pausar y reanudar exactamente.
-    - Exposición de estado para el monitor.
-    """
-    def __init__(self, scheduler_widget, enviar_func, get_stage_data_func, total_stages: int, on_state=lambda *_: None):
-        self.sched = scheduler_widget
-        self.enviar = enviar_func
-        self.get_data = get_stage_data_func
-        self.n = total_stages
-        self.on_state = on_state   # callback (stage, pos, remain_stage_s, remain_seg_s, p1_on, p2_on)
-
-        # Estado de ejecución
-        self.current = 1
-        self.running = False
-        self.paused = False
-
-        # IDs de after y temporizadores absolutos (monotonic)
-        self._after_ids = []
-
-        # Tiempos absolutos (segundos monotonic hasta evento)
-        self._t_end_stage = None
-        self._t_end_segment = None
-        self._t_p1_off = None
-        self._t_p2_off = None
-
-        # Parametros actuales
-        self._pos_actual = None  # 1=A, 2=B
-        self._dur_A = 0
-        self._dur_B = 0
-        self._p1_on = 0
-        self._p2_on = 0
-
-        # Monitor tick
-        self._tick_id = None
-
-    # ---- control público ----
-    def start(self):
-        if self.running:
-            return
-        self.running = True
-        self.paused = False
-        self.current = 1
-        self._start_stage(self.current)
-
-    def pause(self):
-        if not self.running or self.paused:
-            return
-        self.paused = True
-        self._cancel_all()
-
-        now = time.monotonic()
-        # Guardar residuales (en segundos) para reprogramar luego
-        self._res_stage = max(0.0, (self._t_end_stage - now)) if self._t_end_stage else 0.0
-        self._res_seg   = max(0.0, (self._t_end_segment - now)) if self._t_end_segment else 0.0
-        self._res_p1    = max(0.0, (self._t_p1_off - now)) if (self._t_p1_off and self._p1_on) else None
-        self._res_p2    = max(0.0, (self._t_p2_off - now)) if (self._t_p2_off and self._p2_on) else None
-
-        self._t_end_stage = None
-        self._t_end_segment = None
-        self._t_p1_off = None
-        self._t_p2_off = None
-
-    def resume(self):
-        if not self.running or not self.paused:
-            return
-        self.paused = False
-
-        now = time.monotonic()
-        # Reprogramar fin de etapa y segmento con residuales exactos
-        if getattr(self, "_res_stage", 0.0) > 0:
-            self._t_end_stage = now + self._res_stage
-            self._after_ids.append(self.sched.after(int(self._res_stage * 1000), self._end_stage))
-        if getattr(self, "_res_seg", 0.0) > 0:
-            self._t_end_segment = now + self._res_seg
-            self._after_ids.append(self.sched.after(int(self._res_seg * 1000), self._toggle_valvula))
-
-        # Peristálticas: reprogramar sus OFF si estaban pendientes
-        if self._p1_on and self._res_p1 is not None and self._res_p1 > 0:
-            self._t_p1_off = now + self._res_p1
-            self._after_ids.append(self.sched.after(int(self._res_p1 * 1000), self._peristaltica_off, 6))
-        if self._p2_on and self._res_p2 is not None and self._res_p2 > 0:
-            self._t_p2_off = now + self._res_p2
-            self._after_ids.append(self.sched.after(int(self._res_p2 * 1000), self._peristaltica_off, 7))
-
-        # Relanzar el tick del monitor
-        self._schedule_tick()
-
-    def stop(self):
-        self.running = False
-        self.paused = False
-        self._cancel_all()
-        # Reset estado para monitor
-        self.on_state(0, 0, 0, 0, 0, 0)
-
-    # ---- helpers after ----
-    def _cancel_all(self):
-        for aid in self._after_ids:
+            gas = self.mfc[mfc_id]["cmb"].get()
+            lim = MFC_DEFAULTS[mfc_id][1][gas]
             try:
-                self.sched.after_cancel(aid)
+                flujo = int(float((self.mfc[mfc_id]["ent"].get() or "0").strip()))
             except Exception:
-                pass
-        self._after_ids.clear()
+                flujo = 0
+            flujo = clamp(flujo, 0, lim)
+            pwm = flujo_a_pwm(flujo, lim)
+            mfc_pwm[mfc_id] = pwm
 
-        if self._tick_id is not None:
+        # Temperatura (SP entero, mem M0..M4)
+        def mem_to_idx(cmb):
             try:
-                self.sched.after_cancel(self._tick_id)
+                return int(cmb.get().strip().upper().replace("M", ""))
             except Exception:
-                pass
-            self._tick_id = None
+                return 0
 
-    # ---- etapa ----
-    def _start_stage(self, idx: int):
-        if not self.running:
-            return
+        t1_sp = clamp(self._int_or_zero(self.ent_t1_sp), 0, 600)
+        t2_sp = clamp(self._int_or_zero(self.ent_t2_sp), 0, 600)
+        t1_mem = clamp(mem_to_idx(self.cmb_t1_mem), 0, 4)
+        t2_mem = clamp(mem_to_idx(self.cmb_t2_mem), 0, 4)
 
-        data = self.get_data(idx)  # validado por la ventana
-
-        # Mensaje de cabecera de etapa
-        msg = f"$;4;{idx};{data['tmin']};{data['pos_ini']};{data['tA']};{data['tB']};{data['pres_x10']};" \
-              f"{data['p1_on']};{data['p1_t']};{data['p2_on']};{data['p2_t']};" \
-              f"{data['mfc1_pwm']};{data['mfc2_pwm']};{data['mfc3_pwm']};{data['mfc4_pwm']};" \
-              f"{data['sp1']};{data['mem1']};{data['sp2']};{data['mem2']}!"
-        self.enviar(msg)
-
-        # Inicializar tiempos absolutos
-        now = time.monotonic()
-        self._t_end_stage = now + data['tmin'] * 60.0
-
-        # Posiciones y segmentos
-        self._pos_actual = data['pos_ini']  # 1=A, 2=B
-        self._dur_A = data['tA']
-        self._dur_B = data['tB']
-        seg_min = self._dur_A if self._pos_actual == 1 else self._dur_B
-        seg_s = min(seg_min * 60.0, data['tmin'] * 60.0)  # no exceder etapa
-        self._t_end_segment = now + seg_s
-
-        # Enviar posición inicial (modo auto = 0)
-        self.enviar(f"$;3;1;0;{self._pos_actual};!")
-
-        # Peristálticas (modo 0 auto)
-        self._p1_on = data['p1_on']
-        self._p2_on = data['p2_on']
-        if self._p1_on:
-            self.enviar("$;3;6;0;1;!")  # ON
-            t_off = min(data['p1_t'], data['tmin'])
-            self._t_p1_off = now + t_off * 60.0
-            self._after_ids.append(self.sched.after(int(t_off * 60_000), self._peristaltica_off, 6))
-        else:
-            self._t_p1_off = None
-
-        if self._p2_on:
-            self.enviar("$;3;7;0;1;!")  # ON
-            t_off = min(data['p2_t'], data['tmin'])
-            self._t_p2_off = now + t_off * 60.0
-            self._after_ids.append(self.sched.after(int(t_off * 60_000), self._peristaltica_off, 7))
-        else:
-            self._t_p2_off = None
-
-        # Programar fin de segmento y fin de etapa
-        self._after_ids.append(self.sched.after(int(seg_s * 1000), self._toggle_valvula))
-        self._after_ids.append(self.sched.after(int(data['tmin'] * 60_000), self._end_stage))
-
-        # Lanzar monitor tick
-        self._schedule_tick()
-        self._push_state()
-
-    def _peristaltica_off(self, which_id: int):
-        # OFF (modo auto 0)
-        self.enviar(f"$;3;{which_id};0;2;!")
-        if which_id == 6:
-            self._p1_on = 0
-            self._t_p1_off = None
-        else:
-            self._p2_on = 0
-            self._t_p2_off = None
-        self._push_state()
-
-    def _toggle_valvula(self):
-        if not self.running or self.paused:
-            return
-
-        now = time.monotonic()
-        # Si la etapa ya terminó, no alternar (lo hará _end_stage)
-        if self._t_end_stage and now >= self._t_end_stage:
-            return
-
-        # Cambiar posición
-        self._pos_actual = 2 if self._pos_actual == 1 else 1
-        self.enviar(f"$;3;1;0;{self._pos_actual};!")
-
-        # Calcular siguiente segmento respetando fin de etapa
-        seg_min = self._dur_A if self._pos_actual == 1 else self._dur_B
-        seg_s = seg_min * 60.0
-        # recortar si excede el fin de etapa
-        if self._t_end_stage:
-            max_seg = max(0.0, self._t_end_stage - now)
-            seg_s = min(seg_s, max_seg)
-
-        self._t_end_segment = now + seg_s
-        self._after_ids.append(self.sched.after(int(seg_s * 1000), self._toggle_valvula))
-        self._push_state()
-
-    def _end_stage(self):
-        if not self.running:
-            return
-
-        # Apagar peristálticas que sigan ON
-        if self._p1_on:
-            self.enviar("$;3;6;0;2;!")
-            self._p1_on = 0
-        if self._p2_on:
-            self.enviar("$;3;7;0;2;!")
-            self._p2_on = 0
-
-        self.current += 1
-        if self.current > self.n:
-            # Termina la secuencia
-            self.stop()
-            return
-
-        # Siguiente etapa
-        self._start_stage(self.current)
-
-    # ---- Monitor ----
-    def _schedule_tick(self):
-        # Actualiza el monitor cada 1s
-        if self._tick_id is not None:
-            try:
-                self.sched.after_cancel(self._tick_id)
-            except Exception:
-                pass
-        self._tick_id = self.sched.after(1000, self._tick)
-
-    def _tick(self):
-        if not self.running or self.paused:
-            self._tick_id = None
-            return
-        self._push_state()
-        self._schedule_tick()
-
-    def _push_state(self):
-        now = time.monotonic()
-        remain_stage = max(0, int(round((self._t_end_stage - now))) if self._t_end_stage else 0)
-        remain_seg   = max(0, int(round((self._t_end_segment - now))) if self._t_end_segment else 0)
-        self.on_state(self.current, self._pos_actual or 0, remain_stage, remain_seg, self._p1_on, self._p2_on)
+        return {
+            "i": idx_etapa,
+            "tmin": tmin,
+            "pos_ini": pos_ini,
+            "ta": ta,
+            "tb": tb,
+            "ps10": ps10,
+            "p1_on": p1_on, "p1_t": p1_t,
+            "p2_on": p2_on, "p2_t": p2_t,
+            "mfc1": mfc_pwm[1], "mfc2": mfc_pwm[2],
+            "mfc3": mfc_pwm[3], "mfc4": mfc_pwm[4],
+            "t1_sp": t1_sp, "t1_mem": t1_mem,
+            "t2_sp": t2_sp, "t2_mem": t2_mem,
+        }
 
 
-# ========================= Ventana Auto =========================
+# =========================== Ventana Auto ===============================
+
 class VentanaAuto(tk.Frame):
     """
-    Ventana de configuración y ejecución automática (6 etapas fijas).
-    Barra de navegación a la IZQUIERDA y panel principal a la DERECHA.
+    Ventana de automatización con:
+      - Barra de navegación (izquierda)
+      - 6 etapas en acordeón con scroll vertical (derecha)
+      - Controles: Validar, Iniciar, Pausar, Reanudar, Detener, Guardar/Cargar preset,
+                   Colapsar/Expandir todo
+      - Monitor en vivo (etapa, posición, tiempos restantes, P1/P2)
+
+    Ejecución:
+      - Recorre sólo las etapas completas (en orden).
+      - En cada etapa envía:
+        $;4;i;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
+           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_MEM1;TEMP_SP2;TEMP_MEM2!
+      - Durante la etapa alterna A↔B usando TA/TB. En cada cambio:
+        $;3;1;0;POS;!
+        (sólo V. entrada; el Arduino resuelve la salida)
+      - Contador 1 Hz con `after` (sin threads). Pausa/Reanuda/Detiene.
     """
+
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
         self.controlador = controlador
         self.arduino = arduino
 
-        # Programador: prioriza el de controlador si tiene after/after_cancel
-        self._scheduler = controlador if hasattr(controlador, "after") else self
+        # estado de ejecución
+        self._run_active = False
+        self._paused = False
+        self._tick_id = None
+
+        # estado de etapa/segmento
+        self._etapas_order = []      # índices 1..6 de etapas completas a ejecutar
+        self._etapa_idx_ptr = -1     # puntero dentro de _etapas_order
+        self._stage_remaining = 0    # seg restantes de la etapa actual
+        self._seg_remaining = 0      # seg restantes del segmento actual (A o B)
+        self._seg_pos = "A"          # "A" o "B"
+        self._seg_tA = 0             # seg duración A
+        self._seg_tB = 0             # seg duración B
 
         self._build_ui()
 
-        # Runner preciso (todo igual que antes)
-        self.runner = _StageRunner(
-            scheduler_widget=self._scheduler,
-            enviar_func=self._enviar_a_arduino,
-            get_stage_data_func=self._get_stage_data_validated,
-            total_stages=6,
-            on_state=self._monitor_update
-        )
-
+    # ------------------------- UI base -------------------------
     def _build_ui(self):
-        # ====== grilla raíz: 2 columnas (barra izquierda fija | panel derecho expansible) ======
+        # columnas: 0 barra, 1 contenido
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0)   # barra
-        self.grid_columnconfigure(1, weight=1)   # panel derecho
+        self.grid_columnconfigure(1, weight=1)
 
-        # ----- Barra de navegación a la IZQUIERDA -----
+        # Barra izquierda
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=230)                   # ancho fijo como en otras ventanas
+        barra.configure(width=230)
         barra.grid(row=0, column=0, sticky="nsw")
-        barra.grid_propagate(False)                  # evita que se encoja
+        barra.grid_propagate(False)
 
-        # ----- Panel derecho con acciones + monitor + zona scrollable -----
-        right = ttk.Frame(self)
-        right.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
-        right.grid_rowconfigure(1, weight=1)         # la zona scroll ocupa el resto
-        right.grid_columnconfigure(0, weight=1)
+        # Contenido (columna 1) con scroll
+        content = ttk.Frame(self)
+        content.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        content.grid_rowconfigure(1, weight=1)
+        content.grid_columnconfigure(0, weight=1)
 
-        # === fila 0: Acciones + Monitor (horizontal) ===
-        top = ttk.Frame(right)
-        top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        top.grid_columnconfigure(0, weight=1)
-        top.grid_columnconfigure(1, weight=1)
+        # ------ fila 0: controles y monitor ------
+        self._build_controls(content)
+        self._build_monitor(content)
 
-        # Acciones a la izquierda
-        acciones = ttk.Frame(top)
-        acciones.grid(row=0, column=0, sticky="w")
-        ttk.Button(acciones, text="Validar", command=self._validar_todo).pack(side="left", padx=(0, 6))
-        self.btn_start  = ttk.Button(acciones, text="Iniciar", command=self._iniciar)
-        self.btn_pause  = ttk.Button(acciones, text="Pausar", command=self._pausar, state="disabled")
-        self.btn_resume = ttk.Button(acciones, text="Reanudar", command=self._reanudar, state="disabled")
-        self.btn_stop   = ttk.Button(acciones, text="Detener", command=self._detener, state="disabled")
-        self.btn_start.pack(side="left", padx=(0, 6))
-        self.btn_pause.pack(side="left", padx=(0, 6))
-        self.btn_resume.pack(side="left", padx=(0, 6))
-        self.btn_stop.pack(side="left", padx=(0, 6))
-        ttk.Button(acciones, text="Guardar preset", command=self._guardar_csv).pack(side="left", padx=(16, 6))
-        ttk.Button(acciones, text="Cargar preset", command=self._cargar_csv).pack(side="left")
+        # ------ fila 1: canvas con scroll y etapas ------
+        canvas = tk.Canvas(content, highlightthickness=0)
+        vsb = ttk.Scrollbar(content, orient="vertical", command=canvas.yview)
+        self.stage_holder = ttk.Frame(canvas)
 
-        # Monitor a la derecha
-        monitor = ttk.LabelFrame(top, text="Monitor")
-        monitor.grid(row=0, column=1, sticky="e")
-        for c in range(4):
-            monitor.grid_columnconfigure(c, weight=1)
-        ttk.Label(monitor, text="Etapa:").grid(row=0, column=0, sticky="e")
-        self.lbl_m_stage = ttk.Label(monitor, text="-")
-        self.lbl_m_stage.grid(row=0, column=1, sticky="w")
-        ttk.Label(monitor, text="Posición:").grid(row=0, column=2, sticky="e")
-        self.lbl_m_pos = ttk.Label(monitor, text="-")
-        self.lbl_m_pos.grid(row=0, column=3, sticky="w")
-        ttk.Label(monitor, text="Restante etapa:").grid(row=1, column=0, sticky="e")
-        self.lbl_m_rest_stage = ttk.Label(monitor, text="-")
-        self.lbl_m_rest_stage.grid(row=1, column=1, sticky="w")
-        ttk.Label(monitor, text="Restante segmento:").grid(row=1, column=2, sticky="e")
-        self.lbl_m_rest_seg = ttk.Label(monitor, text="-")
-        self.lbl_m_rest_seg.grid(row=1, column=3, sticky="w")
-        ttk.Label(monitor, text="P1:").grid(row=2, column=0, sticky="e")
-        self.lbl_m_p1 = ttk.Label(monitor, text="-")
-        self.lbl_m_p1.grid(row=2, column=1, sticky="w")
-        ttk.Label(monitor, text="P2:").grid(row=2, column=2, sticky="e")
-        self.lbl_m_p2 = ttk.Label(monitor, text="-")
-        self.lbl_m_p2.grid(row=2, column=3, sticky="w")
+        self.stage_holder.bind(
+            "<Configure>",
+            lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=self.stage_holder, anchor="nw")
+        canvas.configure(yscrollcommand=vsb.set)
 
-        # === fila 1: Área scrollable (etapas) ===
-        scroll_area = ttk.Frame(right)
-        scroll_area.grid(row=1, column=0, sticky="nsew")
-        scroll_area.grid_rowconfigure(0, weight=1)
-        scroll_area.grid_columnconfigure(0, weight=1)
+        canvas.grid(row=1, column=0, sticky="nsew")
+        vsb.grid(row=1, column=1, sticky="ns")
 
-        self.canvas = tk.Canvas(scroll_area, highlightthickness=0)
-        vscroll = ttk.Scrollbar(scroll_area, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=vscroll.set)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        vscroll.grid(row=0, column=1, sticky="ns")
-
-        # Frame interior dentro del canvas
-        self.inner = ttk.Frame(self.canvas)
-        self.inner_id = self.canvas.create_window((0, 0), window=self.inner, anchor="nw")
-        self.inner.bind("<Configure>", self._on_inner_configure)
-        self.canvas.bind("<Configure>", self._on_canvas_configure)
-
-        # 6 etapas (igual que antes)
+        # Etapas 1..6 (acordeón)
         self.etapas = []
         for i in range(1, 7):
-            p = _EtapaPanel(self.inner, i)
-            p.grid(row=i-1, column=0, sticky="ew", padx=8, pady=6)
-            self.etapas.append(p)
+            etapa = EtapaAccordion(self.stage_holder, i)
+            etapa.pack(fill="x", pady=4)
+            self.etapas.append(etapa)
 
-        # Rueda del mouse para scroll
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)   # Windows
-        self.canvas.bind_all("<Button-4>", self._on_mousewheel)     # Linux
-        self.canvas.bind_all("<Button-5>", self._on_mousewheel)     # Linux
+    def _build_controls(self, parent):
+        wrap = ttk.Frame(parent)
+        wrap.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        wrap.grid_columnconfigure(7, weight=1)
 
+        ttk.Button(wrap, text="Validar", command=self._cmd_validar).grid(row=0, column=0, padx=4)
+        ttk.Button(wrap, text="Iniciar", command=self._cmd_iniciar).grid(row=0, column=1, padx=4)
 
-    # ---- Scroll helpers ----
-    def _on_inner_configure(self, _ev=None):
-        # Actualiza el scrollregion al tamaño del frame interior
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.btn_pausar = ttk.Button(wrap, text="Pausar", command=self._cmd_pausar, state="disabled")
+        self.btn_pausar.grid(row=0, column=2, padx=4)
 
-    def _on_canvas_configure(self, ev):
-        # Ajusta el ancho del inner al ancho visible del canvas
-        self.canvas.itemconfigure(self.inner_id, width=ev.width)
+        self.btn_reanudar = ttk.Button(wrap, text="Reanudar", command=self._cmd_reanudar, state="disabled")
+        self.btn_reanudar.grid(row=0, column=3, padx=4)
 
-    def _on_mousewheel(self, event):
-        # Normaliza para distintos sistemas
-        if event.num == 4:       # Linux scroll up
-            delta = -120
-        elif event.num == 5:     # Linux scroll down
-            delta = 120
-        else:
-            delta = -1 * int(event.delta)
+        ttk.Button(wrap, text="Detener", command=self._cmd_detener).grid(row=0, column=4, padx=4)
 
-        self.canvas.yview_scroll(int(delta / 120), "units")
+        ttk.Button(wrap, text="Guardar preset", command=self._cmd_guardar_preset).grid(row=0, column=5, padx=10)
+        ttk.Button(wrap, text="Cargar preset", command=self._cmd_cargar_preset).grid(row=0, column=6, padx=4)
 
-    # ---- Envío centralizado ----
-    def _enviar_a_arduino(self, msg: str):
-        print("[TX AUTO]", msg)
-        if hasattr(self.controlador, "enviar_a_arduino"):
-            self.controlador.enviar_a_arduino(msg)
-        elif self.arduino:
-            try:
-                self.arduino.write((msg + "\n").encode("utf-8"))
-            except Exception as e:
-                print("Error al enviar al Arduino:", e)
+        ttk.Button(wrap, text="Colapsar todo", command=lambda: self._set_all_collapsed(True))\
+            .grid(row=0, column=8, padx=(20, 4))
+        ttk.Button(wrap, text="Expandir todo", command=lambda: self._set_all_collapsed(False))\
+            .grid(row=0, column=9, padx=4)
 
-    # ---- Validación global ----
-    def _validar_todo(self):
+    def _build_monitor(self, parent):
+        box = ttk.LabelFrame(parent, text="Monitor")
+        box.grid(row=2, column=0, sticky="ew")
+
+        self.var_mon_etapa = tk.StringVar(value="-")
+        self.var_mon_pos = tk.StringVar(value="-")
+        self.var_mon_rest_etapa = tk.StringVar(value="-")
+        self.var_mon_rest_seg = tk.StringVar(value="-")
+        self.var_mon_p1 = tk.StringVar(value="-")
+        self.var_mon_p2 = tk.StringVar(value="-")
+
+        ttk.Label(box, text="Etapa:").grid(row=0, column=0, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_etapa).grid(row=0, column=1, padx=2, pady=4, sticky="w")
+
+        ttk.Label(box, text="Posición:").grid(row=0, column=2, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_pos).grid(row=0, column=3, padx=2, pady=4, sticky="w")
+
+        ttk.Label(box, text="Restante etapa:").grid(row=0, column=4, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_etapa).grid(row=0, column=5, padx=2, pady=4, sticky="w")
+
+        ttk.Label(box, text="Restante segmento:").grid(row=0, column=6, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_seg).grid(row=0, column=7, padx=2, pady=4, sticky="w")
+
+        ttk.Label(box, text="P1:").grid(row=0, column=8, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_p1).grid(row=0, column=9, padx=2, pady=4, sticky="w")
+
+        ttk.Label(box, text="P2:").grid(row=0, column=10, padx=6, pady=4, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_p2).grid(row=0, column=11, padx=2, pady=4, sticky="w")
+
+    # ------------------ acciones de barra superior ------------------
+
+    def _set_all_collapsed(self, value: bool):
+        for e in self.etapas:
+            e.set_collapsed(value)
+
+    def _cmd_validar(self):
+        """Valida todas las etapas y resalta errores mínimos con mensajes claros."""
         errores = []
-        self._clear_errors()
-
-        for i, etapa in enumerate(self.etapas, start=1):
-            try:
-                etapa.leer_y_validar()
-            except Exception as e:
-                errores.append(f"Etapa {i}: {e}")
-                self._mark_error(etapa)
-
+        for e in self.etapas:
+            if not e.is_complete():
+                # No es fatal: sólo informamos qué etapa falta completar
+                errores.append(str(e.indice))
         if errores:
-            messagebox.showerror("Errores de validación", "\n".join(errores))
+            messagebox.showwarning(
+                "Validación",
+                "Las siguientes etapas no están completas (se ignorarán al iniciar): "
+                + ", ".join(errores)
+            )
         else:
-            messagebox.showinfo("Validación", "Todos los datos son válidos.")
+            messagebox.showinfo("Validación", "Todas las etapas están completas.")
 
-    def _clear_errors(self):
-        for p in self.etapas:
-            p.configure(style="TLabelframe")
-
-    def _mark_error(self, etapa_panel: _EtapaPanel):
-        try:
-            style = ttk.Style(self)
-            style.configure("Err.TLabelframe", foreground="red")
-            etapa_panel.configure(style="Err.TLabelframe")
-        except Exception:
-            pass
-
-    # ---- Acciones ----
-    def _get_stage_data_validated(self, idx: int) -> dict:
-        return self.etapas[idx-1].leer_y_validar()
-
-    def _iniciar(self):
-        # Validar antes de iniciar
-        self._clear_errors()
-        errores = []
-        for i, etapa in enumerate(self.etapas, start=1):
-            try:
-                etapa.leer_y_validar()
-            except Exception as e:
-                errores.append(f"Etapa {i}: {e}")
-                self._mark_error(etapa)
-        if errores:
-            messagebox.showerror("Errores de validación", "\n".join(errores))
+    def _cmd_iniciar(self):
+        """Construye la lista de etapas completas y arranca la ejecución (no bloqueante)."""
+        if self._run_active:
+            messagebox.showinfo("Auto", "El proceso ya está en ejecución.")
             return
 
-        self.btn_start.configure(state="disabled")
-        self.btn_pause.configure(state="normal")
-        self.btn_resume.configure(state="disabled")
-        self.btn_stop.configure(state="normal")
+        # recolectar etapas completas en orden
+        self._etapas_order = [e.indice for e in self.etapas if e.is_complete()]
+        if not self._etapas_order:
+            messagebox.showerror("Auto", "No hay etapas completas para ejecutar.")
+            return
 
-        self.runner.start()
+        self._run_active = True
+        self._paused = False
+        self.btn_pausar.configure(state="normal")
+        self.btn_reanudar.configure(state="disabled")
 
-    def _pausar(self):
-        self.runner.pause()
-        self.btn_pause.configure(state="disabled")
-        self.btn_resume.configure(state="normal")
+        self._etapa_idx_ptr = -1  # se avanzará a 0 en _iniciar_siguiente_etapa()
+        self._iniciar_siguiente_etapa()
 
-    def _reanudar(self):
-        self.runner.resume()
-        self.btn_pause.configure(state="normal")
-        self.btn_resume.configure(state="disabled")
+    def _cmd_pausar(self):
+        if not self._run_active or self._paused:
+            return
+        self._paused = True
+        if self._tick_id:
+            try:
+                self.after_cancel(self._tick_id)
+            except Exception:
+                pass
+            self._tick_id = None
+        self.btn_pausar.configure(state="disabled")
+        self.btn_reanudar.configure(state="normal")
 
-    def _detener(self):
-        self.runner.stop()
-        self.btn_start.configure(state="normal")
-        self.btn_pause.configure(state="disabled")
-        self.btn_resume.configure(state="disabled")
-        self.btn_stop.configure(state="disabled")
-        # Poner monitor en neutro
-        self._monitor_update(0, 0, 0, 0, 0, 0)
+    def _cmd_reanudar(self):
+        if not self._run_active or not self._paused:
+            return
+        self._paused = False
+        self.btn_pausar.configure(state="normal")
+        self.btn_reanudar.configure(state="disabled")
+        self._tick()
 
-    # ---- CSV ----
-    def _preset_path(self):
-        base = os.path.dirname(__file__)
-        return os.path.join(base, "auto_preset.csv")
+    def _cmd_detener(self):
+        self._stop_all("Proceso detenido por el usuario.")
 
-    def _guardar_csv(self):
-        path = self._preset_path()
+    def _stop_all(self, msg: str = ""):
+        """Cancela timers y limpia estado de ejecución."""
+        self._run_active = False
+        self._paused = False
+        if self._tick_id:
+            try:
+                self.after_cancel(self._tick_id)
+            except Exception:
+                pass
+            self._tick_id = None
+        self.btn_pausar.configure(state="disabled")
+        self.btn_reanudar.configure(state="disabled")
+        self._reset_monitor()
+        if msg:
+            print("[AUTO]", msg)
+
+    # ------------------- ciclo por etapas/segmentos -------------------
+
+    def _iniciar_siguiente_etapa(self):
+        """Avanza al siguiente índice en _etapas_order y la inicia; si no hay, termina."""
+        self._etapa_idx_ptr += 1
+        if self._etapa_idx_ptr >= len(self._etapas_order):
+            self._stop_all("Todas las etapas completas finalizaron.")
+            return
+
+        idx = self._etapas_order[self._etapa_idx_ptr]
+        etapa = self.etapas[idx - 1]
+        data = etapa.collect_payload(idx)
+
+        # Configurar contadores de etapa
+        self._stage_remaining = int(data["tmin"]) * 60
+        self._seg_tA = int(data["ta"]) * 60
+        self._seg_tB = int(data["tb"]) * 60
+        self._seg_pos = "A" if data["pos_ini"] == 1 else "B"
+        self._seg_remaining = self._seg_tA if self._seg_pos == "A" else self._seg_tB
+
+        # Monitor inicial
+        self.var_mon_etapa.set(f"{idx}/{len(self._etapas_order)}")
+        self.var_mon_pos.set(self._seg_pos)
+        self.var_mon_rest_etapa.set(mmss(self._stage_remaining))
+        self.var_mon_rest_seg.set(mmss(self._seg_remaining))
+        self.var_mon_p1.set("ON" if data["p1_on"] else "OFF")
+        self.var_mon_p2.set("ON" if data["p2_on"] else "OFF")
+
+        # 1) Enviar mensaje de etapa ($;4;...!)
+        self._tx_etapa(data)
+
+        # 2) Arrancar el loop de 1Hz
+        if not self._paused:
+            self._tick()
+
+    def _tick(self):
+        """Avanza 1 segundo: maneja cambio A↔B y fin de etapa; reprograma mientras siga activa."""
+        if not self._run_active or self._paused:
+            return
+
+        # Si se acabó la etapa: avanzar
+        if self._stage_remaining <= 0:
+            self._iniciar_siguiente_etapa()
+            return
+
+        # Manejo de segmento actual (A o B)
+        if self._seg_remaining <= 0:
+            # Cambiar de posición y reiniciar segmento si aún queda tiempo de etapa
+            self._seg_pos = "B" if self._seg_pos == "A" else "A"
+            self._send_valve_position(self._seg_pos)
+            self._seg_remaining = self._seg_tB if self._seg_pos == "B" else self._seg_tA
+
+        # Decrementos
+        self._stage_remaining -= 1
+        self._seg_remaining -= 1
+
+        # Actualizar monitor
+        self.var_mon_rest_etapa.set(mmss(self._stage_remaining))
+        self.var_mon_rest_seg.set(mmss(self._seg_remaining))
+        self.var_mon_pos.set(self._seg_pos)
+
+        # Reprogramar próximo tick
+        self._tick_id = self.after(1000, self._tick)
+
+    # ----------------------- TX helpers -----------------------
+
+    def _tx(self, mensaje: str):
+        """Envía por el controlador si existe."""
+        print("[TX]", mensaje)
+        if self.controlador and hasattr(self.controlador, "enviar_a_arduino"):
+            self.controlador.enviar_a_arduino(mensaje)
+
+    def _tx_etapa(self, d: dict):
+        """
+        Construye y envía:
+        $;4;i;TMIN;VALV_POS_INI;TA;TB;PS*10;PERI1_ON;PERI1_T;PERI2_ON;PERI2_T;
+           MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;TEMP_SP1;TEMP_MEM1;TEMP_SP2;TEMP_MEM2!
+        """
+        partes = [
+            "$;4", str(d["i"]), str(d["tmin"]), str(d["pos_ini"]),
+            str(d["ta"]), str(d["tb"]), str(d["ps10"]),
+            str(d["p1_on"]), str(d["p1_t"]), str(d["p2_on"]), str(d["p2_t"]),
+            str(d["mfc1"]), str(d["mfc2"]), str(d["mfc3"]), str(d["mfc4"]),
+            str(d["t1_sp"]), str(d["t1_mem"]), str(d["t2_sp"]), str(d["t2_mem"])
+        ]
+        msg = ";".join(partes) + "!"
+        self._tx(msg)
+
+    def _send_valve_position(self, pos: str):
+        """Envía cambio de posición para V. entrada: $;3;1;0;POS;!   (POS: 1=A, 2=B)"""
+        code = "1" if pos.upper() == "A" else "2"
+        self._tx(f"$;3;1;0;{code};!")
+
+    def _reset_monitor(self):
+        self.var_mon_etapa.set("-")
+        self.var_mon_pos.set("-")
+        self.var_mon_rest_etapa.set("-")
+        self.var_mon_rest_seg.set("-")
+        self.var_mon_p1.set("-")
+        self.var_mon_p2.set("-")
+
+    # ----------------------- presets CSV -----------------------
+
+    def _cmd_guardar_preset(self):
+        """
+        Guarda las 6 etapas al CSV. Formato: una fila por etapa con todas las columnas.
+        Aunque algunas etapas no estén completas, se guardan sus valores actuales.
+        """
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+            title="Guardar preset"
+        )
+        if not path:
+            return
+
+        headers = [
+            "i", "tmin", "pos_ini", "ta", "tb", "ps10", "p1_on", "p1_t", "p2_on", "p2_t",
+            "mfc1_gas", "mfc1_flujo",
+            "mfc2_gas", "mfc2_flujo",
+            "mfc3_gas", "mfc3_flujo",
+            "mfc4_gas", "mfc4_flujo",
+            "t1_sp", "t1_mem", "t2_sp", "t2_mem"
+        ]
+
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
-                w.writerow([
-                    "tmin", "pos_ini", "tA", "tB", "pres",
-                    "p1_on", "p1_t", "p2_on", "p2_t",
-                    "mfc1_gas", "mfc1_f", "mfc2_gas", "mfc2_f",
-                    "mfc3_gas", "mfc3_f", "mfc4_gas", "mfc4_f",
-                    "sp1", "mem1", "sp2", "mem2"
-                ])
-                for p in self.etapas:
-                    w.writerow(p.to_row())
-            messagebox.showinfo("Preset", f"Preset guardado en {path}")
-        except Exception as e:
-            messagebox.showerror("Preset", f"No se pudo guardar:\n{e}")
+                w.writerow(headers)
+                for e in self.etapas:
+                    # recolectar "crudo" (sin PWM) para guardar editable
+                    row = self._row_from_etapa_for_csv(e)
+                    w.writerow(row)
+            messagebox.showinfo("Preset", "Preset guardado correctamente.")
+        except Exception as ex:
+            messagebox.showerror("Preset", f"No se pudo guardar el preset:\n{ex}")
 
-    def _cargar_csv(self):
-        path = self._preset_path()
-        if not os.path.exists(path):
-            messagebox.showerror("Preset", f"No existe el archivo:\n{path}")
+    def _cmd_cargar_preset(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("CSV", "*.csv")],
+            title="Cargar preset"
+        )
+        if not path:
             return
+
         try:
             with open(path, newline="", encoding="utf-8") as f:
-                r = csv.reader(f)
-                header = next(r, None)
-                for i, row in enumerate(r, start=1):
-                    if i > len(self.etapas):
-                        break
-                    self.etapas[i-1].from_row(row)
+                r = csv.DictReader(f)
+                for row in r:
+                    try:
+                        idx = int(row.get("i", "0"))
+                    except Exception:
+                        continue
+                    if 1 <= idx <= 6:
+                        self._apply_csv_row_to_etapa(self.etapas[idx - 1], row)
             messagebox.showinfo("Preset", "Preset cargado.")
-        except Exception as e:
-            messagebox.showerror("Preset", f"No se pudo cargar:\n{e}")
+        except Exception as ex:
+            messagebox.showerror("Preset", f"No se pudo cargar el preset:\n{ex}")
 
-    # ---- Monitor (callback desde runner) ----
-    def _monitor_update(self, stage, pos, remain_stage_s, remain_seg_s, p1_on, p2_on):
-        self.lbl_m_stage.configure(text=str(stage) if stage > 0 else "-")
-        self.lbl_m_pos.configure(text=("A" if pos == 1 else ("B" if pos == 2 else "-")))
-        self.lbl_m_rest_stage.configure(text=self._fmt_s(remain_stage_s))
-        self.lbl_m_rest_seg.configure(text=self._fmt_s(remain_seg_s))
-        self.lbl_m_p1.configure(text=("ON" if p1_on else "OFF"))
-        self.lbl_m_p2.configure(text=("ON" if p2_on else "OFF"))
+    def _row_from_etapa_for_csv(self, e: EtapaAccordion):
+        """Extrae valores amigables para CSV (sin PWM)."""
+        # básicos
+        tmin = e.ent_tmin.get().strip()
+        pos_ini = "1" if e.cmb_pos_ini.get() == "A" else "2"
+        ta = e.ent_ta.get().strip()
+        tb = e.ent_tb.get().strip()
+        # presión *10
+        try:
+            ps = float((e.ent_ps.get() or "0").strip())
+        except Exception:
+            ps = 0.0
+        ps = clamp(round(ps, 1), 0.0, 25.0)
+        ps10 = str(int(round(ps * 10)))
 
-    @staticmethod
-    def _fmt_s(seconds: int) -> str:
-        if not seconds or seconds <= 0:
-            return "00:00"
-        m, s = divmod(int(seconds), 60)
-        return f"{m:02d}:{s:02d}"
+        # peri
+        p1_on = "1" if e.peri1_on.get() else "0"
+        p1_t = e.ent_p1_t.get().strip() if e.peri1_on.get() else "0"
+        p2_on = "1" if e.peri2_on.get() else "0"
+        p2_t = e.ent_p2_t.get().strip() if e.peri2_on.get() else "0"
+
+        # mfc gas + flujo
+        def gf(mid):
+            return e.mfc[mid]["cmb"].get(), (e.mfc[mid]["ent"].get().strip() or "0")
+
+        m1g, m1f = gf(1)
+        m2g, m2f = gf(2)
+        m3g, m3f = gf(3)
+        m4g, m4f = gf(4)
+
+        # temp
+        t1_sp = e.ent_t1_sp.get().strip() or "0"
+        t1_mem = e.cmb_t1_mem.get().strip().upper().replace("M", "")
+        t2_sp = e.ent_t2_sp.get().strip() or "0"
+        t2_mem = e.cmb_t2_mem.get().strip().upper().replace("M", "")
+
+        return [
+            str(e.indice), tmin, pos_ini, ta, tb, ps10, p1_on, p1_t, p2_on, p2_t,
+            m1g, m1f, m2g, m2f, m3g, m3f, m4g, m4f,
+            t1_sp, t1_mem, t2_sp, t2_mem
+        ]
+
+    def _apply_csv_row_to_etapa(self, e: EtapaAccordion, row: dict):
+        """Vuelca una fila del CSV sobre la UI de la etapa."""
+        def set_entry(ent: ttk.Entry, val: str):
+            ent.delete(0, tk.END)
+            ent.insert(0, val or "")
+
+        set_entry(e.ent_tmin, row.get("tmin", ""))
+        e.cmb_pos_ini.set("A" if row.get("pos_ini", "1") == "1" else "B")
+        set_entry(e.ent_ta, row.get("ta", ""))
+        set_entry(e.ent_tb, row.get("tb", ""))
+        try:
+            ps10 = int(row.get("ps10", "0"))
+            ps = clamp(ps10 / 10.0, 0.0, 25.0)
+            set_entry(e.ent_ps, f"{ps:.1f}".rstrip("0").rstrip("."))
+        except Exception:
+            set_entry(e.ent_ps, "0")
+
+        e.peri1_on.set(row.get("p1_on", "0") == "1")
+        e.peri2_on.set(row.get("p2_on", "0") == "1")
+        e._update_peri_states()
+        set_entry(e.ent_p1_t, row.get("p1_t", "0") if e.peri1_on.get() else "")
+        set_entry(e.ent_p2_t, row.get("p2_t", "0") if e.peri2_on.get() else "")
+
+        # MFCs
+        for mid in (1, 2, 3, 4):
+            gas_key = f"mfc{mid}_gas"
+            flw_key = f"mfc{mid}_flujo"
+            gas = row.get(gas_key, MFC_DEFAULTS[mid][0])
+            if gas not in GASES:
+                gas = MFC_DEFAULTS[mid][0]
+            e.mfc[mid]["cmb"].set(gas)
+            e._on_mfc_gas_change(mid, e.mfc[mid]["cmb"], e.mfc[mid]["lbl"], e.mfc[mid]["ent"])
+            set_entry(e.mfc[mid]["ent"], row.get(flw_key, "0"))
+
+        # Temperatura
+        set_entry(e.ent_t1_sp, row.get("t1_sp", "0"))
+        e.cmb_t1_mem.set(f"M{row.get('t1_mem', '0')}")
+        set_entry(e.ent_t2_sp, row.get("t2_sp", "0"))
+        e.cmb_t2_mem.set(f"M{row.get('t2_mem', '0')}")

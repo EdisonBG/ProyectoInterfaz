@@ -1,7 +1,7 @@
 tmin,pos_ini,tA,tB,pres,p1_on,p1_t,p2_on,p2_t,mfc1_gas,mfc1_f,mfc2_gas,mfc2_f,mfc3_gas,mfc3_f,mfc4_gas,mfc4_f,sp1,mem1,sp2,mem2
+,A,,,,1,,0,,O2,,N2,,N2,,H2,,,M4,,M4
 ,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
-,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
-,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
-,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
-,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
+,B,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M1
+,A,,,,0,,0,,N2,,CO2,,N2,,H2,,,M0,,M0
+,A,,,,0,,0,,O2,,CO2,,Aire,,H2,,,M0,,M0
 ,A,,,,0,,0,,O2,,CO2,,N2,,H2,,,M0,,M0
