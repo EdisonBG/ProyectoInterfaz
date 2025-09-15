@@ -377,8 +377,8 @@ class EtapaAccordion(ttk.Frame):
         ps10 = int(round(ps * 10))
 
         # Peristálticas
-        p1_on = 1 if self.peri1_on.get() else 0
-        p2_on = 1 if self.peri2_on.get() else 0
+        p1_on = 1 if self.peri1_on.get() else 2
+        p2_on = 1 if self.peri2_on.get() else 2
         p1_t = clamp(self._int_or_zero(self.ent_p1_t), 1, 10**6) if p1_on else 0
         p2_t = clamp(self._int_or_zero(self.ent_p2_t), 1, 10**6) if p2_on else 0
 
