@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import matplotlib.dates as mdates
 
 from .barra_navegacion import BarraNavegacion
 
@@ -159,6 +160,13 @@ class VentanaGraph(tk.Frame):
         self.ax.set_xlabel("Tiempo")
         self.ax.set_ylabel("Valor")
         self.ax.grid(True, linestyle="--", alpha=0.3)
+
+        # --- Formato de tiempo HH:MM en el eje X ---
+        locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
+        formatter = mdates.DateFormatter("%H:%M")
+        self.ax.xaxis.set_major_locator(locator)
+        self.ax.xaxis.set_major_formatter(formatter)
+        self.fig.autofmt_xdate()  # opcional: inclina etiquetas si hace falta
 
         # Crear línea por serie (se vacían si no están seleccionadas)
         self._lines = {}
