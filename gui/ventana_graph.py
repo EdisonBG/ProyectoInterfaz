@@ -7,13 +7,13 @@ from tkinter import ttk, messagebox
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
-import matplotlib.dates as mdates
+from matplotlib.ticker import FuncFormatter
 
 from .barra_navegacion import BarraNavegacion
 
 
 # ====== Definición de variables que graficamos / registramos ======
-# Mapeo: clave interna -> (etiqueta legible, unidad, índice_en_msg, escalar)
+# Mapeo: clave interna -> (etiqueta, unidad, índice_en_msg, escalar)
 # * Índices en el mensaje CMD=5 (después del "5"):
 #   1: T_omega1, 2: T_omega2, 3: T_horno1, 4: T_horno2,
 #   5: T_cond1, 6: T_cond2,
@@ -45,17 +45,15 @@ SERIES_ORDER = [
     "MFC_O2", "MFC_CO2", "MFC_N2", "MFC_H2",
 ]
 
-# tope de puntos en memoria para la gráfica (2h a 5s ≈ 1440)
-MAX_POINTS = 2 * 60 * 60 // 5
-
 
 class VentanaGraph(tk.Frame):
     """
-    - Botón toggle "Activar gráfica": muestreo cada 5 s (no bloqueante) de self._last_snapshot
-    - Botón toggle "Registrar valores": escribe CSV cada 1 s (append, con cabecera si no existe)
-    - Checkboxes para elegir variables a graficar (si ninguna marcada, se avisa y no inicia)
-    - Gráfica matplotlib embebida en Tk
-    - Método público on_rx_cmd5(partes) para alimentar la ventana con el último snapshot
+    - Botón toggle "Iniciar gráfica": muestreo periódico del último snapshot (periodo configurable).
+    - Botón "Pausar/Reanudar": congela/continúa el tiempo relativo sin borrar datos.
+    - Botón toggle "Registro CSV": escribe cada 1 s (append con cabecera si no existe).
+    - Checkboxes para elegir variables a graficar (si ninguna, se avisa).
+    - Eje X relativo en MM:SS que arranca en 0; al detener se limpia todo.
+    - on_rx_cmd5(partes): recibe $;5;...;! con datos; presiones y flujos se dividen entre 10.
     """
 
     def __init__(self, master, controlador, arduino):
@@ -63,23 +61,28 @@ class VentanaGraph(tk.Frame):
         self.controlador = controlador
         self.arduino = arduino
 
-        # Exponer la ventana al controlador para recibir CMD=5
-        # (tu manejador central hace: getattr(self, "_ventana_graph", None))
+        # Exponer la ventana al controlador para recibir CMD=5 desde su manejador central
         if hasattr(self.controlador, "__setattr__"):
             setattr(self.controlador, "_ventana_graph", self)
 
         # Estado
         self._graph_active = False
+        self._graph_paused = False
         self._log_active = False
         self._graph_job = None
         self._log_job = None
+
+        # Tiempo relativo y periodo
+        self._elapsed_sec = 0               # segundos acumulados MM:SS
+        self._sample_period = 5             # segundos por tick de gráfica
+        self._max_points = max(1, (2 * 60 * 60) // self._sample_period)  # ~2 horas
 
         # Último snapshot normalizado (unidades finales)
         self._last_snapshot = None  # dict o None
 
         # Buffers para gráfica
         self._buffers = {k: [] for k in SERIES_ORDER}
-        self._times = []  # datetime
+        self._times = []  # lista de segundos relativos (float/int)
 
         # CSV path en raíz del proyecto
         self._csv_path = os.path.abspath(
@@ -89,15 +92,13 @@ class VentanaGraph(tk.Frame):
         # Matplotlib embebido
         self.fig = None
         self.ax = None
-        self.mpl_canvas = None  # <- IMPORTANTE: canvas de Matplotlib
+        self.mpl_canvas = None
 
-        self._lines = {}  # key -> Line2D
-        self._series_vars = {}  # key -> BooleanVar
+        self._lines = {}          # key -> Line2D
+        self._series_vars = {}    # key -> BooleanVar
         self._need_legend_refresh = True
 
         self._build_ui()
-
-        # Cancelar timers si destruyen el frame (evita callbacks huérfanos)
         self.bind("<Destroy>", self._on_destroy)
 
     # ========================= UI =========================
@@ -121,19 +122,33 @@ class VentanaGraph(tk.Frame):
         # Controles superiores
         controls = ttk.Frame(wrap)
         controls.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        controls.grid_columnconfigure(6, weight=1)
+        controls.grid_columnconfigure(8, weight=1)
 
-        self.btn_graph = ttk.Button(controls, text="Activar gráfica", command=self._toggle_graph)
+        self.btn_graph = ttk.Button(controls, text="Iniciar gráfica", command=self._toggle_graph)
         self.btn_graph.grid(row=0, column=0, padx=4)
 
-        self.btn_log = ttk.Button(controls, text="Iniciar registro (CSV)", command=self._toggle_log)
-        self.btn_log.grid(row=0, column=1, padx=4)
+        self.btn_pause = ttk.Button(controls, text="Pausar", command=self._toggle_pause, state="disabled")
+        self.btn_pause.grid(row=0, column=1, padx=4)
 
-        ttk.Button(controls, text="Seleccionar todo", command=self._select_all).grid(row=0, column=3, padx=(20, 4))
-        ttk.Button(controls, text="Ninguno", command=self._select_none).grid(row=0, column=4, padx=4)
+        self.btn_log = ttk.Button(controls, text="Iniciar registro (CSV)", command=self._toggle_log)
+        self.btn_log.grid(row=0, column=2, padx=4)
+
+        # Selector de periodo (1..60 s)
+        ttk.Label(controls, text="Periodo (s):").grid(row=0, column=3, padx=(20, 4))
+        self.var_period = tk.IntVar(value=self._sample_period)
+        spn = ttk.Spinbox(
+            controls, from_=1, to=60, width=5, textvariable=self.var_period,
+            command=self._on_period_change, justify="center"
+        )
+        spn.grid(row=0, column=4, padx=4)
+        spn.bind("<Return>", lambda _e: self._on_period_change())
+        spn.bind("<FocusOut>", lambda _e: self._on_period_change())
+
+        ttk.Button(controls, text="Seleccionar todo", command=self._select_all).grid(row=0, column=5, padx=(20, 4))
+        ttk.Button(controls, text="Ninguno", command=self._select_none).grid(row=0, column=6, padx=4)
 
         self.lbl_status = ttk.Label(controls, text="Gráfica: OFF   |   Registro: OFF")
-        self.lbl_status.grid(row=0, column=5, padx=10, sticky="w")
+        self.lbl_status.grid(row=0, column=7, padx=10, sticky="w")
 
         # Selección de series (checkboxes)
         selbox = ttk.LabelFrame(wrap, text="Variables a graficar")
@@ -157,19 +172,18 @@ class VentanaGraph(tk.Frame):
 
         self.fig = Figure(figsize=(7, 4), dpi=100)
         self.ax = self.fig.add_subplot(111)
-        self.ax.set_xlabel("Tiempo")
+        self.ax.set_xlabel("Tiempo (MM:SS)")
         self.ax.set_ylabel("Valor")
         self.ax.grid(True, linestyle="--", alpha=0.3)
 
-        # --- Formato de tiempo HH:MM en el eje X ---
-        locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
-        formatter = mdates.DateFormatter("%H:%M:%S")
-        self.ax.xaxis.set_major_locator(locator)
-        self.ax.xaxis.set_major_formatter(formatter)
-        self.fig.autofmt_xdate()  # opcional: inclina etiquetas si hace falta
+        # Formateador MM:SS del eje X (segundos relativos)
+        def _fmt_mmss(x, _pos):
+            total = int(max(0, x))
+            m, s = divmod(total, 60)
+            return f"{m:02d}:{s:02d}"
+        self.ax.xaxis.set_major_formatter(FuncFormatter(_fmt_mmss))
 
-        # Crear línea por serie (se vacían si no están seleccionadas)
-        self._lines = {}
+        # Líneas por serie (vacías; se dibujan si la serie está seleccionada)
         for key in SERIES_ORDER:
             line, = self.ax.plot([], [], label=self._series_label(key))
             self._lines[key] = line
@@ -184,8 +198,8 @@ class VentanaGraph(tk.Frame):
     def on_rx_cmd5(self, partes):
         """
         Llamar desde el manejador central cuando llegue: $;5;...;!
-        'partes' es la lista de tokens sin '$' ni '!' (p.ej. ['5','omega1','omega2',...])
-        Normaliza presiones (÷10) y flujos (÷10). Temperaturas igual.
+        'partes' es la lista de tokens sin '$' ni '!' (p.ej. ['5', ...])
+        Normaliza presiones (÷10) y flujos (÷10). Temperaturas tal cual.
         """
         try:
             if not partes or partes[0] != "5":
@@ -201,7 +215,6 @@ class VentanaGraph(tk.Frame):
             for key in SERIES_ORDER:
                 _, _, idx, scale = SERIES_DEF[key]
                 val = fidx(idx, 0.0) * scale
-                # Redondeo suave
                 if key.startswith("P_") or key.startswith("MFC_"):
                     val = round(val, 1)
                 snap[key] = val
@@ -214,22 +227,46 @@ class VentanaGraph(tk.Frame):
     # ========================= Toggle actions =========================
     def _toggle_graph(self):
         if not self._graph_active:
-            # Verificar que haya al menos una serie seleccionada
+            # Verificar selección
             if not any(v.get() for v in self._series_vars.values()):
                 messagebox.showwarning("Gráfica", "Selecciona al menos una variable para graficar.")
                 return
+            # Arranque limpio
+            self._reset_plot_buffers()
             self._graph_active = True
+            self._graph_paused = False
             self.btn_graph.configure(text="Detener gráfica")
-            self._graph_tick()  # arranca ciclo 5 s
+            self.btn_pause.configure(text="Pausar", state="normal")
+            self._graph_tick()
         else:
+            # Detener y limpiar todo
             self._graph_active = False
-            self.btn_graph.configure(text="Activar gráfica")
+            self._graph_paused = False
+            self.btn_graph.configure(text="Iniciar gráfica")
+            self.btn_pause.configure(text="Pausar", state="disabled")
             if self._graph_job:
                 try:
                     self.after_cancel(self._graph_job)
                 except Exception:
                     pass
                 self._graph_job = None
+            self._reset_plot_buffers()
+        self._update_status()
+
+    def _toggle_pause(self):
+        if not self._graph_active:
+            return
+        self._graph_paused = not self._graph_paused
+        self.btn_pause.configure(text=("Reanudar" if self._graph_paused else "Pausar"))
+        if not self._graph_paused:
+            # Reanudar ciclo
+            if self._graph_job:
+                try:
+                    self.after_cancel(self._graph_job)
+                except Exception:
+                    pass
+            self._graph_job = self.after(self._sample_period * 1000, self._graph_tick)
+        # (si se pausa, simplemente no programamos el siguiente tick)
         self._update_status()
 
     def _toggle_log(self):
@@ -259,35 +296,40 @@ class VentanaGraph(tk.Frame):
         self._refresh_legend_next()
 
     def _update_status(self):
+        status_g = "ON" if self._graph_active else "OFF"
+        if self._graph_active and self._graph_paused:
+            status_g += " (PAUSA)"
         self.lbl_status.configure(
-            text=f"Gráfica: {'ON' if self._graph_active else 'OFF'}   |   Registro: {'ON' if self._log_active else 'OFF'}"
+            text=f"Gráfica: {status_g}   |   Registro: {'ON' if self._log_active else 'OFF'}   |   Periodo: {self._sample_period}s"
         )
 
     # ========================= Ciclos (after) =========================
     def _graph_tick(self):
-        """Cada 5 s: toma el último snapshot y actualiza buffers y figura."""
-        if not self._graph_active:
+        """Cada periodo: toma el último snapshot y actualiza buffers/figura."""
+        if not self._graph_active or self._graph_paused:
             return
 
         if self._last_snapshot is not None:
-            now = datetime.now()
-            self._times.append(now)
-            if len(self._times) > MAX_POINTS:
-                self._times = self._times[-MAX_POINTS:]
+            # avanza tiempo relativo
+            self._elapsed_sec += self._sample_period
+            t = self._elapsed_sec
+            self._times.append(t)
+            if len(self._times) > self._max_points:
+                self._times = self._times[-self._max_points:]
 
             # Actualizar buffers por serie
             for key in SERIES_ORDER:
                 val = self._last_snapshot.get(key, 0.0)
                 buf = self._buffers[key]
                 buf.append(val)
-                if len(buf) > MAX_POINTS:
-                    self._buffers[key] = buf[-MAX_POINTS:]
+                if len(buf) > self._max_points:
+                    self._buffers[key] = buf[-self._max_points:]
 
             # Redibujar
             self._redraw_plot()
 
         # Reprogramar
-        self._graph_job = self.after(5000, self._graph_tick)
+        self._graph_job = self.after(self._sample_period * 1000, self._graph_tick)
 
     def _log_tick(self):
         """Cada 1 s: escribe línea CSV con timestamp + snapshot (si hay snapshot)."""
@@ -314,19 +356,15 @@ class VentanaGraph(tk.Frame):
         if not self._need_legend_refresh or self.ax is None:
             return
 
-        # Mostrar en leyenda solo las series seleccionadas
-        handles = []
-        labels = []
+        handles, labels = [], []
         for key in SERIES_ORDER:
             if self._series_vars[key].get():
                 handles.append(self._lines[key])
                 labels.append(self._series_label(key))
 
-        # Limpiar leyenda previa
         leg = self.ax.get_legend()
         if leg:
             leg.remove()
-
         if handles:
             self.ax.legend(handles, labels, loc="upper left", fontsize=8)
 
@@ -338,7 +376,6 @@ class VentanaGraph(tk.Frame):
         if self.ax is None or self.mpl_canvas is None:
             return
 
-        # Actualizar data en líneas (las no seleccionadas se vacían)
         xs = self._times
         for key in SERIES_ORDER:
             ln = self._lines[key]
@@ -347,13 +384,52 @@ class VentanaGraph(tk.Frame):
             else:
                 ln.set_data([], [])
 
-        # Autoscale y eje tiempo
-        self.ax.relim()
-        self.ax.autoscale_view()
-        self.fig.autofmt_xdate()
+        # Eje X relativo desde 0 hasta el último tiempo
+        xmax = max(xs) if xs else 1
+        self.ax.set_xlim(left=0, right=xmax if xmax > 1 else 1)
 
-        self._refresh_legend()  # por si cambió la selección
+        # Autoscale Y según series visibles
+        self.ax.relim()
+        self.ax.autoscale_view(scalex=False, scaley=True)
+
+        self._refresh_legend()
         self.mpl_canvas.draw_idle()
+
+    def _reset_plot_buffers(self):
+        """Limpia buffers y reinicia el tiempo relativo a 0; deja la figura en blanco."""
+        self._elapsed_sec = 0
+        self._times = []
+        self._buffers = {k: [] for k in SERIES_ORDER}
+        for key, ln in self._lines.items():
+            ln.set_data([], [])
+        self.ax.set_xlim(0, 1)
+        self.ax.relim()
+        self.ax.autoscale_view(scalex=False, scaley=True)
+        if self.mpl_canvas:
+            self.mpl_canvas.draw_idle()
+
+    # ========================= Periodo =========================
+    def _on_period_change(self):
+        """Lee el Spinbox, lo limita a [1..60], aplica el nuevo periodo y recalcula ventana."""
+        try:
+            val = int(self.var_period.get())
+        except Exception:
+            val = self._sample_period
+        val = max(1, min(60, val))
+        if val != self._sample_period:
+            self._sample_period = val
+            self.var_period.set(val)
+            # Recalcular ~2h de historia
+            self._max_points = max(1, (2 * 60 * 60) // self._sample_period)
+            # Reprogramar siguiente tick si está corriendo y no en pausa
+            if self._graph_active and not self._graph_paused:
+                if self._graph_job:
+                    try:
+                        self.after_cancel(self._graph_job)
+                    except Exception:
+                        pass
+                self._graph_job = self.after(self._sample_period * 1000, self._graph_tick)
+        self._update_status()
 
     # ========================= CSV helpers =========================
     def _append_csv(self, row_values):
