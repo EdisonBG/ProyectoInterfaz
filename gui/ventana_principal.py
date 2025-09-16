@@ -55,7 +55,7 @@ class VentanaPrincipal(tk.Frame):
         # cargar imágenes
         img_path = os.path.join(os.path.dirname(__file__), "..", "img")
         # Usa una sola imagen (fondo). Ajusta el nombre a tu archivo real.
-        fondo_file = os.path.join(img_path, "equipo_on.png")
+        fondo_file = os.path.join(img_path, "equipo_DFM.png")
         if not os.path.exists(fondo_file):
             # fallback por si no existe
             fondo_file = os.path.join(img_path, "equipo_off.png")
