@@ -163,7 +163,7 @@ class VentanaGraph(tk.Frame):
 
         # --- Formato de tiempo HH:MM en el eje X ---
         locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
-        formatter = mdates.DateFormatter("%H:%M")
+        formatter = mdates.DateFormatter("%H:%M:%S")
         self.ax.xaxis.set_major_locator(locator)
         self.ax.xaxis.set_major_formatter(formatter)
         self.fig.autofmt_xdate()  # opcional: inclina etiquetas si hace falta
