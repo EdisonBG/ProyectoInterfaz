@@ -33,7 +33,10 @@ def hhmm_from_hours(horas_float: float) -> str:
 
 class VentanaPrincipal(tk.Frame):
     """
-    Ventana principal de monitoreo con imagen de fondo y 15 labels posicionados.
+    Ventana principal con Canvas:
+      - Dibuja la imagen de fondo con create_image
+      - Coloca los labels como ventanas del Canvas (create_window)
+      - Evita problemas de stacking/ocultamiento
     """
 
     def __init__(self, master, controlador, arduino):
@@ -69,12 +72,12 @@ class VentanaPrincipal(tk.Frame):
         self.option_add("*TLabel.Font", ("TkDefaultFont", 12))
         self.configure(bg=self._BG)
 
-        # cargar imágenes
+        # cargar imagen de fondo
         img_path = os.path.join(os.path.dirname(__file__), "..", "img")
         fondo_file = os.path.join(img_path, "equipo_DFM.png")
         if not os.path.exists(fondo_file):
             fondo_file = os.path.join(img_path, "equipo_off.png")
-        self.img_fondo = PhotoImage(file=fondo_file)
+        self.img_fondo = PhotoImage(file=fondo_file)  # mantener referencia en self
 
         self._build_ui()
 
@@ -86,7 +89,7 @@ class VentanaPrincipal(tk.Frame):
 
         BarraNavegacion(self, self.controlador).grid(row=0, column=0, sticky="nsw", padx=0, pady=10)
 
-        cont = ttk.Frame(self, style="Principal.Container.TFrame")
+        cont = ttk.Frame(self)
         cont.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         cont.grid_rowconfigure(0, weight=1)
         cont.grid_columnconfigure(0, weight=1)
@@ -95,7 +98,7 @@ class VentanaPrincipal(tk.Frame):
         card = tk.Frame(cont, bg=self._BG)
         card.grid(row=0, column=0, sticky="nsew")
         card.grid_columnconfigure(0, weight=1)
-        card.grid_rowconfigure(0, weight=1)
+        card.grid_rowconfigure(1, weight=1)  # <— ¡ANTES estaba 0!
 
         tk.Frame(card, bg=self._BORDER, height=2).grid(row=0, column=0, sticky="ew")
         border = tk.Frame(card, bg=self._BORDER)
@@ -103,32 +106,27 @@ class VentanaPrincipal(tk.Frame):
         border.grid_columnconfigure(0, weight=1)
         border.grid_rowconfigure(0, weight=1)
 
-        # Área gráfica expandible
-        self.area_grafica = tk.Frame(border, bg=self._SURFACE, highlightthickness=0)
-        self.area_grafica.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
-        self.area_grafica.grid_rowconfigure(0, weight=1)
-        self.area_grafica.grid_columnconfigure(0, weight=1)
+        # Área gráfica con CANVAS (ocupa todo)
+        self.canvas = tk.Canvas(border, bg=self._SURFACE, highlightthickness=0, bd=0)
+        self.canvas.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
 
-        self.lbl_fondo = tk.Label(self.area_grafica, image=self.img_fondo,
-                                  bg=self._SURFACE, borderwidth=0, anchor="nw")
-        self.lbl_fondo.place(x=0, y=0)
+        # Imagen de fondo
+        self._bg_img_id = self.canvas.create_image(0, 0, image=self.img_fondo, anchor="nw")
 
-        # >>> FIX: color válido (sin alfa RGBA) <<<
-        self._size_hint = tk.Label(
-            self.area_grafica, text="",
-            bg="#000000",  # color sólido compatible en Windows/Linux/macOS
-            fg="white",
-            font=("TkDefaultFont", 10, "bold")
-        )
-        self._size_hint.place(x=8, y=8)
+        # Hint de tamaño (opcional)
+        self._size_hint = tk.Label(self, text="", bg="#000000", fg="white", font=("TkDefaultFont", 10, "bold"))
+        self._size_hint_win = self.canvas.create_window(8, 8, anchor="nw", window=self._size_hint)
 
+        # Labels sobre el canvas
         self._vars = {}
         self._labels = {}
+        self._label_windows = {}
         self._create_all_labels()
 
-        # Reporte de tamaño inicial y en cada resize
+        # Actualiza hint
         self.after(200, self._report_image_size)
-        self.area_grafica.bind("<Configure>", lambda e: self._report_image_size())
+        self.canvas.bind("<Configure>", lambda e: self._report_image_size())
+
 
     def _chip_style_for(self, key: str):
         if key.startswith("temp_"):
@@ -169,18 +167,18 @@ class VentanaPrincipal(tk.Frame):
             self._vars[key] = v
             x, y = LABEL_POS.get(key, (10, 10))
 
-            bg, fg, br = self._chip_style_for(key)
-            lbl = tk.Label(
-                self.area_grafica, textvariable=v,
-                bg=bg, fg=fg,
-                font=("Arial", 11, "bold"),
-                relief="solid", bd=1, highlightthickness=0,
-                padx=8, pady=3
-            )
-            lbl.configure(highlightbackground=br)
-            lbl.place(x=x, y=y)
-            self._labels[key] = lbl
+            bg, fg, _ = self._chip_style_for(key)
+            lbl = tk.Label(self.canvas, textvariable=v,
+                           bg=bg, fg=fg,
+                           font=("Arial", 11, "bold"),
+                           relief="solid", bd=1, padx=8, pady=3, highlightthickness=0)
+            # Colocar el label dentro del canvas
+            win_id = self.canvas.create_window(x, y, anchor="nw", window=lbl)
 
+            self._labels[key] = lbl
+            self._label_windows[key] = win_id
+
+    # ---------------- RX -> actualización ----------------
     def aplicar_datos_cmd5(self, partes: list[str]):
         if len(partes) < 16:
             return
@@ -236,8 +234,11 @@ class VentanaPrincipal(tk.Frame):
         self._vars["tiempo_encendido"].set(f"On: {hhmm}")
 
     def _report_image_size(self):
-        w = max(self.area_grafica.winfo_width(), 0)
-        h = max(self.area_grafica.winfo_height(), 0)
+        w = max(self.canvas.winfo_width(), 0)
+        h = max(self.canvas.winfo_height(), 0)
         msg = f"Tamaño recomendado de imagen: {w} × {h}px"
         self._size_hint.config(text=msg)
+        # Mantener el hint arriba a la izquierda
+        self.canvas.coords(self._size_hint_win, 8, 8)
         print("[Principal]", msg)
+
