@@ -74,7 +74,7 @@ class VentanaPrincipal(tk.Frame):
 
         # cargar imagen de fondo
         img_path = os.path.join(os.path.dirname(__file__), "..", "img")
-        fondo_file = os.path.join(img_path, "equipo_DFM.png")
+        fondo_file = os.path.join(img_path, "equipo_DFM.jpg")
         if not os.path.exists(fondo_file):
             fondo_file = os.path.join(img_path, "equipo_off.png")
         self.img_fondo = PhotoImage(file=fondo_file)  # mantener referencia en self
