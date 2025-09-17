@@ -6,7 +6,7 @@ from tkinter import PhotoImage
 
 class BarraNavegacion(ttk.Frame):
     # Ancho uniforme para toda la app
-    ANCHO = 230  # ajusta aquí una sola vez
+    ANCHO = 170  # ajusta aquí una sola vez
      
     def __init__(self, parent, controlador):
         super().__init__(parent)
