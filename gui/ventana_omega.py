@@ -15,17 +15,37 @@ class VentanaOmega(tk.Frame):
         # Fila principal expansible
         self.grid_rowconfigure(0, weight=1)
 
-        # Columna 0 = barra fija; 1 y 2 = paneles expansibles y uniformes
-        self.grid_columnconfigure(
-            0, weight=0)     # ancho fijo de barra
+        # [UI] Columna 0 con minsize fijo (no uses .configure(width) en la barra)
+        self.grid_columnconfigure(0, weight=0, minsize=230)  # ancho fijo de barra
         self.grid_columnconfigure(1, weight=1, uniform="omega")  # panel 1
         self.grid_columnconfigure(2, weight=1, uniform="omega")  # panel 2
 
+        # [UI] Tema/estilos base coherentes con el resto de la app (solo visual)
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass
+
+        # [UI] Tokens de color (oscuro) – no afecta a lógica
+        BG = "#0f172a"
+        SURFACE = "#111827"
+        TEXT = "#e5e7eb"
+        BORDER = "#1f2937"
+
+        # [UI] Fondo del contenedor y fuente general ligeramente mayor para táctil
+        self.configure(background=BG)
+        self.option_add("*Font", ("TkDefaultFont", 12))
+
+        # [UI] Frame “panel” (wrapper) estilizado como tarjeta
+        st.configure("OmegaPanel.TFrame", background=SURFACE)
+        st.configure("Omega.TSeparator", background=BORDER)
+
         # Barra de navegacion (vertical a la izquierda)
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=230)
-        barra.grid(row=0, column=0, sticky="nsw")       # <-- sin padding
-        barra.grid_propagate(False)
+        barra.grid(row=0, column=0, sticky="nsw")
+        self.grid_columnconfigure(0, minsize=BarraNavegacion.ANCHO)  # asegura mismo ancho
+
 
         # Tamano fijo del marco del panel (ajustar / pantalla 1280x800)
         PANEL_W = 280
@@ -33,25 +53,31 @@ class VentanaOmega(tk.Frame):
 
         self.paneles = {}  # <--- Guardamos referencias por id_omega
 
-        # Wrapper 1
-        wrapper1 = tk.Frame(self, width=PANEL_W, height=PANEL_H)
-        wrapper1.grid(row=0, column=1, padx=10, pady=10, sticky="n")
-        wrapper1.grid_propagate(True)              # permitir crecer en alto
+        # [UI] Tema y colores base
+        st = ttk.Style(self)
+        try: st.theme_use("clam")
+        except: pass
+        BG = "#0f172a"; SURFACE = "#111827"
+        self.configure(background=BG)
+        st.configure("OmegaWrapper.TFrame", background=SURFACE)
 
-        panel1 = PanelOmega(wrapper1, id_omega=1,
-                            controlador=self.controlador, arduino=self.arduino)
-        panel1.pack()  # usa pack simple dentro del wrapper (o .grid, pero sin place)
-        self.paneles[1] = panel1
+        # Wrapper 1
+        wrapper1 = ttk.Frame(self, style="OmegaWrapper.TFrame", padding=(14,14))  # [UI]
+        wrapper1.grid(row=0, column=1, padx=12, pady=12, sticky="nsew")           # [UI]
+        wrapper1.grid_propagate(True)
+        panel1 = PanelOmega(wrapper1, id_omega=1, controlador=self.controlador, arduino=self.arduino)
+        panel1.pack(fill="both", expand=True)  # [UI]
 
         # Wrapper 2
-        wrapper2 = tk.Frame(self, width=PANEL_W)
-        wrapper2.grid(row=0, column=2, padx=10, pady=10, sticky="n")
+        wrapper2 = ttk.Frame(self, style="OmegaWrapper.TFrame", padding=(14,14))  # [UI]
+        wrapper2.grid(row=0, column=2, padx=12, pady=12, sticky="nsew")           # [UI]
         wrapper2.grid_propagate(True)
+        panel2 = PanelOmega(wrapper2, id_omega=2, controlador=self.controlador, arduino=self.arduino)
+        panel2.pack(fill="both", expand=True)  # [UI]
 
-        panel2 = PanelOmega(wrapper2, id_omega=2,
-                            controlador=self.controlador, arduino=self.arduino)
-        panel2.pack()
-        self.paneles[2] = panel2
+        # [UI] Forzar un repintado con estilos ya aplicados (evita parches claros al abrir)
+        self.update_idletasks()
+        self.after_idle(self.update_idletasks)
 
         # --- Metodo llamado desde la App para volcar estados en los dos paneles ---
     def aplicar_estado_omegas(self, datos_omega1, datos_omega2):

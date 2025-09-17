@@ -32,7 +32,7 @@ class VentanaRampa(tk.Toplevel):
         self.arduino = arduino
         self.id_omega = id_omega
         self.title(f"Rampa - Omega {id_omega}")
-        self.geometry("400x560")
+        self.geometry("420x600")
         self.resizable(False, False)
 
         # Referencia al controlador (Aplicacion) si existe, para:
@@ -50,69 +50,152 @@ class VentanaRampa(tk.Toplevel):
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW",  self._on_close)
 
-        ttk.Label(self, text=f"Configuracion de Rampa - Omega {id_omega}",
-                  font=("Arial", 14, "bold")).pack(pady=10)
+        # =========================
+        # [UI] Tema / estilos ttk
+        # =========================
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass
 
-        # Contenedor scrollable
-        cont = ttk.Frame(self)
-        cont.pack(pady=5)
+        # [UI] Tokens de color coherentes con el resto
+        BG = "#0f172a"          # fondo ventana
+        SURFACE = "#111827"     # paneles/frames
+        TEXT = "#e5e7eb"        # texto
+        MUTED = "#9ca3af"
+        BORDER = "#1f2937"
+        PRIMARY = "#22c55e"
+        PRIMARY_ACTIVE = "#16a34a"
+
+        # [UI] Fondo de la toplevel (tk.Toplevel no es ttk)
+        self.configure(bg=BG)
+
+        # [UI] Tipografías un poco más grandes para táctil
+        self.option_add("*Font", ("TkDefaultFont", 12))
+        self.option_add("*TButton.Font", ("TkDefaultFont", 12, "bold"))
+        self.option_add("*Entry.Font", ("TkDefaultFont", 12))
+
+        # [UI] Estilos base
+        st.configure("Rampa.TFrame", background=SURFACE)
+        st.configure("Rampa.TLabel", background=SURFACE, foreground=TEXT)
+        st.configure("RampaMuted.TLabel", background=SURFACE, foreground=MUTED)
+
+        st.configure(
+            "Rampa.TEntry",
+            fieldbackground=BG,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            lightcolor="#2563eb",
+            darkcolor=BORDER,
+            padding=8
+        )
+
+        st.configure(
+            "Rampa.TButton",
+            padding=(12, 10),
+            relief="raised",
+            borderwidth=2,
+            background=SURFACE,
+            foreground=TEXT
+        )
+        st.map("Rampa.TButton",
+               background=[("active", BORDER)],
+               relief=[("pressed", "sunken")])
+
+        st.configure(
+            "RampaPrimary.TButton",
+            padding=(14, 12),
+            relief="raised",
+            borderwidth=2,
+            background=PRIMARY,
+            foreground="#052e16"
+        )
+        st.map("RampaPrimary.TButton",
+               background=[("active", PRIMARY_ACTIVE)],
+               relief=[("pressed", "sunken")])
+
+        # =========================
+        # Cabecera
+        # =========================
+        header = ttk.Frame(self, style="Rampa.TFrame", padding=(14, 12))  # [UI]
+        header.pack(fill="x")
+        ttk.Label(
+            header,
+            text=f"Configuracion de Rampa - Omega {id_omega}",
+            style="Rampa.TLabel",
+            font=("Arial", 14, "bold")
+        ).pack(anchor="center")
+
+        # =========================
+        # Contenido (scrollable simple)
+        # =========================
+        body = ttk.Frame(self, style="Rampa.TFrame", padding=(14, 12))  # [UI]
+        body.pack(fill="both", expand=True)
+
+        # [UI] contenedor de pasos
+        cont = ttk.Frame(body, style="Rampa.TFrame")
+        cont.pack(pady=6, fill="x")
 
         self.campos = []  # Lista de (entry_sp, entry_tiempo) para pasos 0..7
 
         # pasos 0..7
         for i in range(8):
-            frame_paso = ttk.Frame(cont)
-            frame_paso.pack(pady=4, anchor="w")
+            frame_paso = ttk.Frame(cont, style="Rampa.TFrame")  # [UI]
+            frame_paso.pack(pady=4, anchor="w", fill="x")        # [UI]
 
             for c in (0, 1, 2, 3, 4):
-                frame_paso.grid_columnconfigure(c, weight=0)
+                frame_paso.grid_columnconfigure(c, weight=1 if c in (2, 4) else 0)  # [UI] entradas expanden
 
-            ttk.Label(frame_paso, text=f"Paso {i}")\
-                .grid(row=0, column=0, padx=5, sticky="w")
+            ttk.Label(frame_paso, text=f"Paso {i}", style="RampaMuted.TLabel")\
+                .grid(row=0, column=0, padx=6, sticky="w")
 
-            ttk.Label(frame_paso, text="Setpoint:")\
-                .grid(row=0, column=1, padx=5, sticky="e")
-            entrada_sp = ttk.Entry(frame_paso, width=10)
-            entrada_sp.grid(row=0, column=2)
+            ttk.Label(frame_paso, text="Setpoint:", style="Rampa.TLabel")\
+                .grid(row=0, column=1, padx=6, sticky="e")
+            entrada_sp = ttk.Entry(frame_paso, width=10, style="Rampa.TEntry")  # [UI]
+            entrada_sp.grid(row=0, column=2, sticky="ew")                        # [UI]
             entrada_sp.bind("<Button-1>", lambda e, entry=entrada_sp: TecladoNumerico(
                 self, entry, on_submit=lambda v, ent=entry: self._rampa_aplicar_sp(ent, v)))
 
-            ttk.Label(frame_paso, text="Tiempo (min):").grid(
-                row=0, column=3, padx=5, sticky="e")
-            entrada_tiempo = ttk.Entry(frame_paso, width=10)
-            entrada_tiempo.grid(row=0, column=4)
+            ttk.Label(frame_paso, text="Tiempo (min):", style="Rampa.TLabel")\
+                .grid(row=0, column=3, padx=6, sticky="e")
+            entrada_tiempo = ttk.Entry(frame_paso, width=10, style="Rampa.TEntry")  # [UI]
+            entrada_tiempo.grid(row=0, column=4, sticky="ew")                        # [UI]
             entrada_tiempo.bind(
                 "<Button-1>",
                 lambda e, entry=entrada_tiempo: TecladoNumerico(
-                    self, entry,
-                    on_submit=lambda v, ent=entry: self._rampa_aplicar_t(
-                        ent, v)
+                    self, entry, on_submit=lambda v, ent=entry: self._rampa_aplicar_t(ent, v)
                 )
             )
 
             self.campos.append((entrada_sp, entrada_tiempo))
 
         # paso limite (0..7)
-        frame_lim = ttk.Frame(self)
-        frame_lim.pack(pady=10)
-        ttk.Label(frame_lim, text="Paso limite (0-7):").grid(row=0,
-                                                             column=0, padx=5, sticky="e")
-        self.entry_limite = ttk.Entry(frame_lim, width=6)
-        self.entry_limite.grid(row=0, column=1, padx=5)
-        self.entry_limite.bind(
-            "<Button-1>",
-            lambda e: TecladoNumerico(self, self.entry_limite)
-        )
+        frame_lim = ttk.Frame(body, style="Rampa.TFrame")  # [UI]
+        frame_lim.pack(pady=10, fill="x")                  # [UI]
+        frame_lim.grid_columnconfigure(1, weight=1)        # [UI] para alinear
+
+        ttk.Label(frame_lim, text="Paso limite (0-7):", style="Rampa.TLabel")\
+            .grid(row=0, column=0, padx=6, sticky="e")
+        self.entry_limite = ttk.Entry(frame_lim, width=6, style="Rampa.TEntry")  # [UI]
+        self.entry_limite.grid(row=0, column=1, padx=6, sticky="w")
+        self.entry_limite.bind("<Button-1>", lambda e: TecladoNumerico(self, self.entry_limite))
 
         # boton enviar
-        botones = ttk.Frame(self)
-        botones.pack(pady=15)
-        ttk.Button(botones, text="Enviar", command=self.enviar_rampa).grid(
-            row=0, column=0, padx=8)
+        botones = ttk.Frame(body, style="Rampa.TFrame")    # [UI]
+        botones.pack(pady=12, fill="x")                    # [UI]
+        botones.grid_columnconfigure(0, weight=1)          # [UI]
+        ttk.Button(
+            botones, text="Enviar", command=self.enviar_rampa, style="RampaPrimary.TButton"  # [UI]
+        ).grid(row=0, column=0, padx=8, sticky="ew")       # [UI]
 
         # atajos
         self.bind("<Return>", lambda e: self.enviar_rampa())
         self.bind("<Escape>", lambda e: self.destroy())
+
+        # [UI] Forzar repintado con estilos ya aplicados (evita parches claros al abrir)
+        self.update_idletasks()
+        self.after_idle(self.update_idletasks)
 
         # === Al abrir, solicitar la rampa actual ===
         self._solicitar_rampa_actual()

@@ -4,7 +4,6 @@ from tkinter import ttk, PhotoImage
 from .barra_navegacion import BarraNavegacion
 
 # ========================= POSICIONES DE LOS LABELS =========================
-# Editar estas coordenadas (x, y). Están en píxeles relativos al área de la imagen.
 LABEL_POS = {
     "temp_omega1":       (120,  60),
     "temp_omega2":       (120, 100),
@@ -37,7 +36,7 @@ class VentanaPrincipal(tk.Frame):
     """
     Ventana principal de monitoreo:
       - Imagen de proceso como fondo (fija).
-      - 15 labels con fondo blanco, negrilla, tamaño medio, posicionados por .place() (coordenadas en LABEL_POS).
+      - 15 labels tipo “chip” posicionados por .place() (coordenadas en LABEL_POS).
       - Actualización desde tramas CMD=5:
         $;5;Tomega1;Tomega2;Thorno1;Thorno2;Tcond1;Tcond2;Pmez*10;Ph2*10;Psal*10;
            Q_O2;Q_CO2;Q_N2;Q_H2;PotW;HorasOn;!
@@ -52,12 +51,37 @@ class VentanaPrincipal(tk.Frame):
         if hasattr(self.controlador, "_ventanas"):
             self.controlador._ventanas["VentanaPrincipal"] = self
 
+        # ======== Paleta / estilos sólo visuales (coherente con otras vistas) ========
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass
+
+        self._BG       = "#0f172a"   # fondo app
+        self._SURFACE  = "#111827"   # tarjetas / área gráfica
+        self._BORDER   = "#334155"   # bordes
+        self._TEXT     = "#e5e7eb"   # texto general
+        self._MUTED    = "#9ca3af"   # texto suave
+
+        # “Chips” por categoría (sólo UI)
+        self._COLORS = {
+            "temp":   ("#0ea5e9", "#082f49"),  # azul claro
+            "pres":   ("#f59e0b", "#451a03"),  # ámbar
+            "mfc":    ("#22c55e", "#052e16"),  # verde
+            "power":  ("#a78bfa", "#2e1065"),  # violeta
+            "time":   ("#f97316", "#431407"),  # naranja
+        }
+
+        # tipografía táctil ligeramente mayor
+        self.option_add("*Font", ("TkDefaultFont", 12))
+        self.option_add("*TLabel.Font", ("TkDefaultFont", 12))
+        self.configure(bg=self._BG)
+
         # cargar imágenes
         img_path = os.path.join(os.path.dirname(__file__), "..", "img")
-        # Usa una sola imagen (fondo). Ajusta el nombre a tu archivo real.
         fondo_file = os.path.join(img_path, "equipo_DFM.png")
         if not os.path.exists(fondo_file):
-            # fallback por si no existe
             fondo_file = os.path.join(img_path, "equipo_off.png")
         self.img_fondo = PhotoImage(file=fondo_file)
 
@@ -67,11 +91,13 @@ class VentanaPrincipal(tk.Frame):
     def _build_ui(self):
         # layout: barra izq fija, contenido der expandible
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0, minsize=230)
+        # Ancho uniforme de barra en TODAS las vistas
+        self.grid_columnconfigure(0, weight=0, minsize=getattr(BarraNavegacion, "ANCHO", 230))
         self.grid_columnconfigure(1, weight=1)
 
         # barra navegación
-        BarraNavegacion(self, self.controlador).grid(row=0, column=0, sticky="nsw", padx=0, pady=10)
+        barra = BarraNavegacion(self, self.controlador)
+        barra.grid(row=0, column=0, sticky="nsw", padx=0, pady=10)
 
         # contenedor derecho
         cont = ttk.Frame(self)
@@ -79,23 +105,67 @@ class VentanaPrincipal(tk.Frame):
         cont.grid_rowconfigure(0, weight=1)
         cont.grid_columnconfigure(0, weight=1)
 
-        # área gráfica fija
-        self.area_grafica = tk.Frame(
-            cont, width=900, height=600, bg="white",
-            highlightthickness=1, highlightbackground="#ddd"
-        )
-        self.area_grafica.grid(row=0, column=0, sticky="nsew")
-        self.area_grafica.grid_propagate(False)
+        # Card que envuelve al área gráfica, con borde persistente
+        card = tk.Frame(cont, bg=self._BG)
+        card.grid(row=0, column=0, sticky="nsew")
+        card.grid_columnconfigure(0, weight=1)
+        card.grid_rowconfigure(1, weight=1)  # el cuerpo (row=1) es el que crece
 
-        # fondo con imagen
-        self.lbl_fondo = tk.Label(self.area_grafica, image=self.img_fondo, bg="white", borderwidth=0)
-        # ajusta la posición de la imagen dentro del área (x=0,y=0 la deja en la esquina)
+        # Tira superior (header visual sutil)
+        tk.Frame(card, bg=self._BORDER, height=2).grid(row=0, column=0, sticky="ew")
+
+        # Marco con borde
+        border = tk.Frame(card, bg=self._BORDER)
+        border.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        border.grid_columnconfigure(0, weight=1)
+        border.grid_rowconfigure(0, weight=1)
+
+        # ---------- ÁREA GRÁFICA A PANTALLA COMPLETA ----------
+        # SIN width/height fijos: que crezca al máximo
+        self.area_grafica = tk.Frame(border, bg=self._SURFACE, highlightthickness=0)
+        self.area_grafica.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        # permitir que reparta el espacio interno
+        self.area_grafica.grid_rowconfigure(0, weight=1)
+        self.area_grafica.grid_columnconfigure(0, weight=1)
+
+        # Imagen de fondo (no escalada; la colocamos en 0,0)
+        self.lbl_fondo = tk.Label(self.area_grafica, image=self.img_fondo,
+                                  bg=self._SURFACE, borderwidth=0, anchor="nw")
         self.lbl_fondo.place(x=0, y=0)
+
+        # Indicador del tamaño recomendado (esquina sup-izq)
+        # Ojo: Tkinter no acepta colores con alfa; usamos negro opaco.
+        self._size_hint = tk.Label(self.area_grafica, text="",
+                                   bg="#000000", fg="white",
+                                   font=("TkDefaultFont", 10, "bold"))
+        self._size_hint.place(x=8, y=8)
 
         # crear labels de variables
         self._vars = {}
         self._labels = {}
         self._create_all_labels()
+
+        # Reportar tamaño cuando se muestre y cada vez que cambie
+        self.after(200, self._report_image_size)
+        self.area_grafica.bind("<Configure>", lambda e: self._report_image_size())
+
+    def _chip_style_for(self, key: str):
+        """
+        Devuelve (bg, fg, border) según el tipo de variable para mejorar legibilidad sobre el plano.
+        """
+        if key.startswith("temp_"):
+            c_bg, c_txt = self._COLORS["temp"]
+        elif key.startswith("presion_"):
+            c_bg, c_txt = self._COLORS["pres"]
+        elif key.startswith("mfc_"):
+            c_bg, c_txt = self._COLORS["mfc"]
+        elif key in ("potencia_total",):
+            c_bg, c_txt = self._COLORS["power"]
+        elif key in ("tiempo_encendido",):
+            c_bg, c_txt = self._COLORS["time"]
+        else:
+            c_bg, c_txt = ("#e5e7eb", "#111827")  # neutro
+        return c_bg, c_txt, "#0b1220"  # borde oscuro sutil
 
     def _create_all_labels(self):
         # Definición: clave -> (texto corto, unidad)
@@ -121,11 +191,18 @@ class VentanaPrincipal(tk.Frame):
             v = tk.StringVar(value=f"{short}: -- {unit if unit!='HH:MM' else ''}".strip())
             self._vars[key] = v
             x, y = LABEL_POS.get(key, (10, 10))
+
+            # apariencia de “chip”
+            bg, fg, br = self._chip_style_for(key)
             lbl = tk.Label(
                 self.area_grafica, textvariable=v,
-                bg="white", fg="#111", font=("Arial", 11, "bold"),
-                relief="solid", bd=1, padx=6, pady=3
+                bg=bg, fg=fg,
+                font=("Arial", 11, "bold"),
+                relief="solid", bd=1, highlightthickness=0,
+                padx=8, pady=3
             )
+            # Borde del chip un poco más oscuro
+            lbl.configure(highlightbackground=br)
             lbl.place(x=x, y=y)
             self._labels[key] = lbl
 
@@ -134,11 +211,6 @@ class VentanaPrincipal(tk.Frame):
         """
         Recibe la lista 'partes' sin $ ni ! ya splitteada por ';'.
         Esperado: partes[0] == "5" y len(partes) == 16.
-        Orden:
-          1: Tω1  2: Tω2  3: Th1 4: Th2 5: Tc1 6: Tc2
-          7: Pmez*10 8: Ph2*10 9: Psal*10
-          10: Q_O2 11: Q_CO2 12: Q_N2 13: Q_H2
-          14: Potencia(W) 15: HorasEncendido(float)
         """
         if len(partes) < 16:
             return
@@ -155,7 +227,7 @@ class VentanaPrincipal(tk.Frame):
             except Exception:
                 return default
 
-        # Temps (°C, las muestro con 1 decimal)
+        # Temps (°C, 1 decimal)
         t_omega1 = to_float(partes[1])
         t_omega2 = to_float(partes[2])
         t_h1     = to_float(partes[3])
@@ -199,3 +271,14 @@ class VentanaPrincipal(tk.Frame):
 
         self._vars["potencia_total"].set(f"P Tot: {p_tot} W")
         self._vars["tiempo_encendido"].set(f"On: {hhmm}")
+
+    # ---------- Indicador de tamaño de imagen recomendado ----------
+    def _report_image_size(self):
+        """
+        Muestra e imprime el tamaño óptimo de imagen para que encaje sin escalado.
+        """
+        w = max(self.area_grafica.winfo_width(), 0)
+        h = max(self.area_grafica.winfo_height(), 0)
+        msg = f"Tamaño recomendado de imagen: {w} × {h}px"
+        self._size_hint.config(text=msg)  # indicador en pantalla
+        print("[Principal]", msg)         # y por consola

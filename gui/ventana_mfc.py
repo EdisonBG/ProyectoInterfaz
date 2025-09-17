@@ -47,7 +47,6 @@ class VentanaMfc(tk.Frame):
         },
     }
 
-
     # Gases disponibles y orden para el combobox
     GAS_LIST = ["O2", "N2", "H2", "CO2", "CO", "Aire"]
 
@@ -81,28 +80,166 @@ class VentanaMfc(tk.Frame):
     def _configurar_estilos(self):
         st = ttk.Style(self)
         try:
+            # [UI] Tema base “clam” (estable en Raspberry)
             st.theme_use("clam")
         except Exception:
             pass
-        st.configure("SelBtn.TButton", padding=6)
-        st.map("SelBtn.TButton",
-               background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
-        st.configure("SelBtnOn.TButton", padding=6, background="#007acc", foreground="white")
-        st.map("SelBtnOn.TButton",
-               background=[("!disabled", "#007acc"), ("pressed", "#0062a3")],
-               foreground=[("!disabled", "white")])
+
+        # [UI] ---- Tokens de color y tipografía (alto contraste) ----
+        BG = "#0f172a"
+        SURFACE = "#111827"
+        CARD = "#111827"
+        TEXT = "#e5e7eb"
+        MUTED = "#9ca3af"
+        BORDER = "#1f2937"
+        PRIMARY = "#22c55e"
+        PRIMARY_ACTIVE = "#16a34a"
+        TOGGLE_ON = "#2563eb"
+        TOGGLE_ON_ACTIVE = "#1d4ed8"
+
+        # [UI] Tipografía base más grande para táctil
+        self.option_add("*Font", ("TkDefaultFont", 12))            # texto general
+        self.option_add("*TButton.Font", ("TkDefaultFont", 12, "bold"))
+        self.option_add("*TCombobox*Listbox*Font", ("TkDefaultFont", 12))
+        self.option_add("*Entry.Font", ("TkDefaultFont", 12))
+
+        # [UI] Fondo raíz
+        self.configure(background=BG)
+
+        # [UI] Labels y frames
+        st.configure("TFrame", background=BG)
+        st.configure("TLabel", background=SURFACE, foreground=TEXT)
+        st.configure("Muted.TLabel", background=SURFACE, foreground=MUTED)
+
+        # [UI] Cards (LabelFrame) con mayor padding y título legible
+        st.configure(
+            "Card.TLabelframe",
+            background=CARD,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            relief="flat"
+        )
+        st.configure(
+            "Card.TLabelframe.Label",
+            background=CARD,
+            foreground=TEXT,
+            font=("TkDefaultFont", 13, "bold")  # título de card más grande
+        )
+
+        # [UI] ====== BOTONES CON BORDE Y RELIEVE (sobresalidos) ======
+        # Nota: ttk no tiene “3D” real, pero usamos relief + border + colores para simular.
+        st.configure(
+            "TButton",
+            padding=(14, 12),             # altura táctil
+            relief="raised",              # relieve elevado
+            borderwidth=2,                # borde visible
+            focusthickness=2,
+            focuscolor=TOGGLE_ON,
+            background=SURFACE,
+            foreground=TEXT
+        )
+        st.map(
+            "TButton",
+            background=[("active", BORDER)],
+            relief=[("pressed", "sunken")],  # hundido al presionar
+        )
+
+        # [UI] Botón primario (Enviar flujo) VERDE, elevado
+        st.configure(
+            "Primary.TButton",
+            padding=(16, 14),
+            relief="raised",
+            borderwidth=2,
+            focusthickness=2,
+            focuscolor="#064e3b",
+            background=PRIMARY,
+            foreground="#052e16"
+        )
+        st.map(
+            "Primary.TButton",
+            background=[("active", PRIMARY_ACTIVE)],
+            relief=[("pressed", "sunken")]
+        )
+
+        # [UI] Botones toggle Abrir/Cerrar (apagado/encendido)
+        st.configure(
+            "SelBtn.TButton",
+            padding=(14, 12),
+            relief="raised",
+            borderwidth=2,
+            background=SURFACE,
+            foreground=TEXT
+        )
+        st.map(
+            "SelBtn.TButton",
+            background=[("active", BORDER)],
+            relief=[("pressed", "sunken")]
+        )
+
+        st.configure(
+            "SelBtnOn.TButton",
+            padding=(14, 12),
+            relief="raised",
+            borderwidth=2,
+            background=TOGGLE_ON,
+            foreground="white"
+        )
+        st.map(
+            "SelBtnOn.TButton",
+            background=[("active", TOGGLE_ON_ACTIVE)],
+            relief=[("pressed", "sunken")]
+        )
+
+        # [UI] Entradas y Combobox con campo oscuro y borde claro
+        st.configure(
+            "TEntry",
+            fieldbackground=BG,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            lightcolor=TOGGLE_ON,
+            darkcolor=BORDER,
+            padding=10
+        )
+        # [UI] Combobox con texto más legible (fondo oscuro, letra clara)
+        st.configure(
+            "TCombobox",
+            fieldbackground=BG,      # fondo del campo
+            background=SURFACE,      # fondo del widget completo
+            foreground=TEXT,         # color del texto dentro del campo
+            selectbackground=TOGGLE_ON,   # fondo al seleccionar
+            selectforeground="white",     # letra al seleccionar
+            arrowcolor=TEXT               # color de la flecha
+        )
+        st.map("TCombobox",
+               fieldbackground=[("readonly", BG), ("!disabled", BG)],
+               foreground=[("readonly", TEXT), ("!disabled", TEXT)],
+               selectbackground=[("readonly", TOGGLE_ON)],
+               selectforeground=[("readonly", "white")])
+
+        
+
+        # [UI] Separador
+        st.configure("TSeparator", background=BORDER)
 
     # ------------------------ UI ------------------------
     def _crear_ui(self):
         # Layout raíz: barra + panel
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        BarraNavegacion(self, self.controlador).grid(row=0, column=0, sticky="nsw")
 
-        cont = ttk.Frame(self)
+        # [UI] Barra de navegación (sin tocar lógica)
+        barra = BarraNavegacion(self, self.controlador)
+        barra.grid(row=0, column=0, sticky="nsw")
+        self.grid_columnconfigure(0, minsize=BarraNavegacion.ANCHO)  # asegura mismo ancho
+
+
+        # [UI] Contenedor principal con más padding para respirar
+        cont = ttk.Frame(self, padding=(16, 16, 16, 16))
         cont.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
         cont.grid_columnconfigure(0, weight=1, uniform="mfc")
         cont.grid_columnconfigure(1, weight=1, uniform="mfc")
+        cont.grid_rowconfigure(0, weight=1)
+        cont.grid_rowconfigure(1, weight=1)
 
         secciones = [
             (1, "MFC 1 (O₂)"),
@@ -114,29 +251,31 @@ class VentanaMfc(tk.Frame):
             fila = (idx - 1) // 2
             col = (idx - 1) % 2
             frame = self._crear_seccion_mfc(cont, mfc_id, titulo)
-            frame.grid(row=fila, column=col, padx=8, pady=8, sticky="nsew")
+            # [UI] Gutter amplio para pantallas táctiles
+            frame.grid(row=fila, column=col, padx=10, pady=10, sticky="nsew")
 
     def _crear_seccion_mfc(self, parent, mfc_id: int, titulo: str) -> ttk.LabelFrame:
         """Sección por MFC: gas (combo), flujo (entry + leyenda), Abrir/Cerrar, Enviar flujo."""
-        frame = ttk.LabelFrame(parent, text=titulo)
-        frame.grid_columnconfigure(0, weight=0)
-        frame.grid_columnconfigure(1, weight=1)
+        # [UI] Card con buen padding
+        frame = ttk.LabelFrame(parent, text=titulo, style="Card.TLabelframe", padding=(14, 12))
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_columnconfigure(1, weight=1)  # [UI] ambas columnas expanden
 
         row = 0
 
         # Combobox gas
-        ttk.Label(frame, text="Gas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-        combo = ttk.Combobox(frame, values=self.GAS_LIST, state="readonly", width=10)
+        ttk.Label(frame, text="Gas:").grid(row=row, column=0, padx=8, pady=8, sticky="e")
+        combo = ttk.Combobox(frame, values=self.GAS_LIST, state="readonly", width=12, style="TCombobox")
         combo.set(self.DEFAULT_GAS[mfc_id])
-        combo.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+        combo.grid(row=row, column=1, padx=8, pady=8, sticky="ew")  # [UI] que llene columna
         combo.bind("<<ComboboxSelected>>", lambda _e, m=mfc_id: self._on_cambio_gas(m))
         self.refs[mfc_id]["combo"] = combo
         row += 1
 
         # Entry de flujo
-        ttk.Label(frame, text="Flujo (mL/min):").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-        entry = ttk.Entry(frame, width=10)
-        entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
+        ttk.Label(frame, text="Flujo (mL/min):").grid(row=row, column=0, padx=8, pady=8, sticky="e")
+        entry = ttk.Entry(frame, width=14)  # [UI] más ancho
+        entry.grid(row=row, column=1, padx=8, pady=8, sticky="ew")  # [UI] llenar columna
         entry.bind(
             "<Button-1>",
             lambda e, ent=entry, m=mfc_id: TecladoNumerico(
@@ -148,25 +287,28 @@ class VentanaMfc(tk.Frame):
 
         # Leyenda min/max
         maxv = self._maximo_mfc_por_gas(mfc_id, combo.get())
-        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}")
-        legend.grid(row=row, column=0, columnspan=2, padx=5, pady=(0, 6), sticky="w")
+        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}", style="Muted.TLabel")
+        legend.grid(row=row, column=0, columnspan=2, padx=8, pady=(0, 10), sticky="w")
         self.refs[mfc_id]["legend"] = legend
         row += 1
 
         # Botones Abrir / Cerrar (mutuamente excluyentes)
+        # [UI] ahora se ven elevados, con borde, y ocupan todo el ancho de su columna
         btn_open = ttk.Button(frame, text="Abrir MFC", style="SelBtn.TButton",
                               command=lambda m=mfc_id: self._btn_open(m))
         btn_close = ttk.Button(frame, text="Cerrar MFC", style="SelBtn.TButton",
                                command=lambda m=mfc_id: self._btn_close(m))
-        btn_open.grid(row=row, column=0, padx=6, pady=6, sticky="w")
-        btn_close.grid(row=row, column=1, padx=6, pady=6, sticky="w")
+        btn_open.grid(row=row, column=0, padx=8, pady=8, sticky="ew")
+        btn_close.grid(row=row, column=1, padx=8, pady=8, sticky="ew")
         self.refs[mfc_id]["btn_open"] = btn_open
         self.refs[mfc_id]["btn_close"] = btn_close
         row += 1
 
         # Botón Enviar flujo
-        ttk.Button(frame, text="Enviar flujo", command=lambda m=mfc_id: self._enviar_flujo(m))\
-            .grid(row=row, column=0, columnspan=2, padx=6, pady=(8, 4))
+        # [UI] botón primario grande, a todo el ancho del card
+        ttk.Button(frame, text="Enviar flujo", style="Primary.TButton",
+                   command=lambda m=mfc_id: self._enviar_flujo(m))\
+            .grid(row=row, column=0, columnspan=2, padx=8, pady=(12, 6), sticky="ew")
 
         return frame
 

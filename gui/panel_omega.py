@@ -7,7 +7,7 @@ from .ventana_autotuning import VentanaAutotuning
 
 class PanelOmega(ttk.Frame):
     def __init__(self, master, id_omega, controlador, arduino, *args, **kwargs):
-        super().__init__(master, *args, **kwargs)
+        super().__init__(master, style="OmegaPanel.TFrame", *args, **kwargs)
 
         # === Identificacion y referencias ===
         self.id_omega = id_omega                 # Numero de Omega (1,2,..)
@@ -25,34 +25,154 @@ class PanelOmega(ttk.Frame):
         self._modo_inicializado = False
         self._ultimo_modo_enviado = None  # 'PID' o 'Rampa'
 
+        # [UI] ===== Estilos/tema solo visual (sin cambiar lógica) =====
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass
+
+        # [UI] Tokens de color coherentes
+        BG = "#0f172a"
+        SURFACE = "#111827"
+        CARD = "#111827"
+        TEXT = "#e5e7eb"
+        MUTED = "#9ca3af"
+        BORDER = "#1f2937"
+        PRIMARY = "#22c55e"
+        PRIMARY_ACTIVE = "#16a34a"
+        TOGGLE_ON = "#2563eb"
+        TOGGLE_ON_ACTIVE = "#1d4ed8"
+
+        # [UI] ---- Radiobuttons segmentados (sin indicador) ----
+        st.configure("Omega.TRadiobutton",
+                     background=CARD, foreground=TEXT, padding=(10, 6))
+        st.layout("Segmented.TRadiobutton", [
+            ("Button.button", {"children": [
+                ("Button.focus", {"children": [
+                    ("Radiobutton.label", {"sticky": "nswe"})
+                ], "sticky": "nswe"})
+            ], "sticky": "nswe"})
+        ])
+        st.map("Segmented.TRadiobutton",
+               background=[("selected", "#2563eb"), ("active", BORDER)],
+               foreground=[("selected", "white")],
+               relief=[("selected", "sunken"), ("!selected", "raised")])
+
+        # [UI] Tipografía un poco mayor para táctil
+        self.option_add("*Font", ("TkDefaultFont", 12))
+        self.option_add("*TButton.Font", ("TkDefaultFont", 12, "bold"))
+        self.option_add("*Entry.Font", ("TkDefaultFont", 12))
+        self.option_add("*TCombobox*Listbox*Font", ("TkDefaultFont", 12))
+        self.option_add("*TRadiobutton.Font", ("TkDefaultFont", 12))
+
+        # [UI] Fondo y estilos base
+        st.configure("OmegaPanel.TFrame", background=CARD)
+        st.configure("Omega.TLabel", background=CARD, foreground=TEXT)
+        st.configure("OmegaMuted.TLabel", background=CARD, foreground=MUTED)
+        st.configure("Omega.TSeparator", background=BORDER)
+
+        # [UI] Botones elevados (relieve + borde)
+        st.configure(
+            "Omega.TButton",
+            padding=(14, 12),
+            relief="raised",
+            borderwidth=2,
+            background=SURFACE,
+            foreground=TEXT
+        )
+        st.map(
+            "Omega.TButton",
+            background=[("active", BORDER)],
+            relief=[("pressed", "sunken")]
+        )
+
+        # [UI] Botón primario (acciones importantes)
+        st.configure(
+            "OmegaPrimary.TButton",
+            padding=(16, 14),
+            relief="raised",
+            borderwidth=2,
+            background=PRIMARY,
+            foreground="#052e16"  # texto oscuro sobre verde
+        )
+        st.map(
+            "OmegaPrimary.TButton",
+            background=[("active", PRIMARY_ACTIVE)],
+            relief=[("pressed", "sunken")]
+        )
+
+        # [UI] Toggle Run/Stop con color de estado
+        st.configure(
+            "OmegaToggle.TButton",
+            padding=(14, 12),
+            relief="raised",
+            borderwidth=2,
+            background=TOGGLE_ON,
+            foreground="white"
+        )
+        st.map(
+            "OmegaToggle.TButton",
+            background=[("active", TOGGLE_ON_ACTIVE)],
+            relief=[("pressed", "sunken")]
+        )
+
+        # [UI] Entradas y Combobox en oscuro legible
+        st.configure(
+            "Omega.TEntry",
+            fieldbackground=BG,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            lightcolor=TOGGLE_ON,
+            darkcolor=BORDER,
+            padding=10
+        )
+        st.configure(
+            "Omega.TCombobox",
+            fieldbackground=BG,
+            background=SURFACE,
+            foreground=TEXT,
+            selectbackground=TOGGLE_ON,
+            selectforeground="white",
+            arrowcolor=TEXT
+        )
+        st.map("Omega.TCombobox",
+               fieldbackground=[("readonly", BG), ("!disabled", BG)],
+               foreground=[("readonly", TEXT), ("!disabled", TEXT)],
+               selectbackground=[("readonly", TOGGLE_ON)],
+               selectforeground=[("readonly", "white")])
+
         # === Layout base ===
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
         # === Titulo ===
-        ttk.Label(self, text=f"Omega {id_omega}", font=("Arial", 14, "bold"))\
+        ttk.Label(self, text=f"Omega {id_omega}", font=("Arial", 14, "bold"),
+                  style="Omega.TLabel")\
             .grid(row=0, column=0, columnspan=2, pady=(6, 8))
 
         # selector PID/Rampa
-        selector = ttk.Frame(self)
+        selector = ttk.Frame(self, style="OmegaPanel.TFrame")  # [UI] fondo consistente
         selector.grid(row=1, column=0, columnspan=2, pady=(0, 6))
         ttk.Radiobutton(selector, text="PID", variable=self.modo_control,
-                        value="PID", command=self._on_modo_cambiado).pack(side="left", padx=6)
+                        value="PID", command=self._on_modo_cambiado,
+                        style="Segmented.TRadiobutton").pack(side="left", padx=6)
         ttk.Radiobutton(selector, text="Rampa", variable=self.modo_control,
-                        value="Rampa", command=self._on_modo_cambiado).pack(side="left", padx=6)
+                        value="Rampa", command=self._on_modo_cambiado,
+                        style="Segmented.TRadiobutton").pack(side="left", padx=6)
 
         # =================================================================
         # =================== CONTENEDOR PID (solo setpoint + botones) =====
         # =================================================================
-        self.frame_pid = ttk.Frame(self)
+        self.frame_pid = ttk.Frame(self, style="OmegaPanel.TFrame")
         self.frame_pid.grid_columnconfigure(0, weight=0)
         self.frame_pid.grid_columnconfigure(1, weight=1)
 
         # Setpoint (solo en PID)
-        ttk.Label(self.frame_pid, text="Setpoint:").grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
-        self.entry_setpoint = ttk.Entry(self.frame_pid, width=10)
-        self.entry_setpoint.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ttk.Label(self.frame_pid, text="Setpoint:", style="Omega.TLabel").grid(
+            row=0, column=0, padx=6, pady=6, sticky="e")
+        self.entry_setpoint = ttk.Entry(self.frame_pid, width=12, style="Omega.TEntry")  # [UI]
+        self.entry_setpoint.grid(row=0, column=1, padx=6, pady=6, sticky="ew")  # [UI]
         self.entry_setpoint.bind(
             "<Button-1>",
             lambda e: TecladoNumerico(
@@ -60,98 +180,93 @@ class PanelOmega(ttk.Frame):
             )
         )
 
-        # Botones PID (Enviar SP, Enviar parametros, Iniciar autotuning)
-        btns_pid = ttk.Frame(self.frame_pid)
-        btns_pid.grid(row=1, column=0, columnspan=2,
-                      padx=5, pady=(8, 4), sticky="w")
+        # Botones PID (Enviar SP, Run, Iniciar autotuning)  [UI]
+        self.btns_pid = ttk.Frame(self.frame_pid, style="OmegaPanel.TFrame")
+        self.btns_pid.grid(row=1, column=0, columnspan=2,
+                           padx=6, pady=(8, 4), sticky="ew")
+        self.btns_pid.grid_columnconfigure((0, 1, 2), weight=1)  # repartir espacio
 
         self.btn_enviar_sp = ttk.Button(
-            btns_pid, text="Enviar", command=self.enviar_pid_solo_sp)
-        self.btn_enviar_sp.grid(
-            row=0, column=0, padx=(0, 8), pady=0, sticky="w")
+            self.btns_pid, text="Enviar", command=self.enviar_pid_solo_sp, style="OmegaPrimary.TButton")
+        self.btn_enviar_sp.grid(row=0, column=0, padx=(0, 8), sticky="ew")
 
-        self.btn_enviar_param = ttk.Button(
-            btns_pid, text="Enviar parametros", command=self.enviar_parametros)
-        self.btn_enviar_param.grid(
-            row=0, column=1, padx=(0, 8), pady=0, sticky="w")
+        # Nota: self.btn_toggle se crea más abajo; se ubicará en actualizar_vista (col=1)
 
         self.btn_autotuning = ttk.Button(
-            btns_pid, text="Iniciar autotuning", command=self.enviar_autotuning_directo)
-        self.btn_autotuning.grid(
-            row=0, column=2, padx=(0, 8), pady=0, sticky="w")
+            self.btns_pid, text="Iniciar autotuning", command=self.enviar_autotuning_directo, style="Omega.TButton")
+        self.btn_autotuning.grid(row=0, column=2, padx=(8, 0), sticky="ew")
 
         # =================================================================
         # =========== MEMORIA + PARAMETROS (compartidos PID/Rampa) =========
         # =================================================================
-        # Nota: ahora son hijos de self (no de frame_pid) para poder
-        # colocarlos tanto en PID como en Rampa sin duplicacion.
+        # Nota: son hijos de self (no de frame_pid) para poder ubicarlos en ambos modos.
 
         # Memoria (M0..M4)
-        self.frame_mem = ttk.Frame(self)
+        self.frame_mem = ttk.Frame(self, style="OmegaPanel.TFrame")
         self.frame_mem.grid_columnconfigure(0, weight=0)
         self.frame_mem.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(self.frame_mem, text="Memoria:").grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
+        ttk.Label(self.frame_mem, text="Memoria:", style="Omega.TLabel").grid(
+            row=0, column=0, padx=6, pady=6, sticky="e")
         self.combo_mem = ttk.Combobox(
             self.frame_mem,
             values=["M0", "M1", "M2", "M3", "M4"],
             textvariable=self.memoria,
             state="readonly",
-            width=6
+            width=8,
+            style="Omega.TCombobox"
         )
-
-        self.combo_mem.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        self.combo_mem.grid(row=0, column=1, padx=6, pady=6, sticky="w")
         self.combo_mem.bind("<<ComboboxSelected>>", self._on_memoria_cambiada)
 
         # Parametros PID (SVN, BP, TI, TD)
-        self.frame_param = ttk.Frame(self)
+        self.frame_param = ttk.Frame(self, style="OmegaPanel.TFrame")
         self.frame_param.grid_columnconfigure(0, weight=0)
         self.frame_param.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(self.frame_param, text="SVN:").grid(
-            row=0, column=0, padx=5, pady=3, sticky="e")
-        self.entry_svn = ttk.Entry(self.frame_param, width=10)
-        self.entry_svn.grid(row=0, column=1, padx=5, pady=3, sticky="w")
-        self.entry_svn.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_svn))
+        ttk.Label(self.frame_param, text="SVN:", style="Omega.TLabel").grid(
+            row=0, column=0, padx=6, pady=4, sticky="e")
+        self.entry_svn = ttk.Entry(self.frame_param, width=12, style="Omega.TEntry")
+        self.entry_svn.grid(row=0, column=1, padx=6, pady=4, sticky="ew")
+        self.entry_svn.bind("<Button-1>", lambda e: TecladoNumerico(self, self.entry_svn))
 
-        ttk.Label(self.frame_param, text="Banda P:").grid(
-            row=1, column=0, padx=5, pady=3, sticky="e")
-        self.entry_bp = ttk.Entry(self.frame_param, width=10)
-        self.entry_bp.grid(row=1, column=1, padx=5, pady=3, sticky="w")
-        self.entry_bp.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_bp))
+        ttk.Label(self.frame_param, text="Banda P:", style="Omega.TLabel").grid(
+            row=1, column=0, padx=6, pady=4, sticky="e")
+        self.entry_bp = ttk.Entry(self.frame_param, width=12, style="Omega.TEntry")
+        self.entry_bp.grid(row=1, column=1, padx=6, pady=4, sticky="ew")
+        self.entry_bp.bind("<Button-1>", lambda e: TecladoNumerico(self, self.entry_bp))
 
-        ttk.Label(self.frame_param, text="Tiempo I:").grid(
-            row=2, column=0, padx=5, pady=3, sticky="e")
-        self.entry_ti = ttk.Entry(self.frame_param, width=10)
-        self.entry_ti.grid(row=2, column=1, padx=5, pady=3, sticky="w")
-        self.entry_ti.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_ti))
+        ttk.Label(self.frame_param, text="Tiempo I:", style="Omega.TLabel").grid(
+            row=2, column=0, padx=6, pady=4, sticky="e")
+        self.entry_ti = ttk.Entry(self.frame_param, width=12, style="Omega.TEntry")
+        self.entry_ti.grid(row=2, column=1, padx=6, pady=4, sticky="ew")
+        self.entry_ti.bind("<Button-1>", lambda e: TecladoNumerico(self, self.entry_ti))
 
-        ttk.Label(self.frame_param, text="Tiempo D:").grid(
-            row=3, column=0, padx=5, pady=3, sticky="e")
-        self.entry_td = ttk.Entry(self.frame_param, width=10)
-        self.entry_td.grid(row=3, column=1, padx=5, pady=3, sticky="w")
-        self.entry_td.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_td))
+        ttk.Label(self.frame_param, text="Tiempo D:", style="Omega.TLabel").grid(
+            row=3, column=0, padx=6, pady=4, sticky="e")
+        self.entry_td = ttk.Entry(self.frame_param, width=12, style="Omega.TEntry")
+        self.entry_td.grid(row=3, column=1, padx=6, pady=4, sticky="ew")
+        self.entry_td.bind("<Button-1>", lambda e: TecladoNumerico(self, self.entry_td))
+
+        # [UI] Enviar parámetros (creado fuera de btns_pid para ubicarlo al final)
+        self.btn_enviar_param = ttk.Button(
+            self, text="Enviar parametros", command=self.enviar_parametros, style="Omega.TButton")
 
         # =================================================================
         # =================== MODO RAMPA ==================================
         # =================================================================
         self.boton_rampa = ttk.Button(
-            self, text="Configurar Rampa", command=self.abrir_ventana_rampa)
+            self, text="Configurar Rampa", command=self.abrir_ventana_rampa, style="Omega.TButton")
 
         # Enviar parametros tambien disponible en Rampa
         self.btn_enviar_param_rampa = ttk.Button(
-            self, text="Enviar parametros", command=self.enviar_parametros)
+            self, text="Enviar parametros", command=self.enviar_parametros, style="Omega.TButton")
 
         # =================================================================
         # =================== TOGGLE RUN/STOP =============================
         # =================================================================
         self.btn_toggle = ttk.Button(
-            self, text=self._texto_toggle(), command=self._toggle_omega)
+            self, text=self._texto_toggle(), command=self._toggle_omega, style="OmegaToggle.TButton")
 
         # Mostrar UI inicial
         self.actualizar_vista()
@@ -231,7 +346,6 @@ class PanelOmega(ttk.Frame):
         if self.memoria.get().upper().strip() == "M4":
             self.frame_param.grid_remove()
         else:
-
             if not self.frame_param.winfo_ismapped():
                 self.frame_param.grid()  # sera recolocado por actualizar_vista
 
@@ -241,40 +355,47 @@ class PanelOmega(ttk.Frame):
 
         # Limpiar colocaciones previas
         for w in (self.frame_pid, self.boton_rampa, self.frame_mem,
-                  self.frame_param, self.btn_enviar_param_rampa, self.btn_toggle):
+                  self.frame_param, self.btn_enviar_param, self.btn_enviar_param_rampa, self.btn_toggle):
             w.grid_forget()
 
+        # Reset de pesos de filas (espaciador final)
+        for i in range(0, 10):
+            self.grid_rowconfigure(i, weight=0)
+
         if modo == "PID":
-            # PID: setpoint + botones propios
-            self.frame_pid.grid(row=2, column=0, columnspan=2,
-                                pady=(4, 0), sticky="n")
-            # Memoria y parametros debajo del bloque PID
-            self.frame_mem.grid(row=3, column=0, columnspan=2,
-                                padx=5, pady=(6, 2), sticky="w")
-            # Parametros (si memoria != M4)
+            # PID: setpoint + fila de botones (Enviar | Run | Autotuning)
+            self.frame_pid.grid(row=2, column=0, columnspan=2, pady=(4, 0), sticky="ew")
+
+            # Colocar RUN en la fila de botones, columna central
+            self.btn_toggle.grid(in_=self.btns_pid, row=0, column=1, padx=8, sticky="ew")
+
+            # Memoria y parametros debajo
+            self.frame_mem.grid(row=3, column=0, columnspan=2, padx=6, pady=(10, 4), sticky="ew")
+
             if self.memoria.get().upper().strip() != "M4":
-                self.frame_param.grid(
-                    row=4, column=0, columnspan=2, padx=5, pady=(2, 2), sticky="w")
-            # Toggle al final
-            self.btn_toggle.grid(row=5, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+                self.frame_param.grid(row=4, column=0, columnspan=2, padx=6, pady=(4, 6), sticky="ew")
+
+            # Enviar parámetros al final, debajo de los entries
+            self.btn_enviar_param.grid(row=5, column=0, columnspan=2, padx=6, pady=(6, 10), sticky="ew")
+
+            # Espaciador para ocupar alto sobrante
+            self.grid_rowconfigure(6, weight=1)
 
         else:
-            # Rampa: boton de configuracion
-            self.boton_rampa.grid(row=2, column=0, padx=5,
-                                  pady=(8, 0), sticky="w")
-            # Memoria y parametros (mismos widgets, misma logica)
-            self.frame_mem.grid(row=3, column=0, columnspan=2,
-                                padx=5, pady=(6, 2), sticky="w")
+            # Rampa: botón de configuración y RUN en la misma fila superior
+            self.boton_rampa.grid(row=2, column=0, padx=6, pady=(8, 0), sticky="w")
+            self.btn_toggle.grid(row=2, column=1, padx=6, pady=(8, 0), sticky="w")
+
+            # Memoria y parametros
+            self.frame_mem.grid(row=3, column=0, columnspan=2, padx=6, pady=(10, 4), sticky="ew")
+
             if self.memoria.get().upper().strip() != "M4":
-                self.frame_param.grid(
-                    row=4, column=0, columnspan=2, padx=5, pady=(2, 2), sticky="w")
-            # Enviar parametros (rampa)
-            self.btn_enviar_param_rampa.grid(
-                row=5, column=0, padx=5, pady=(6, 0), sticky="w")
-            # Toggle
-            self.btn_toggle.grid(row=6, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+                self.frame_param.grid(row=4, column=0, columnspan=2, padx=6, pady=(4, 6), sticky="ew")
+
+            # Enviar parámetros (rampa) también al final, bajo los entries
+            self.btn_enviar_param_rampa.grid(row=5, column=0, columnspan=2, padx=6, pady=(6, 10), sticky="ew")
+
+            self.grid_rowconfigure(6, weight=1)
 
     # =================== Lectura de valores ==========================
 
