@@ -6,8 +6,8 @@ from .barra_navegacion import BarraNavegacion
 # ========================= POSICIONES DE LOS LABELS =========================
 # Editar estas coordenadas (x, y). Están en píxeles relativos al área de la imagen.
 LABEL_POS = {
-    "temp_omega1":       (120,  60),
-    "temp_omega2":       (120, 100),
+    "temp_omega1":       (400, 170),
+    "temp_omega2":       (660, 170),
     "temp_horno1":       (530, 140),
     "temp_horno2":       (530, 180),
     "temp_cond1":        (740,  80),
