@@ -67,7 +67,7 @@ class VentanaPrincipal(tk.Frame):
     def _build_ui(self):
         # layout: barra izq fija, contenido der expandible
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0, minsize=230)
+        self.grid_columnconfigure(0, weight=0, minsize=100)
         self.grid_columnconfigure(1, weight=1)
 
         # barra navegación
