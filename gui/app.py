@@ -15,7 +15,7 @@ class Aplicacion(tk.Tk):
     def __init__(self, arduino=None, serial_port="/dev/ttyACM0", baud=115200, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.title("Interfaz Arduino-Raspberry")
-        self.geometry("1280x800")
+        self.geometry("1024x600")
         # Escalado general (fuentes/ttk). Subir/bajar entre 1.0 y 1.3 segun se sienta en tactil
         self.tk.call("tk", "scaling", 1.20)
 
