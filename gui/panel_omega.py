@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk , messagebox
 from .ventana_rampa import VentanaRampa
 from .teclado_numerico import TecladoNumerico
 from .ventana_autotuning import VentanaAutotuning
@@ -384,6 +384,10 @@ class PanelOmega(ttk.Frame):
         mem_idx = self._indice_memoria()
         sp_txt = self.entry_setpoint.get().strip()
         sp = self._sp_trunc_capped(sp_txt if sp_txt else "0")
+
+        if sp == 0:
+            messagebox.showwarning("Sepoint faltante","Debe ingresar un valor de Setpoint para iniciar el autotuning")
+            return
 
         mensaje = f"$;2;{self.id_omega};2;2;{mem_idx};{sp};!"
         print("Mensaje autotuning:", mensaje)

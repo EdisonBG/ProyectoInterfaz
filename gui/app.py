@@ -96,7 +96,6 @@ class Aplicacion(tk.Tk):
     def _poll_serial(self):
         """
         Vaciar cola de entrada del SerialManager y procesar mensajes recibidos.
-        No bloquear el hilo de UI. Reprogramar con after().
         """
 
         if self.serial is not None:

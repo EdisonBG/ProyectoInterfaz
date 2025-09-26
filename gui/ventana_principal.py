@@ -20,7 +20,6 @@ LABEL_POS = {
     "mfc_n2":            (120, 500),
     "mfc_h2":            (120, 540),
     "potencia_total":    (700, 500),
-    "tiempo_encendido":  (700, 540),
 }
 
 # ========================= FORMATEADORES =========================
@@ -114,7 +113,6 @@ class VentanaPrincipal(tk.Frame):
             "mfc_n2":           ("N2",      "mL/min"),
             "mfc_h2":           ("H2",      "mL/min"),
             "potencia_total":   ("P Tot",   "W"),
-            "tiempo_encendido": ("On",      "HH:MM"),
         }
 
         for key, (short, unit) in campos.items():
@@ -177,9 +175,6 @@ class VentanaPrincipal(tk.Frame):
         # Potencia (W)
         p_tot    = to_int(partes[14])
 
-        # Horas (float) -> HH:MM
-        hhmm     = hhmm_from_hours(partes[15])
-
         # volcamos en los StringVar
         self._vars["temp_omega1"].set(f"Ω1: {t_omega1:.1f} °C")
         self._vars["temp_omega2"].set(f"Ω2: {t_omega2:.1f} °C")
@@ -198,4 +193,4 @@ class VentanaPrincipal(tk.Frame):
         self._vars["mfc_h2"].set(f"H2: {q_h2} mL/min")
 
         self._vars["potencia_total"].set(f"P Tot: {p_tot} W")
-        self._vars["tiempo_encendido"].set(f"On: {hhmm}")
+
