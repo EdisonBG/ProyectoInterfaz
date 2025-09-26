@@ -97,11 +97,12 @@ class VentanaValv(tk.Frame):
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra de navegación SIN márgenes
+        # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=230)
-        barra.grid(row=0, column=0, sticky="ns")   # sin padx/pady
+        barra.configure(width=95)
+        barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
+
 
         # Contenedor derecho
         wrap = ttk.Frame(self)

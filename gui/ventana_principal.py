@@ -69,8 +69,11 @@ class VentanaPrincipal(tk.Frame):
         self.grid_columnconfigure(0, weight=0, minsize=100)
         self.grid_columnconfigure(1, weight=1)
 
-        # barra navegación
-        BarraNavegacion(self, self.controlador).grid(row=0, column=0, sticky="nsw", padx=0, pady=10)
+        # Barra navegación
+        barra = BarraNavegacion(self, self.controlador)
+        barra.configure(width=95)
+        barra.grid(row=0, column=0, sticky="nsw")
+        barra.grid_propagate(False)
 
         # contenedor derecho
         cont = ttk.Frame(self)

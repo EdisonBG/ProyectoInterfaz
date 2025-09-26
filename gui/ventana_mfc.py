@@ -100,8 +100,8 @@ class VentanaMfc(tk.Frame):
 
         # Barra de navegación sin márgenes para aprovechar espacio
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=230)
-        barra.grid(row=0, column=0, sticky="ns")
+        barra.configure(width=95)
+        barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
 
         cont = ttk.Frame(self)

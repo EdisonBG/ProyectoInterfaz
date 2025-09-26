@@ -466,9 +466,9 @@ class VentanaAuto(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra izquierda
+        # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=230)
+        barra.configure(width=95)
         barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
 
