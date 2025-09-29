@@ -71,7 +71,7 @@ class VentanaPrincipal(tk.Frame):
 
         # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=95)
+        barra.configure(width=120)
         barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
 
