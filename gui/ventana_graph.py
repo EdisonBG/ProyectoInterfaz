@@ -1,4 +1,4 @@
-# gui/ventana_graph.py
+# gui/ventana_graph.py (modificado para 1024x538 y ajuste automático del canvas)
 import os
 import sys
 import csv
@@ -44,6 +44,15 @@ def _app_base_dir() -> str:
 
 
 class VentanaGraph(tk.Frame):
+    # --- Objetivo de layout fijo (área útil) ---
+    _TARGET_W = 1024
+    _TARGET_H = 538
+
+    # Nav lateral (BarraNavegacion) y márgenes que usa el layout actual
+    _NAV_W = 149    # ancho fijo de BarraNavegacion (según comentario en tu código)
+    _PAD = 8        # paddings en el wrap (padx/pady)
+    _LEFT_MIN = 172 # minsize del panel izquierdo de controles
+
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
         self.controlador = controlador
@@ -88,6 +97,24 @@ class VentanaGraph(tk.Frame):
         self._build_ui()
         self.bind("<Destroy>", self._on_destroy)
 
+    def _fit_mpl_to_available_space(self):
+        """
+        Calcula el espacio real del contenedor del canvas y ajusta el tamaño de la
+        Figure en pulgadas (px/dpi) para que el lienzo encaje exactamente sin recortes.
+        """
+        if self.mpl_canvas is None or self.fig is None:
+            return
+        # Asegurar geometría actualizada
+        self.update_idletasks()
+        fig_widget = self.mpl_canvas.get_tk_widget()
+        avail_w = max(1, fig_widget.winfo_width())
+        avail_h = max(1, fig_widget.winfo_height())
+        dpi = self.fig.get_dpi() or 100
+        self.fig.set_size_inches(avail_w / dpi, avail_h / dpi, forward=True)
+        # Márgenes razonables
+        self.fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.12)
+        self.mpl_canvas.draw_idle()
+
     # ========================= UI =========================
     def _build_ui(self):
         # Layout raíz: barra izq (col 0), contenido (col 1)
@@ -125,7 +152,7 @@ class VentanaGraph(tk.Frame):
         self.btn_log = ttk.Button(acciones, text="Iniciar registro (CSV)", command=self._toggle_log)
         self.btn_log.grid(row=2, column=0, sticky="ew", padx=6, pady=3)
 
-        # Periodo -> Entry con TecladoNum (no mostrar en estado para dejar más espacio a la gráfica)
+        # Periodo -> Entry con TecladoNum
         per_row = ttk.Frame(acciones)
         per_row.grid(row=3, column=0, sticky="ew", padx=6, pady=(6, 6))
         ttk.Label(per_row, text="Periodo (s):").pack(side="left")
@@ -200,7 +227,8 @@ class VentanaGraph(tk.Frame):
         fig_frame.grid_rowconfigure(0, weight=1)
         fig_frame.grid_columnconfigure(0, weight=1)
 
-        self.fig = Figure(figsize=(10.8, 5.3), dpi=100)  # más ancho para 1024x600
+        # Figura con tamaño neutro: la ajustaremos a píxeles reales
+        self.fig = Figure(figsize=(6.0, 3.2), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel("Tiempo (MM:SS)")
         self.ax.set_ylabel("Valor")
@@ -221,6 +249,11 @@ class VentanaGraph(tk.Frame):
 
         self.mpl_canvas = FigureCanvasTkAgg(self.fig, master=fig_frame)
         self.mpl_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+
+        # Ajuste automático al espacio real cuando la UI ya está lista
+        self.after_idle(self._fit_mpl_to_available_space)
+        # Reajustar también si cambia el tamaño del contenedor (por si ajustas la raíz)
+        fig_frame.bind("<Configure>", lambda _e: self._fit_mpl_to_available_space())
 
     # ========================= RX / Snapshot =========================
     def on_rx_cmd5(self, partes):
@@ -390,10 +423,7 @@ class VentanaGraph(tk.Frame):
                 ln.set_data(xs, self._buffers[key])
             else:
                 ln.set_data([], [])
-        # ------- NUEVO: ventana deslizante en X -------
-        # Tamaño de ventana (en segundos) = max_points * periodo
-        # - Mientras xmax <= ventana: muestra 0..xmax (como antes).
-        # - Cuando xmax > ventana: desliza a [xmax-ventana, xmax].
+        # ------- Ventana deslizante en X -------
         xmax = max(xs) if xs else 1
         win_sec = self._max_points * self._sample_period
         if xmax <= win_sec:
@@ -403,7 +433,6 @@ class VentanaGraph(tk.Frame):
             left = xmax - win_sec
             right = xmax
         self.ax.set_xlim(left=left, right=right)
-        # ----------------------------------------------
 
         # Autoscale Y según series visibles
         self.ax.relim()
