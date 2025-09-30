@@ -2,49 +2,89 @@ import tkinter as tk
 from tkinter import ttk
 import os
 from tkinter import PhotoImage
+import sys
+import subprocess
+
+
+def _app_base_dir() -> str:
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 class BarraNavegacion(ttk.Frame):
     def __init__(self, parent, controlador):
         super().__init__(parent)
+        self.controlador = controlador
 
-        # Estilo de boton
+        # ancho fijo solicitado
+        self.configure(width=149)
+        self.grid_propagate(False)
+
+        # Estilo botones
         style = ttk.Style(self)
-        style.theme_use("clam")
-        style.configure("BotonMenu.TButton",
-                        font=("Arial", 10, "bold"),
-                        padding=5,
-                        foreground="white",
-                        background="#007acc")
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure(
+            "BotonMenu.TButton",
+            font=("Arial", 10, "bold"),
+            padding=5,
+            foreground="white",
+            background="#007acc",
+        )
 
-        # Ruta a imagenes
-        img_path = os.path.join(os.path.dirname(__file__), "..", "img")
-        self.img_home = PhotoImage(file=os.path.join(img_path, "home.png"))
-        self.img_mfc = PhotoImage(file=os.path.join(img_path, "mfc.png"))
-        self.img_omega = PhotoImage(file=os.path.join(img_path, "omega.png"))
-        self.img_valv = PhotoImage(file=os.path.join(img_path, "valv.png"))
-        self.img_auto = PhotoImage(file=os.path.join(img_path, "auto.png"))
-        self.img_graph = PhotoImage(file=os.path.join(img_path, "graph.png"))
+        # Imágenes (opcionales)
+        img_path = os.path.join(_app_base_dir(), "img")
+        def _img(name):
+            p = os.path.join(img_path, name)
+            return PhotoImage(file=p) if os.path.exists(p) else None
 
-        # Botones
+        self.img_home = _img("home.png")
+        self.img_mfc = _img("mfc.png")
+        self.img_omega = _img("omega.png")
+        self.img_valv = _img("valv.png")
+        self.img_auto = _img("auto.png")
+        self.img_graph = _img("graph.png")
+        self.img_folder = _img("folder.png")
+
+        # Botones (incluye Registros SIN separadores)
         botones = [
-            ("Home", self.img_home, "VentanaPrincipal"),
-            ("MFC", self.img_mfc, "VentanaMfc"),
-            ("Temp", self.img_omega, "VentanaOmega"),
-            ("Valv", self.img_valv, "VentanaValv"),
-            ("Auto", self.img_auto, "VentanaAuto"),
-            ("Graph", self.img_graph, "VentanaGraph"),
+            ("Home", self.img_home, "VentanaPrincipal", None),
+            ("MFC", self.img_mfc, "VentanaMfc", None),
+            ("Temp", self.img_omega, "VentanaOmega", None),
+            ("Valv", self.img_valv, "VentanaValv", None),
+            ("Auto", self.img_auto, "VentanaAuto", None),
+            ("Graph", self.img_graph, "VentanaGraph", None),
+            ("Registros", self.img_folder, None, self._abrir_carpeta_registros),
         ]
 
-        for ro, (texto, imagen, destino) in enumerate(botones):
-            btn = ttk.Button(self,
-                             text=texto,
-                             image=imagen,
-                             compound="top" if imagen else "",
-                             style="BotonMenu.TButton",
-                             command=lambda d=destino: controlador.mostrar_ventana(d))
-            btn.grid(row=ro, column=0, pady=5)
-
-            # Referencia para evitar que la imagen sea eliminada
+        for ro, (texto, imagen, destino, cmd_alt) in enumerate(botones):
+            cmd = (lambda d=destino: self.controlador.mostrar_ventana(d)) if destino else cmd_alt
+            btn = ttk.Button(
+                self,
+                text=texto,
+                image=imagen,
+                compound="top" if imagen else "",
+                style="BotonMenu.TButton",
+                command=cmd,
+            )
+            btn.grid(row=ro, column=0, pady=5, sticky="ew")
             if imagen:
-                btn.image = imagen  # type: ignore[attr-defined]
+                btn.image = imagen  # evitar GC
+
+    def _abrir_carpeta_registros(self):
+        reg_dir = os.path.join(_app_base_dir(), "registros_experimento")
+        os.makedirs(reg_dir, exist_ok=True)
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(reg_dir)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", reg_dir])
+            else:
+                subprocess.Popen(["xdg-open", reg_dir])
+        except Exception as ex:
+            import tkinter.messagebox as mb
+            mb.showinfo("Registros",
+                        f"Carpeta de registros:\n{reg_dir}\n\n(No se pudo abrir el explorador: {ex})")
