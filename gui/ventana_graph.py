@@ -1,10 +1,21 @@
 # gui/ventana_graph.py
 import os
-import sys
+import re
 import csv
+import platform
+import shutil
+import signal
+import subprocess
 from datetime import datetime
+
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+try:
+    from tkcalendar import DateEntry  # opcional
+    _HAS_TKCAL = True
+except Exception:
+    _HAS_TKCAL = False
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -13,19 +24,9 @@ from matplotlib.ticker import FuncFormatter
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 
-import subprocess, os, signal, platform, shutil
-
-# ====== PATCH: imports extra ======
-import platform, subprocess, signal, re  # <- añadir
-try:
-    from tkcalendar import DateEntry     # <- añadir
-    _HAS_TKCALENDAR = True
-except Exception:
-    _HAS_TKCALENDAR = False
-# ==================================
-
 
 # ====== Definición de variables que graficamos / registramos ======
+# clave -> (etiqueta, unidad, índice_en_msg, escalar)
 SERIES_DEF = {
     "T_horno1": ("Temperatura horno 1", "°C", 3, 1.0),
     "T_horno2": ("Temperatura horno 2", "°C", 4, 1.0),
@@ -41,64 +42,40 @@ SERIES_DEF = {
     "MFC_N2":   ("MFC N2", "mL/min", 12, 0.1),
     "MFC_H2":   ("MFC H2", "mL/min", 13, 0.1),
 }
+
 SERIES_ORDER = [
-    "T_horno1","T_horno2","T_omega1","T_omega2","T_cond1","T_cond2",
-    "P_mezcla","P_H2","P_salida","MFC_O2","MFC_CO2","MFC_N2","MFC_H2",
+    "T_horno1", "T_horno2",
+    "T_omega1", "T_omega2",
+    "T_cond1", "T_cond2",
+    "P_mezcla", "P_H2", "P_salida",
+    "MFC_O2", "MFC_CO2", "MFC_N2", "MFC_H2",
 ]
 
 
-def _app_base_dir() -> str:
-    """Carpeta base donde persistimos (soporta ejecutable 'congelado')."""
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-
-
-
-
+# ========== Teclado del sistema (Windows / Linux-RPi) ==========
 class _TecladoSistema:
     """
     Abre/cierra teclado en pantalla del SO.
-    - Windows: usa explorer/powershell para evitar UAC.
-    - Linux/Raspberry: intenta 'onboard' (anclado abajo), fallback 'matchbox-keyboard'.
-    Se asegura de cerrarlo al terminar.
+    - Windows: TabTip/OSK evitando UAC en lo posible.
+    - Linux/Raspberry: 'onboard' (dock inferior via gsettings) o 'matchbox-keyboard'.
+    Asegura cierre al destruir.
     """
-
     def __init__(self):
         self._proc = None
-        self._is_windows = platform.system().lower().startswith("win")
+        self._is_win = platform.system().lower().startswith("win")
         self._is_linux = platform.system().lower().startswith("lin")
-
-        if self._is_windows:
+        if self._is_win:
             self._tabtip = r"C:\Program Files\Common Files\Microsoft Shared\ink\TabTip.exe"
             self._osk = "osk.exe"
-        else:
-            # orden de preferencia en Linux
-            self._linux_cmds = ["onboard", "matchbox-keyboard"]
 
-    # ---------- API ----------
     def abrir(self):
         if self._proc and self._proc.poll() is None:
-            return  # ya está abierto
-
-        if self._is_windows:
+            return
+        if self._is_win:
             self._abrir_windows()
             return
-
         if self._is_linux:
-            # Preferimos 'onboard' y lo anclamos al borde inferior
-            if shutil.which("onboard"):
-                self._config_onboard_bottom()
-                self._launch_linux(["onboard"])
-                return
-
-            # Fallback: matchbox-keyboard (sin docking “real”; se cierra por proceso)
-            if shutil.which("matchbox-keyboard"):
-                self._launch_linux(["matchbox-keyboard"])
-                return
-
-            print("[Graph] No se encontró 'onboard' ni 'matchbox-keyboard'. Instala alguno.")
-            self._proc = None
+            self._abrir_linux()
 
     def cerrar(self):
         # cierre suave
@@ -110,55 +87,71 @@ class _TecladoSistema:
                     os.kill(self._proc.pid, signal.SIGTERM)
                 except Exception:
                     pass
-
-        # respaldo: pkill por nombre si sigue vivo
+        # respaldo por nombre (por si el hijo lanzó a su vez otro proceso)
         if self._is_linux:
-            self._pkill_if_running("onboard")
-            self._pkill_if_running("matchbox-keyboard")
-
+            self._pkill("onboard")
+            self._pkill("matchbox-keyboard")
         self._proc = None
 
-    # ---------- Windows ----------
+    # ---- Windows ----
     def _abrir_windows(self):
-        # cadena de intentos para evitar UAC
+        # cadena de intentos para minimizar UAC
         for target in (self._tabtip, self._osk):
             if self._try_launch_win(target):
                 return
         print("[Graph] No se pudo abrir teclado (Windows).")
 
-    def _try_launch_win(self, target_path_or_cmd: str) -> bool:
+    def _try_launch_win(self, target: str) -> bool:
         try:
-            self._proc = subprocess.Popen(["explorer.exe", target_path_or_cmd])
+            self._proc = subprocess.Popen(["explorer.exe", target])
             return True
-        except Exception as e:
-            print("[Graph] explorer.exe fallo:", e)
+        except Exception:
+            pass
         try:
+            # PowerShell Start-Process sin ventana
             self._proc = subprocess.Popen(
                 ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
-                 "Start-Process", target_path_or_cmd],
-                creationflags=subprocess.CREATE_NO_WINDOW
+                 "Start-Process", target],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
             )
             return True
-        except Exception as e:
-            print("[Graph] PowerShell Start-Process fallo:", e)
+        except Exception:
+            pass
         try:
-            self._proc = subprocess.Popen(f'start "" "{target_path_or_cmd}"', shell=True)
+            self._proc = subprocess.Popen(f'start "" "{target}"', shell=True)
             return True
-        except Exception as e:
-            print("[Graph] cmd start fallo:", e)
+        except Exception:
+            pass
         try:
-            self._proc = subprocess.Popen([target_path_or_cmd])
+            self._proc = subprocess.Popen([target])
             return True
-        except Exception as e:
-            print("[Graph] Ejecución directa fallo:", e)
+        except Exception:
             return False
 
-    # ---------- Linux helpers ----------
+    # ---- Linux/RPi ----
+    def _abrir_linux(self):
+        # Preferir 'onboard' (dock inferior)
+        if shutil.which("onboard"):
+            self._config_onboard_bottom()
+            try:
+                self._proc = subprocess.Popen(["onboard"],
+                                              stdout=subprocess.DEVNULL,
+                                              stderr=subprocess.DEVNULL)
+                return
+            except Exception as e:
+                print("[Graph] No se pudo abrir onboard:", e)
+        # Fallback
+        if shutil.which("matchbox-keyboard"):
+            try:
+                self._proc = subprocess.Popen(["matchbox-keyboard"],
+                                              stdout=subprocess.DEVNULL,
+                                              stderr=subprocess.DEVNULL)
+                return
+            except Exception as e:
+                print("[Graph] No se pudo abrir matchbox-keyboard:", e)
+        print("[Graph] No se encontró 'onboard' ni 'matchbox-keyboard'.")
+
     def _config_onboard_bottom(self):
-        """
-        Configura Onboard para que aparezca acoplado al borde inferior y se expanda a lo ancho.
-        Se hace vía gsettings (persistente para la sesión).
-        """
         def _gs(schema, key, value):
             try:
                 subprocess.run(
@@ -167,23 +160,12 @@ class _TecladoSistema:
                 )
             except Exception:
                 pass
-
-        # on-screen keyboard docked bottom
         _gs("org.onboard.window", "docking-enabled", "true")
         _gs("org.onboard.window", "dock-expand", "true")
         _gs("org.onboard.window", "dock-edge", "bottom")
-        # tamaño mínimo razonable (opcional)
-        _gs("org.onboard.window", "landscape-height", "220")  # px aprox para 600p de alto
+        _gs("org.onboard.window", "landscape-height", "220")
 
-    def _launch_linux(self, cmd_list):
-        try:
-            # Nota: no usamos shell=True; dejamos que sea proceso hijo para poder terminarlo
-            self._proc = subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception as e:
-            print("[Graph] No se pudo abrir teclado:", cmd_list, "-", e)
-            self._proc = None
-
-    def _pkill_if_running(self, name: str):
+    def _pkill(self, name: str):
         try:
             if shutil.which("pkill"):
                 subprocess.run(["pkill", "-f", name], check=False,
@@ -192,20 +174,126 @@ class _TecladoSistema:
             pass
 
 
+# ========== Diálogo de datos de experimento ==========
+class _DialogoExperimento(tk.Toplevel):
+    """
+    Pide Nombre y Fecha para el CSV.
+    - Mantiene foco en el Entry tras abrir el teclado (after).
+    - Cierra teclado al aceptar/cancelar y al destruir.
+    - Si hay tkcalendar, usa DateEntry; si no, Entry normal.
+    """
+    def __init__(self, master, *, on_ok):
+        super().__init__(master)
+        self.title("Datos del experimento")
+        self.transient(master)
+        self.resizable(False, False)
+        self._on_ok = on_ok
+        self._teclado = _TecladoSistema()
+
+        # centrar/modo modal
+        self.update_idletasks()
+        self.geometry("+%d+%d" % (master.winfo_rootx() + 60, master.winfo_rooty() + 50))
+        self.grab_set()
+
+        # UI
+        frm = ttk.Frame(self, padding=8)
+        frm.grid(row=0, column=0, sticky="nsew")
+        frm.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(frm, text="Nombre (Nombre Apellido):").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=6)
+        self.ent_nombre = ttk.Entry(frm, width=32)
+        self.ent_nombre.grid(row=0, column=1, sticky="ew", pady=6)
+
+        ttk.Label(frm, text="Fecha:").grid(row=1, column=0, sticky="e", padx=(0, 6), pady=6)
+        if _HAS_TKCAL:
+            self.ent_fecha = DateEntry(frm, date_pattern="yyyy-mm-dd", width=14)
+            self.ent_fecha.set_date(datetime.now().date())
+            self.ent_fecha.grid(row=1, column=1, sticky="w", pady=6)
+        else:
+            self.ent_fecha = ttk.Entry(frm, width=14)
+            self.ent_fecha.insert(0, datetime.now().strftime("%Y-%m-%d"))
+            self.ent_fecha.grid(row=1, column=1, sticky="w", pady=6)
+            # con teclado numérico como apoyo si no hay tkcalendar
+            self.ent_fecha.bind("<Button-1>", lambda e:
+                TecladoNumerico(self, self.ent_fecha, on_submit=lambda v: self._set_and_focus(self.ent_fecha, v)))
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=2, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        ttk.Button(btns, text="Cancelar", command=self._cancelar).grid(row=0, column=0, padx=6)
+        ttk.Button(btns, text="Aceptar",  command=self._aceptar ).grid(row=0, column=1, padx=6)
+
+        # Al abrir: teclado + foco (re-forzar foco después)
+        self.after(50, self._abrir_teclado_y_enfocar)
+
+        self.protocol("WM_DELETE_WINDOW", self._cancelar)
+
+    def _set_and_focus(self, entry, value):
+        entry.delete(0, tk.END)
+        entry.insert(0, str(value))
+        entry.focus_force()
+
+    def _abrir_teclado_y_enfocar(self):
+        # abrir teclado
+        self._teclado.abrir()
+        # re-forzar foco (el teclado a veces roba el foco)
+        self.after(250, lambda: self.ent_nombre.focus_force())
+
+    def _sanear_nombre(self, s: str) -> str:
+        s = s.strip()
+        # Permitir letras, números y guiones bajos; espacios -> guion bajo
+        s = re.sub(r"\s+", "_", s)
+        # quitar caracteres problemáticos en nombre de archivo
+        s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
+        return s[:40] if s else "Usuario"
+
+    def _leer_fecha(self) -> str:
+        if _HAS_TKCAL:
+            try:
+                return self.ent_fecha.get_date().strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        # fallback Entry
+        txt = (self.ent_fecha.get() or "").strip()
+        try:
+            # validar formato simple
+            datetime.strptime(txt, "%Y-%m-%d")
+            return txt
+        except Exception:
+            return datetime.now().strftime("%Y-%m-%d")
+
+    def _aceptar(self):
+        nombre = self._sanear_nombre(self.ent_nombre.get())
+        fecha = self._leer_fecha()
+        try:
+            self._on_ok(nombre, fecha)
+        finally:
+            self._teclado.cerrar()
+            self.grab_release()
+            self.destroy()
+
+    def _cancelar(self):
+        self._teclado.cerrar()
+        self.grab_release()
+        self.destroy()
+
+
 class VentanaGraph(tk.Frame):
+    """
+    - Iniciar/Detener gráfica (muestreo del último snapshot cada _sample_period s).
+    - Pausar/Reanudar.
+    - Registro CSV con ventana táctil (Nombre/Fecha) -> cada 1 s escribe línea.
+    - Checkboxes para elegir variables a graficar (si ninguna, se avisa).
+    - Eje X:
+        * 0..2 h: se expande.
+        * >2 h: ventana deslizante de 2 h (se “corre” junto con el gráfico).
+    """
+
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
         self.controlador = controlador
         self.arduino = arduino
 
-        # ====== PATCH: estado para CSV por experimento ======
-        self._csv_dir = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "registros_experimento")
-        )
-        os.makedirs(self._csv_dir, exist_ok=True)
-        self._osk = _TecladoSistema()   # teclado del sistema
-        # =====================================================
-
+        # Exponer la ventana al controlador para recibir CMD=5 desde su manejador central
         if hasattr(self.controlador, "__setattr__"):
             setattr(self.controlador, "_ventana_graph", self)
 
@@ -218,28 +306,28 @@ class VentanaGraph(tk.Frame):
 
         # Tiempo relativo y periodo
         self._elapsed_sec = 0
-        self._sample_period = 5
-        self._max_points = max(1, (2 * 60 * 60) // self._sample_period)
+        self._sample_period = 5  # oculto en UI (dejamos 5 s por defecto)
+        self._max_points = max(1, (2 * 60 * 60) // self._sample_period)  # ~2h de buffer visible
 
-        # Último snapshot normalizado
-        self._last_snapshot = None
+        # Último snapshot normalizado (unidades finales)
+        self._last_snapshot = None  # dict o None
 
         # Buffers para gráfica
         self._buffers = {k: [] for k in SERIES_ORDER}
-        self._times = []
+        self._times = []  # lista de segundos relativos
 
-        # Carpeta de registros (al lado del exe/proyecto)
-        self._reg_dir = os.path.join(_app_base_dir(), "registros_experimento")
+        # CSV: carpeta de registros y archivo actual (se fija al iniciar registro)
+        self._reg_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "registros_experimento"))
         os.makedirs(self._reg_dir, exist_ok=True)
-        self._csv_path = None  # se define al iniciar registro
+        self._csv_path = None  # se define cuando el usuario introduce nombre/fecha
 
-        # Matplotlib
+        # Matplotlib embebido
         self.fig = None
         self.ax = None
         self.mpl_canvas = None
 
-        self._lines = {}
-        self._series_vars = {}
+        self._lines = {}          # key -> Line2D
+        self._series_vars = {}    # key -> BooleanVar
         self._need_legend_refresh = True
 
         self._build_ui()
@@ -251,17 +339,18 @@ class VentanaGraph(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra navegación (ahora fija a 149 px en la clase de barra)
+        # Barra navegación (149px de ancho)
         barra = BarraNavegacion(self, self.controlador)
-        barra.grid(row=0, column=0, sticky="ns")
+        barra.configure(width=149)
+        barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
 
-        # Contenido principal: panel izquierdo mínimo para controles; resto la gráfica
+        # Contenido principal
         wrap = ttk.Frame(self)
         wrap.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
         wrap.grid_rowconfigure(0, weight=1)
-        wrap.grid_columnconfigure(0, weight=0, minsize=172)  # compacto
-        wrap.grid_columnconfigure(1, weight=1)               # gráfica grande
+        wrap.grid_columnconfigure(0, weight=0, minsize=200)  # panel izquierdo
+        wrap.grid_columnconfigure(1, weight=1)               # figura grande
 
         # --------- Panel izquierdo (vertical) ---------
         left = ttk.Frame(wrap)
@@ -269,6 +358,7 @@ class VentanaGraph(tk.Frame):
         left.grid_rowconfigure(2, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
+        # Acciones (solo botones; sin periodo ni selector de csv)
         acciones = ttk.LabelFrame(left, text="Acciones")
         acciones.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         acciones.grid_columnconfigure(0, weight=1)
@@ -279,96 +369,69 @@ class VentanaGraph(tk.Frame):
         self.btn_pause = ttk.Button(acciones, text="Pausar", command=self._toggle_pause, state="disabled")
         self.btn_pause.grid(row=1, column=0, sticky="ew", padx=6, pady=3)
 
-        self.btn_log = ttk.Button(acciones, text="Iniciar registro (CSV)", command=self._toggle_log)
-        self.btn_log.grid(row=2, column=0, sticky="ew", padx=6, pady=3)
+        # Botón de Registro con estilo grande (similar a los de barra)
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("BotonMenu.TButton",
+                        font=("Arial", 10, "bold"),
+                        padding=5,
+                        foreground="white",
+                        background="#007acc")
+        self.btn_log = ttk.Button(acciones, text="Registro CSV", style="BotonMenu.TButton",
+                                  command=self._toggle_log)
+        self.btn_log.grid(row=2, column=0, sticky="ew", padx=6, pady=(6, 8))
 
-        # Periodo -> Entry con TecladoNum (no mostrar en estado para dejar más espacio a la gráfica)
-        per_row = ttk.Frame(acciones)
-        per_row.grid(row=3, column=0, sticky="ew", padx=6, pady=(6, 6))
-        ttk.Label(per_row, text="Periodo (s):").pack(side="left")
-        self.ent_period = ttk.Entry(per_row, width=6, justify="center")
-        self.ent_period.pack(side="left", padx=(6, 0))
-        self.ent_period.insert(0, str(self._sample_period))
-
-        def _norm_period():
-            txt = (self.ent_period.get() or "").strip()
-            try:
-                v = int(float(txt))
-            except Exception:
-                v = self._sample_period
-            v = max(1, min(60, v))
-            self.ent_period.delete(0, tk.END)
-            self.ent_period.insert(0, str(v))
-            if v != self._sample_period:
-                self._sample_period = v
-                self._max_points = max(1, (2 * 60 * 60) // self._sample_period)
-                if self._graph_active and not self._graph_paused:
-                    if self._graph_job:
-                        try:
-                            self.after_cancel(self._graph_job)
-                        except Exception:
-                            pass
-                    self._graph_job = self.after(self._sample_period * 1000, self._graph_tick)
-            self._update_status()
-
-        self.ent_period.bind(
-            "<Button-1>",
-            lambda _e: TecladoNumerico(
-                self,
-                self.ent_period,
-                on_submit=lambda v: (self.ent_period.delete(0, tk.END),
-                                     self.ent_period.insert(0, str(v)),
-                                     _norm_period()),
-            ),
-        )
-        vcmd = (self.register(self._validate_numeric), "%P", "%d", 1, 0)
-        self.ent_period.configure(validate="key", validatecommand=vcmd)
-        self.ent_period.bind("<FocusOut>", lambda _e: _norm_period())
-
-        # Selección de series
+        # Sección selección de series
         selbox = ttk.LabelFrame(left, text="Variables a graficar")
         selbox.grid(row=1, column=0, sticky="nsew")
         selbox.grid_columnconfigure(0, weight=1)
 
+        checks = ttk.Frame(selbox)
+        checks.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        selbox.grid_rowconfigure(0, weight=1)
+        checks.grid_columnconfigure(0, weight=1)
+
+        # Botones utilitarios
         tools = ttk.Frame(selbox)
-        tools.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 0))
+        tools.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 6))
         ttk.Button(tools, text="Seleccionar todo", command=self._select_all).pack(side="left")
         ttk.Button(tools, text="Ninguno", command=self._select_none).pack(side="left", padx=(6, 0))
-
-        checks = ttk.Frame(selbox)
-        checks.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
-        selbox.grid_rowconfigure(1, weight=1)
-        checks.grid_columnconfigure(0, weight=1)
 
         for i, key in enumerate(SERIES_ORDER):
             var = tk.BooleanVar(value=False)
             self._series_vars[key] = var
             label, unit, *_ = SERIES_DEF[key]
-            cb = ttk.Checkbutton(checks, text=f"{label} [{unit}]", variable=var, command=self._refresh_legend_next)
+            cb = ttk.Checkbutton(checks, text=f"{label} [{unit}]",
+                                 variable=var, command=self._refresh_legend_next)
             cb.grid(row=i, column=0, sticky="w", pady=2)
 
-        # Estado (leyenda corta)
+        # Estado (leyenda simple)
         self.lbl_status = ttk.Label(left, text="Gráfica: OFF   |   Registro: OFF")
         self.lbl_status.grid(row=3, column=0, sticky="ew", pady=(8, 0))
 
-        # --------- Panel derecho (figura) más grande ---------
+        # --------- Panel derecho (figura grande) ---------
         fig_frame = ttk.Frame(wrap)
         fig_frame.grid(row=0, column=1, sticky="nsew")
         fig_frame.grid_rowconfigure(0, weight=1)
         fig_frame.grid_columnconfigure(0, weight=1)
 
-        self.fig = Figure(figsize=(10.8, 5.3), dpi=100)  # más ancho para 1024x600
+        self.fig = Figure(figsize=(9.5, 6.2), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel("Tiempo (MM:SS)")
         self.ax.set_ylabel("Valor")
         self.ax.grid(True, linestyle="--", alpha=0.3)
 
+        # Formateador MM:SS del eje X
         def _fmt_mmss(x, _pos):
             total = int(max(0, x))
             m, s = divmod(total, 60)
             return f"{m:02d}:{s:02d}"
         self.ax.xaxis.set_major_formatter(FuncFormatter(_fmt_mmss))
 
+        # Líneas por serie
         for key in SERIES_ORDER:
             line, = self.ax.plot([], [], label=self._series_label(key))
             self._lines[key] = line
@@ -381,6 +444,7 @@ class VentanaGraph(tk.Frame):
 
     # ========================= RX / Snapshot =========================
     def on_rx_cmd5(self, partes):
+        """Recibe $;5;...;!; normaliza presiones y flujos (÷10), temperaturas tal cual."""
         try:
             if not partes or partes[0] != "5":
                 return
@@ -400,6 +464,7 @@ class VentanaGraph(tk.Frame):
                 snap[key] = val
 
             self._last_snapshot = snap
+
         except Exception as ex:
             print("[Graph] Error parseando CMD=5:", ex)
 
@@ -445,16 +510,22 @@ class VentanaGraph(tk.Frame):
 
     def _toggle_log(self):
         if not self._log_active:
-            path = self._prompt_new_csv_path()
-            if not path:
-                return
-            self._csv_path = path
-            self._log_active = True
-            self.btn_log.configure(text="Detener registro (CSV)")
-            self._log_tick()
+            # pedir datos con diálogo táctil
+            def _ok(nombre, fecha):
+                # construir ruta segura
+                fname = f"RegistroDatos_{nombre}_{fecha}.csv"
+                fname = re.sub(r"[/\\]+", "_", fname)
+                self._csv_path = os.path.join(self._reg_dir, fname)
+                # arrancar registro
+                self._log_active = True
+                self.btn_log.configure(text="Detener registro")
+                self._append_csv_header_if_needed()
+                self._log_tick()
+
+            _DialogoExperimento(self, on_ok=_ok)
         else:
             self._log_active = False
-            self.btn_log.configure(text="Iniciar registro (CSV)")
+            self.btn_log.configure(text="Registro CSV")
             if self._log_job:
                 try:
                     self.after_cancel(self._log_job)
@@ -477,20 +548,25 @@ class VentanaGraph(tk.Frame):
         status_g = "ON" if self._graph_active else "OFF"
         if self._graph_active and self._graph_paused:
             status_g += " (PAUSA)"
-        self.lbl_status.configure(text=f"Gráfica: {status_g}   |   Registro: {'ON' if self._log_active else 'OFF'}")
+        self.lbl_status.configure(
+            text=f"Gráfica: {status_g}   |   Registro: {'ON' if self._log_active else 'OFF'}"
+        )
 
     # ========================= Ciclos (after) =========================
     def _graph_tick(self):
+        """Cada periodo: toma el último snapshot y actualiza buffers/figura."""
         if not self._graph_active or self._graph_paused:
             return
 
         if self._last_snapshot is not None:
+            # avanza tiempo relativo
             self._elapsed_sec += self._sample_period
             t = self._elapsed_sec
             self._times.append(t)
             if len(self._times) > self._max_points:
                 self._times = self._times[-self._max_points:]
 
+            # Actualizar buffers por serie
             for key in SERIES_ORDER:
                 val = self._last_snapshot.get(key, 0.0)
                 buf = self._buffers[key]
@@ -498,17 +574,22 @@ class VentanaGraph(tk.Frame):
                 if len(buf) > self._max_points:
                     self._buffers[key] = buf[-self._max_points:]
 
+            # Redibujar
             self._redraw_plot()
 
+        # Reprogramar
         self._graph_job = self.after(self._sample_period * 1000, self._graph_tick)
 
     def _log_tick(self):
+        """Cada 1 s: escribe línea CSV con timestamp + snapshot (si hay snapshot)."""
         if not self._log_active:
             return
+
         if self._last_snapshot is not None and self._csv_path:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             row = [ts] + [self._last_snapshot.get(k, 0.0) for k in SERIES_ORDER]
             self._append_csv(row)
+
         self._log_job = self.after(1000, self._log_tick)
 
     # ========================= Plot helpers =========================
@@ -523,16 +604,19 @@ class VentanaGraph(tk.Frame):
     def _refresh_legend(self):
         if not self._need_legend_refresh or self.ax is None:
             return
+
         handles, labels = [], []
         for key in SERIES_ORDER:
             if self._series_vars[key].get():
                 handles.append(self._lines[key])
                 labels.append(self._series_label(key))
+
         leg = self.ax.get_legend()
         if leg:
             leg.remove()
         if handles:
             self.ax.legend(handles, labels, loc="upper left", fontsize=8)
+
         self._need_legend_refresh = False
         if self.mpl_canvas is not None:
             self.mpl_canvas.draw_idle()
@@ -540,6 +624,7 @@ class VentanaGraph(tk.Frame):
     def _redraw_plot(self):
         if self.ax is None or self.mpl_canvas is None:
             return
+
         xs = self._times
         for key in SERIES_ORDER:
             ln = self._lines[key]
@@ -547,21 +632,17 @@ class VentanaGraph(tk.Frame):
                 ln.set_data(xs, self._buffers[key])
             else:
                 ln.set_data([], [])
-        
-        # ------- NUEVO: ventana deslizante en X -------
-        # Tamaño de ventana (en segundos) = max_points * periodo
-        # - Mientras xmax <= ventana: muestra 0..xmax (como antes).
-        # - Cuando xmax > ventana: desliza a [xmax-ventana, xmax].
-        xmax = max(xs) if xs else 1
-        win_sec = self._max_points * self._sample_period
-        if xmax <= win_sec:
-            left = 0
-            right = xmax if xmax > 1 else 1
+
+        # Eje X:
+        # - hasta 2h: [0 .. t]
+        # - más de 2h: ventana deslizante de 2h
+        if self._elapsed_sec <= 2 * 3600:
+            xmax = max(xs) if xs else 1
+            self.ax.set_xlim(left=0, right=xmax if xmax > 1 else 1)
         else:
-            left = xmax - win_sec
-            right = xmax
-        self.ax.set_xlim(left=left, right=right)
-        # ----------------------------------------------
+            right = self._elapsed_sec
+            left = right - 2 * 3600
+            self.ax.set_xlim(left=left, right=right)
 
         # Autoscale Y según series visibles
         self.ax.relim()
@@ -571,6 +652,7 @@ class VentanaGraph(tk.Frame):
         self.mpl_canvas.draw_idle()
 
     def _reset_plot_buffers(self):
+        """Limpia buffers y reinicia el tiempo relativo a 0; deja la figura en blanco."""
         self._elapsed_sec = 0
         self._times = []
         self._buffers = {k: [] for k in SERIES_ORDER}
@@ -582,100 +664,35 @@ class VentanaGraph(tk.Frame):
         if self.mpl_canvas:
             self.mpl_canvas.draw_idle()
 
-    # ========================= Validación numérica =========================
-    @staticmethod
-    def _validate_numeric(new_text: str, action: str, es_entero: int, max_dec: int):
-        if action == "0":
-            return True
-        txt = (new_text or "").strip()
-        if not txt:
-            return True
-        try:
-            if es_entero:
-                int(float(txt))
-            else:
-                float(txt)
-                if "." in txt:
-                    dec = txt.split(".", 1)[1]
-                    if len(dec) > int(max_dec):
-                        return False
-        except Exception:
-            return False
-        return True
-
     # ========================= CSV helpers =========================
-    def _safe_slug(self, s: str) -> str:
-        s = (s or "").strip().replace(" ", "_")
-        allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
-        return "".join(ch for ch in s if ch in allowed)
-
-    def _prompt_new_csv_path(self) -> str | None:
-        top = tk.Toplevel(self)
-        top.title("Datos del experimento")
-        top.transient(self.winfo_toplevel())
-        top.grab_set()
-        top.resizable(False, False)
-
-        ttk.Label(top, text="Nombre (Nombre_Apellido):").grid(row=0, column=0, padx=8, pady=(10, 4), sticky="e")
-        ent_nombre = ttk.Entry(top, width=28)
-        ent_nombre.grid(row=0, column=1, padx=8, pady=(10, 4), sticky="w")
-
-        ttk.Label(top, text="Fecha (YYYYMMDD):").grid(row=1, column=0, padx=8, pady=4, sticky="e")
-        ent_fecha = ttk.Entry(top, width=16)
-        ent_fecha.grid(row=1, column=1, padx=8, pady=4, sticky="w")
-        ent_fecha.insert(0, datetime.now().strftime("%Y%m%d"))
-
-        result = {"path": None}
-
-        def aceptar():
-            nombre = self._safe_slug(ent_nombre.get())
-            fecha = self._safe_slug(ent_fecha.get())
-            if not nombre:
-                messagebox.showerror("Registro", "Ingresa un nombre válido.")
-                return
-            if not (len(fecha) == 8 and fecha.isdigit()):
-                messagebox.showerror("Registro", "La fecha debe tener formato YYYYMMDD.")
-                return
-            filename = f"RegistroDatos_{nombre}_{fecha}.csv"
-            path = os.path.join(self._reg_dir, filename)
-            result["path"] = os.path.abspath(path)
-            top.destroy()
-
-        def cancelar():
-            result["path"] = None
-            top.destroy()
-
-        btns = ttk.Frame(top)
-        btns.grid(row=2, column=0, columnspan=2, pady=(8, 10))
-        ttk.Button(btns, text="Aceptar", command=aceptar).pack(side="left", padx=6)
-        ttk.Button(btns, text="Cancelar", command=cancelar).pack(side="left", padx=6)
-
-        top.update_idletasks()
-        parent = self.winfo_toplevel()
-        x = parent.winfo_rootx() + (parent.winfo_width() // 2) - (top.winfo_width() // 2)
-        y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (top.winfo_height() // 2)
-        top.geometry(f"+{x}+{y}")
-
-        self.wait_window(top)
-        return result["path"]
-
-    def _append_csv(self, row_values):
+    def _append_csv_header_if_needed(self):
         if not self._csv_path:
             return
         file_exists = os.path.exists(self._csv_path)
+        if file_exists:
+            return
         try:
-            os.makedirs(os.path.dirname(self._csv_path), exist_ok=True)
+            with open(self._csv_path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f, delimiter=",")
+                header = ["timestamp"] + SERIES_ORDER
+                w.writerow(header)
+        except Exception as ex:
+            print("[Graph] Error creando CSV:", ex)
+
+    def _append_csv(self, row_values):
+        """Append de una fila (ya con timestamp al inicio)."""
+        if not self._csv_path:
+            return
+        try:
             with open(self._csv_path, "a", newline="", encoding="utf-8") as f:
                 w = csv.writer(f, delimiter=",")
-                if not file_exists:
-                    header = ["timestamp"] + SERIES_ORDER
-                    w.writerow(header)
                 w.writerow(row_values)
         except Exception as ex:
             print("[Graph] Error escribiendo CSV:", ex)
 
     # ========================= Limpieza =========================
     def _on_destroy(self, _e):
+        # Cancela timers
         for job in (self._graph_job, self._log_job):
             if job:
                 try:
@@ -684,123 +701,8 @@ class VentanaGraph(tk.Frame):
                     pass
         self._graph_job = None
         self._log_job = None
-
-    # ========================= Toggle actions =========================
-    def _toggle_log(self):
-        if not self._log_active:
-            # ====== PATCH: pedir nombre y fecha antes de arrancar ======
-            meta = self._ask_csv_metadata()
-            if not meta:
-                return  # cancelado
-            nombre_sanit, fecha_str = meta
-            filename = f"RegistroDatos_{nombre_sanit}_{fecha_str}.csv"
-            self._csv_path = os.path.join(self._csv_dir, filename)
-            # ===========================================================
-
-            self._log_active = True
-            self.btn_log.configure(text="Detener registro (CSV)")
-            self._log_tick()  # arranca ciclo 1 s
-        else:
-            self._log_active = False
-            self.btn_log.configure(text="Iniciar registro (CSV)")
-            if self._log_job:
-                try:
-                    self.after_cancel(self._log_job)
-                except Exception:
-                    pass
-                self._log_job = None
-        self._update_status()
-
-    # ====== PATCH: diálogo para Nombre + Fecha con teclado en pantalla ======
-    def _ask_csv_metadata(self):
-        """
-        Abre un diálogo modal para pedir:
-          - Nombre y apellido (Entry + teclado en pantalla del sistema)
-          - Fecha (DateEntry si tkcalendar está disponible; si no, Entry texto)
-        Devuelve (nombre_sanitizado, fecha_YYYYMMDD) o None si cancelado.
-        """
-        dlg = tk.Toplevel(self)
-        dlg.title("Nuevo registro CSV")
-        dlg.transient(self.winfo_toplevel())
-        dlg.grab_set()
-        dlg.resizable(False, False)
-
-        frm = ttk.Frame(dlg, padding=10)
-        frm.grid(row=0, column=0)
-
-        ttk.Label(frm, text="Nombre y apellido:").grid(row=0, column=0, sticky="e", padx=6, pady=6)
-        ent_nombre = ttk.Entry(frm, width=32)
-        ent_nombre.grid(row=0, column=1, sticky="w", padx=6, pady=6)
-
-        # Abrir teclado en pantalla al enfocar el Entry de nombre
-        ent_nombre.bind("<FocusIn>", lambda _e: self._osk.abrir())
-        # Si quieres cerrarlo al salir del diálogo, lo hacemos al final (OK/Cancelar)
-
-        ttk.Label(frm, text="Fecha:").grid(row=1, column=0, sticky="e", padx=6, pady=6)
-        if _HAS_TKCALENDAR:
-            # Calendario táctil
-            ent_fecha = DateEntry(frm, date_pattern="yyyy-mm-dd", width=12)
-            ent_fecha.grid(row=1, column=1, sticky="w", padx=6, pady=6)
-        else:
-            # Fallback simple
-            ent_fecha = ttk.Entry(frm, width=12)
-            ent_fecha.insert(0, datetime.now().strftime("%Y-%m-%d"))
-            ent_fecha.grid(row=1, column=1, sticky="w", padx=6, pady=6)
-
-        # Botones
-        btns = ttk.Frame(frm)
-        btns.grid(row=2, column=0, columnspan=2, pady=(12, 0))
-        ok_clicked = {"ok": False}
-
-        def _ok():
-            nombre = (ent_nombre.get() or "").strip()
-            if not nombre:
-                messagebox.showwarning("Registro CSV", "Ingresa el nombre y apellido.")
-                ent_nombre.focus_set()
-                return
-            fecha_txt = ent_fecha.get() if _HAS_TKCALENDAR else (ent_fecha.get() or "").strip()
-            # Validar fecha muy básica (YYYY-MM-DD)
-            if not re.match(r"^\d{4}-\d{2}-\d{2}$", fecha_txt):
-                messagebox.showwarning("Registro CSV", "Selecciona/ingresa una fecha válida (YYYY-MM-DD).")
-                return
-            # Sanitizar nombre para archivo (letras, números, guión y guión bajo)
-            nombre_sanit = re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñ0-9_-]+", "_", nombre).strip("_")
-            # Formato de salida YYYYMMDD
-            fecha_out = fecha_txt.replace("-", "")
-            ok_clicked["ok"] = True
-            dlg.destroy()
-
-            # Cerrar teclado (si está abierto)
-            self._osk.cerrar()
-
-            ok_clicked["payload"] = (nombre_sanit, fecha_out)
-
-        def _cancel():
-            dlg.destroy()
-            self._osk.cerrar()
-
-        ttk.Button(btns, text="Cancelar", command=_cancel).grid(row=0, column=0, padx=6)
-        ttk.Button(btns, text="Aceptar", command=_ok).grid(row=0, column=1, padx=6)
-
-        # Foco inicial en nombre (para abrir teclado enseguida)
-        ent_nombre.focus_set()
-
-        # Enter = OK, Escape = Cancel
-        dlg.bind("<Return>", lambda _e: _ok())
-        dlg.bind("<Escape>", lambda _e: _cancel())
-
-        # Centrar sobre la ventana principal
-        dlg.update_idletasks()
+        # En caso de que quedara un teclado abierto por algún diálogo huérfano
         try:
-            x0 = self.winfo_toplevel().winfo_rootx()
-            y0 = self.winfo_toplevel().winfo_rooty()
-            w0 = self.winfo_toplevel().winfo_width()
-            h0 = self.winfo_toplevel().winfo_height()
-            w, h = dlg.winfo_width(), dlg.winfo_height()
-            dlg.geometry(f"+{x0 + (w0 - w)//2}+{y0 + (h0 - h)//2}")
+            _TecladoSistema().cerrar()
         except Exception:
             pass
-
-        dlg.wait_window()
-        return ok_clicked.get("payload") if ok_clicked.get("ok") else None
-    # =========================================================================
