@@ -13,7 +13,7 @@ from matplotlib.ticker import FuncFormatter
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 
-import subprocess, os, signal, platform, shlex
+import subprocess, os, signal, platform, shutil
 
 # ====== PATCH: imports extra ======
 import platform, subprocess, signal, re  # <- añadir
@@ -59,46 +59,49 @@ def _app_base_dir() -> str:
 class _TecladoSistema:
     """
     Abre/cierra teclado en pantalla del SO.
-    - Windows: intenta lanzar TabTip/OSK por medio del shell (explorer / powershell / start)
-               para evitar UAC 'requiere elevación'.
-    - Linux: matchbox-keyboard (o 'onboard').
+    - Windows: usa explorer/powershell para evitar UAC.
+    - Linux/Raspberry: intenta 'onboard' (anclado abajo), fallback 'matchbox-keyboard'.
+    Se asegura de cerrarlo al terminar.
     """
 
     def __init__(self):
         self._proc = None
         self._is_windows = platform.system().lower().startswith("win")
+        self._is_linux = platform.system().lower().startswith("lin")
+
         if self._is_windows:
             self._tabtip = r"C:\Program Files\Common Files\Microsoft Shared\ink\TabTip.exe"
             self._osk = "osk.exe"
         else:
-            self._linux_cmds = [("matchbox-keyboard",), ("onboard",)]
+            # orden de preferencia en Linux
+            self._linux_cmds = ["onboard", "matchbox-keyboard"]
 
+    # ---------- API ----------
     def abrir(self):
-        # si ya hay uno vivo, no abras otro
         if self._proc and self._proc.poll() is None:
-            return
+            return  # ya está abierto
 
         if self._is_windows:
-            # ---- Cadena de intentos para TabTip ----
-            if self._try_launch_win(self._tabtip):
-                return
-            # ---- Si TabTip no levantó, intenta OSK ----
-            if self._try_launch_win(self._osk):
-                return
-            print("[Graph] No se pudo abrir teclado (Windows): agotados intentos.")
-            self._proc = None
+            self._abrir_windows()
             return
-        else:
-            # Linux
-            for cmd in self._linux_cmds:
-                try:
-                    self._proc = subprocess.Popen(cmd)
-                    return
-                except Exception as e:
-                    print("[Graph] No se pudo abrir teclado:", cmd, "-", e)
+
+        if self._is_linux:
+            # Preferimos 'onboard' y lo anclamos al borde inferior
+            if shutil.which("onboard"):
+                self._config_onboard_bottom()
+                self._launch_linux(["onboard"])
+                return
+
+            # Fallback: matchbox-keyboard (sin docking “real”; se cierra por proceso)
+            if shutil.which("matchbox-keyboard"):
+                self._launch_linux(["matchbox-keyboard"])
+                return
+
+            print("[Graph] No se encontró 'onboard' ni 'matchbox-keyboard'. Instala alguno.")
             self._proc = None
 
     def cerrar(self):
+        # cierre suave
         if self._proc and self._proc.poll() is None:
             try:
                 self._proc.terminate()
@@ -107,45 +110,86 @@ class _TecladoSistema:
                     os.kill(self._proc.pid, signal.SIGTERM)
                 except Exception:
                     pass
+
+        # respaldo: pkill por nombre si sigue vivo
+        if self._is_linux:
+            self._pkill_if_running("onboard")
+            self._pkill_if_running("matchbox-keyboard")
+
         self._proc = None
 
-    # ---------- Helpers Windows ----------
+    # ---------- Windows ----------
+    def _abrir_windows(self):
+        # cadena de intentos para evitar UAC
+        for target in (self._tabtip, self._osk):
+            if self._try_launch_win(target):
+                return
+        print("[Graph] No se pudo abrir teclado (Windows).")
+
     def _try_launch_win(self, target_path_or_cmd: str) -> bool:
-        """
-        Intenta lanzar el teclado vía distintos mecanismos que no requieren elevación.
-        Devuelve True si alguno funciona.
-        """
-        # 1) explorer.exe <ruta>
         try:
             self._proc = subprocess.Popen(["explorer.exe", target_path_or_cmd])
             return True
         except Exception as e:
             print("[Graph] explorer.exe fallo:", e)
-
-        # 2) powershell Start-Process -WindowStyle Hidden -FilePath "<ruta>"
         try:
-            ps_cmd = ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
-                      "Start-Process", shlex.quote(target_path_or_cmd)]
-            self._proc = subprocess.Popen(ps_cmd, creationflags=subprocess.CREATE_NO_WINDOW)
+            self._proc = subprocess.Popen(
+                ["powershell", "-NoProfile", "-WindowStyle", "Hidden",
+                 "Start-Process", target_path_or_cmd],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
             return True
         except Exception as e:
             print("[Graph] PowerShell Start-Process fallo:", e)
-
-        # 3) start "" "<ruta>" (cmd) con shell=True
         try:
-            cmdline = f'start "" "{target_path_or_cmd}"'
-            self._proc = subprocess.Popen(cmdline, shell=True)
+            self._proc = subprocess.Popen(f'start "" "{target_path_or_cmd}"', shell=True)
             return True
         except Exception as e:
             print("[Graph] cmd start fallo:", e)
-
-        # 4) Último recurso: ejecución directa (probablemente vuelve a pedir elevación)
         try:
             self._proc = subprocess.Popen([target_path_or_cmd])
             return True
         except Exception as e:
             print("[Graph] Ejecución directa fallo:", e)
             return False
+
+    # ---------- Linux helpers ----------
+    def _config_onboard_bottom(self):
+        """
+        Configura Onboard para que aparezca acoplado al borde inferior y se expanda a lo ancho.
+        Se hace vía gsettings (persistente para la sesión).
+        """
+        def _gs(schema, key, value):
+            try:
+                subprocess.run(
+                    ["gsettings", "set", schema, key, value],
+                    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
+        # on-screen keyboard docked bottom
+        _gs("org.onboard.window", "docking-enabled", "true")
+        _gs("org.onboard.window", "dock-expand", "true")
+        _gs("org.onboard.window", "dock-edge", "bottom")
+        # tamaño mínimo razonable (opcional)
+        _gs("org.onboard.window", "landscape-height", "220")  # px aprox para 600p de alto
+
+    def _launch_linux(self, cmd_list):
+        try:
+            # Nota: no usamos shell=True; dejamos que sea proceso hijo para poder terminarlo
+            self._proc = subprocess.Popen(cmd_list, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            print("[Graph] No se pudo abrir teclado:", cmd_list, "-", e)
+            self._proc = None
+
+    def _pkill_if_running(self, name: str):
+        try:
+            if shutil.which("pkill"):
+                subprocess.run(["pkill", "-f", name], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 
 class VentanaGraph(tk.Frame):
