@@ -49,7 +49,7 @@ class VentanaGraph(tk.Frame):
     _TARGET_H = 538
 
     # Nav lateral (BarraNavegacion) y márgenes que usa el layout actual
-    _NAV_W = 149    # ancho fijo de BarraNavegacion (según comentario en tu código)
+    _NAV_W = 149    # ancho fijo de BarraNavegacion 
     _PAD = 8        # paddings en el wrap (padx/pady)
     _LEFT_MIN = 172 # minsize del panel izquierdo de controles
 
