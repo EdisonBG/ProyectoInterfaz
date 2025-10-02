@@ -1,4 +1,19 @@
-# gui/ventana_graph.py (modificado para 1024x538 y ajuste automático del canvas)
+"""
+Ventana de gráfica en tiempo real – refactor táctil + TouchButton + ajustes 1024×530.
+
+Cambios:
+- Layout compatible con tu barra izquierda fija; área derecha maximiza la figura.
+- Botones táctiles (TouchButton) con tamaños cómodos.
+- Periodo editable con TecladoNumerico y normalización (1..60 s).
+- Selección rápida de series (todos/ninguno) y leyenda dinámica.
+- Registro CSV en carpeta "registros_experimento" junto al proyecto/ejecutable.
+- Redimensionado preciso del lienzo Matplotlib al contenedor (sin recortes).
+
+Mantiene el protocolo de RX por CMD=5 (usar on_rx_cmd5([...]) desde App).
+"""
+
+from __future__ import annotations
+
 import os
 import sys
 import csv
@@ -12,6 +27,7 @@ from matplotlib.ticker import FuncFormatter
 
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton
 
 
 # ====== Definición de variables que graficamos / registramos ======
@@ -44,15 +60,6 @@ def _app_base_dir() -> str:
 
 
 class VentanaGraph(tk.Frame):
-    # --- Objetivo de layout fijo (área útil) ---
-    _TARGET_W = 1024
-    _TARGET_H = 538
-
-    # Nav lateral (BarraNavegacion) y márgenes que usa el layout actual
-    _NAV_W = 149    # ancho fijo de BarraNavegacion 
-    _PAD = 8        # paddings en el wrap (padx/pady)
-    _LEFT_MIN = 172 # minsize del panel izquierdo de controles
-
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
         self.controlador = controlador
@@ -97,31 +104,13 @@ class VentanaGraph(tk.Frame):
         self._build_ui()
         self.bind("<Destroy>", self._on_destroy)
 
-    def _fit_mpl_to_available_space(self):
-        """
-        Calcula el espacio real del contenedor del canvas y ajusta el tamaño de la
-        Figure en pulgadas (px/dpi) para que el lienzo encaje exactamente sin recortes.
-        """
-        if self.mpl_canvas is None or self.fig is None:
-            return
-        # Asegurar geometría actualizada
-        self.update_idletasks()
-        fig_widget = self.mpl_canvas.get_tk_widget()
-        avail_w = max(1, fig_widget.winfo_width())
-        avail_h = max(1, fig_widget.winfo_height())
-        dpi = self.fig.get_dpi() or 100
-        self.fig.set_size_inches(avail_w / dpi, avail_h / dpi, forward=True)
-        # Márgenes razonables
-        self.fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.12)
-        self.mpl_canvas.draw_idle()
-
     # ========================= UI =========================
     def _build_ui(self):
         # Layout raíz: barra izq (col 0), contenido (col 1)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra navegación (ahora fija a 149 px en la clase de barra)
+        # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
         barra.grid(row=0, column=0, sticky="ns")
         barra.grid_propagate(False)
@@ -143,13 +132,13 @@ class VentanaGraph(tk.Frame):
         acciones.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         acciones.grid_columnconfigure(0, weight=1)
 
-        self.btn_graph = ttk.Button(acciones, text="Iniciar gráfica", command=self._toggle_graph)
+        self.btn_graph = TouchButton(acciones, text="Iniciar gráfica", command=self._toggle_graph)
         self.btn_graph.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 3))
 
-        self.btn_pause = ttk.Button(acciones, text="Pausar", command=self._toggle_pause, state="disabled")
+        self.btn_pause = TouchButton(acciones, text="Pausar", command=self._toggle_pause, state="disabled")
         self.btn_pause.grid(row=1, column=0, sticky="ew", padx=6, pady=3)
 
-        self.btn_log = ttk.Button(acciones, text="Iniciar registro (CSV)", command=self._toggle_log)
+        self.btn_log = TouchButton(acciones, text="Iniciar registro (CSV)", command=self._toggle_log)
         self.btn_log.grid(row=2, column=0, sticky="ew", padx=6, pady=3)
 
         # Periodo -> Entry con TecladoNum
@@ -202,8 +191,8 @@ class VentanaGraph(tk.Frame):
 
         tools = ttk.Frame(selbox)
         tools.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 0))
-        ttk.Button(tools, text="Seleccionar todo", command=self._select_all).pack(side="left")
-        ttk.Button(tools, text="Ninguno", command=self._select_none).pack(side="left", padx=(6, 0))
+        TouchButton(tools, text="Seleccionar todo", command=self._select_all).pack(side="left")
+        TouchButton(tools, text="Ninguno", command=self._select_none).pack(side="left", padx=(6, 0))
 
         checks = ttk.Frame(selbox)
         checks.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
@@ -221,7 +210,7 @@ class VentanaGraph(tk.Frame):
         self.lbl_status = ttk.Label(left, text="Gráfica: OFF   |   Registro: OFF")
         self.lbl_status.grid(row=3, column=0, sticky="ew", pady=(8, 0))
 
-        # --------- Panel derecho (figura) más grande ---------
+        # --------- Panel derecho (figura) ---------
         fig_frame = ttk.Frame(wrap)
         fig_frame.grid(row=0, column=1, sticky="nsew")
         fig_frame.grid_rowconfigure(0, weight=1)
@@ -252,8 +241,21 @@ class VentanaGraph(tk.Frame):
 
         # Ajuste automático al espacio real cuando la UI ya está lista
         self.after_idle(self._fit_mpl_to_available_space)
-        # Reajustar también si cambia el tamaño del contenedor (por si ajustas la raíz)
         fig_frame.bind("<Configure>", lambda _e: self._fit_mpl_to_available_space())
+
+    # ========================= Ajuste Matplotlib =========================
+    def _fit_mpl_to_available_space(self):
+        """Ajusta el tamaño de la Figure (pulgadas) al tamaño real del contenedor."""
+        if self.mpl_canvas is None or self.fig is None:
+            return
+        self.update_idletasks()
+        fig_widget = self.mpl_canvas.get_tk_widget()
+        avail_w = max(1, fig_widget.winfo_width())
+        avail_h = max(1, fig_widget.winfo_height())
+        dpi = self.fig.get_dpi() or 100
+        self.fig.set_size_inches(avail_w / dpi, avail_h / dpi, forward=True)
+        self.fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.12)
+        self.mpl_canvas.draw_idle()
 
     # ========================= RX / Snapshot =========================
     def on_rx_cmd5(self, partes):
@@ -279,7 +281,7 @@ class VentanaGraph(tk.Frame):
         except Exception as ex:
             print("[Graph] Error parseando CMD=5:", ex)
 
-    # ========================= Toggle actions =========================
+    # ========================= Acciones UI =========================
     def _toggle_graph(self):
         if not self._graph_active:
             if not any(v.get() for v in self._series_vars.values()):
@@ -518,8 +520,8 @@ class VentanaGraph(tk.Frame):
 
         btns = ttk.Frame(top)
         btns.grid(row=2, column=0, columnspan=2, pady=(8, 10))
-        ttk.Button(btns, text="Aceptar", command=aceptar).pack(side="left", padx=6)
-        ttk.Button(btns, text="Cancelar", command=cancelar).pack(side="left", padx=6)
+        TouchButton(btns, text="Aceptar", command=aceptar).pack(side="left", padx=6)
+        TouchButton(btns, text="Cancelar", command=cancelar).pack(side="left", padx=6)
 
         top.update_idletasks()
         parent = self.winfo_toplevel()
