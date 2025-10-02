@@ -1,28 +1,25 @@
 """
-Clase principal de la aplicación Tkinter para Raspberry Pi 4.
+Controlador principal de la interfaz (Tk) con viewport fijo 1024×530.
 
-Cambios clave de esta versión:
-- Geometría fija tomada de ui/constants.py (1024x530).
-- Estilo/tema centralizados en gui/theme.apply_theme.
-- Polling serie usando POLL_MS desde ui/constants.py.
-- Navegación con caché de instancias y limpieza de recursos.
+- Mantiene un *viewport* de tamaño útil constante (1024×530) donde se montan
+  todas las ventanas para evitar recortes por la barra de título o bordes.
+- Navegación por nombre con `mostrar_ventana(nombre)` usada desde la barra.
+- Envío/recepción (no bloqueante) hacia Arduino mediante `SerialManager`.
+- Ruteo básico de RX: CMD=5 → `VentanaGraph.on_rx_cmd5(partes)`; 
+  se puede ampliar según necesidades.
+
+Este archivo sustituye al `app.py` anterior. Mantiene compatibilidad con
+las ventanas refactorizadas: `VentanaPrincipal`, `VentanaMfc`,
+`VentanaOmega`, `VentanaValv`, `VentanaAuto`, `VentanaGraph`.
 """
 
 from __future__ import annotations
 
-import queue
-import sys
 import tkinter as tk
 from tkinter import ttk
-from typing import Any, Dict, Optional, Type
+import queue
 
-import serial  # pyserial
-
-# Tema y constantes centralizadas
-from ui.constants import USABLE_WIDTH, USABLE_HEIGHT, POLL_MS
-from gui.theme import apply_theme
-
-# Importaciones de ventanas (mantener según proyecto)
+# Ventanas
 from .ventana_principal import VentanaPrincipal
 from .ventana_mfc import VentanaMfc
 from .ventana_omega import VentanaOmega
@@ -30,61 +27,20 @@ from .ventana_valv import VentanaValv
 from .ventana_auto import VentanaAuto
 from .ventana_graph import VentanaGraph
 
-from .serial_manager import SerialManager
+# Serial
+from .serial_manager import SerialManager  # se asume provee `start()`, `stop()`, `send(str)` y `rx_queue`
 
 
 class Aplicacion(tk.Tk):
-    """Ventana raíz de la aplicación.
+    """Controlador principal de la interfaz gráfica."""
 
-    Gestiona estilo, geometría, comunicación serie y navegación entre subventanas.
-    """
-
-    # Conservado solo por compatibilidad interna; el estilo real vive en gui/theme.py
-    TK_SCALING: float = 1.20
-
-    # Activar/desactivar trazas internas ligeras
-    DEBUG: bool = False
-
-    def __init__(
-        self,
-        arduino: Optional[serial.Serial] = None,
-        serial_port: str = "/dev/ttyACM0",
-        baud: int = 115200,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-
-        # --- Configuración de ventana raíz ---
+    def __init__(self, serial_port: str = "/dev/ttyACM0", baud: int = 115200):
+        super().__init__()
         self.title("Interfaz Arduino-Raspberry")
-        self.geometry(f"{USABLE_WIDTH}x{USABLE_HEIGHT}")
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
 
-        # --- Estilo y tema centralizados ---
-        apply_theme(self)
-
-        # --- Comunicación serie ---
-        self.serial: Optional[SerialManager] = None
-        self.arduino: Optional[serial.Serial] = None
-
-        try:
-            self.serial = SerialManager(serial_port, baud)
-            self.serial.start()
-            self._log_debug(f"Serial abierto en {serial_port} @ {baud} bps (SerialManager)")
-        except Exception as e:
-            self._log_debug(f"SerialManager no disponible: {e}")
-            try:
-                self.arduino = serial.Serial(serial_port, baudrate=baud, timeout=1)
-                self._log_debug(f"Conectado a Arduino en {serial_port} @ {baud} bps (pyserial)")
-            except Exception as e2:
-                print(f"[WARN] No se pudo abrir puerto serial: {e2}")
-
-        if arduino is not None:
-            self.arduino = arduino
-
-        # --- Registro de clases de ventanas e instancias ---
-        self._clases: Dict[str, Type[tk.Frame]] = {
+        # --- Estado ---
+        self._ventanas: dict[str, tk.Frame] = {}
+        self._clases: dict[str, type[tk.Frame]] = {
             "VentanaPrincipal": VentanaPrincipal,
             "VentanaMfc": VentanaMfc,
             "VentanaOmega": VentanaOmega,
@@ -92,201 +48,180 @@ class Aplicacion(tk.Tk):
             "VentanaAuto": VentanaAuto,
             "VentanaGraph": VentanaGraph,
         }
-        self._ventanas: Dict[str, tk.Frame] = {}
-        self._ventana_activa: Optional[str] = None
+        self._ventana_activa: str | None = None
 
-        # Mostrar ventana inicial
+        # --- Viewport fijo (área útil 1024×530) ---
+        self._ajustar_tamano_ventana(1024, 530)
+
+        # --- Serial no bloqueante ---
+        self.serial = None
+        self.rx_queue: queue.Queue[str] | None = None
+        try:
+            self.serial = SerialManager(port=serial_port, baud=baud)
+            self.serial.start()
+            self.rx_queue = self.serial.rx_queue
+        except Exception as e:
+            print(f"[WARN] No se pudo iniciar SerialManager: {e}")
+
+        # --- Primer pantalla ---
         self.mostrar_ventana("VentanaPrincipal")
 
-        # Polling RX no bloqueante
-        self.after(POLL_MS, self._poll_serial)
+        # Poll de RX
+        self.after(100, self._poll_rx)
 
-        # Cierre limpio
+        # Cierra ordenado
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ---------------------------------------------------------------------
-    # Comunicación serie
-    # ---------------------------------------------------------------------
-    def enviar_a_arduino(self, mensaje: str) -> None:
-        """Envía un mensaje al Arduino por el canal disponible.
-
-        Prioriza SerialManager; si no está disponible, usa pyserial directo.
-        Siempre termina las líneas con "\n" en envío directo.
-        """
-        self._log_debug(f"[TX] {mensaje}")
-        if self.serial is not None:
-            try:
-                self.serial.send(mensaje)
-                return
-            except Exception as e:
-                print(f"[TX ERROR SerialManager] {e}")
-        if self.arduino is not None:
-            try:
-                self.arduino.write((mensaje + "\n").encode("utf-8"))
-            except Exception as e:
-                print(f"[TX ERROR pyserial] {e}")
-
-    def _poll_serial(self) -> None:
-        """Sondea la cola RX de SerialManager y procesa los mensajes disponibles."""
-        if self.serial is not None:
-            try:
-                while True:
-                    msg = self.serial.q_in.get_nowait()
-                    self._manejar_mensaje(msg)
-            except queue.Empty:
-                pass
-            except Exception as e:
-                print(f"[RX ERROR poll] {e}")
-        self.after(POLL_MS, self._poll_serial)
-
-    def _manejar_mensaje(self, msg: str) -> None:
-        """Punto central para procesar mensajes recibidos del Arduino.
-
-        Formato esperado: "$;...;!". Mensajes inválidos se descartan silenciosamente.
+    # ==============================================================
+    # Viewport fijo 1024×530
+    # ==============================================================
+    def _ajustar_tamano_ventana(self, inner_w: int = 1024, inner_h: int = 530):
+        """Ajusta el tamaño de la ventana para que el área *interna* útil
+        sea exactamente `inner_w × inner_h`.
+        Crea un frame `_viewport` donde se montan las ventanas.
         """
         try:
-            limpio = msg.strip()
-            if not (limpio.startswith("$") and limpio.endswith("!")):
-                return
+            # Escalado DPI a 96 (1.0) para evitar distorsiones en RPi
+            self.tk.call('tk', 'scaling', '-displayof', '.', 1.0)
+        except Exception:
+            pass
 
-            cuerpo = limpio[1:-1]
-            partes = [p for p in cuerpo.split(";") if p != ""]
-            if len(partes) < 2:
-                return
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
 
-            # 1) Rampa (respuesta a $;2;ID;4;3;!)
-            #    $;2;ID;3;SP0..SP7;T0..T7;PASO;!  => total 20 campos
-            if partes[0] == "2" and len(partes) == 20 and partes[2] == "3":
-                id_omega_rx = _safe_int(partes[1])
-                sp_list = partes[3:11]
-                t_list = partes[11:19]
-                paso = partes[19]
+        self._viewport = ttk.Frame(self, width=inner_w, height=inner_h)
+        self._viewport.grid(row=0, column=0, sticky="nsew")
+        self._viewport.grid_propagate(False)  # clave: no permitir que los hijos cambien el tamaño
 
-                attr = f"_rampa_win_{id_omega_rx}"
-                win = getattr(self, attr, None)
-                if win is not None and hasattr(win, "aplicar_rampa"):
-                    win.aplicar_rampa(sp_list, t_list, paso)
-                else:
-                    self._log_debug(f"[RX rampa] sin ventana activa para Omega {id_omega_rx}")
-                return
+        # Ajuste de geometry para compensar decoraciones
+        self.update_idletasks()
+        outer_w = self.winfo_width()
+        outer_h = self.winfo_height()
+        view_w = self._viewport.winfo_width()
+        view_h = self._viewport.winfo_height()
+        if outer_w == 1 and outer_h == 1:
+            # Primer pase (algunas WMs reportan 1x1 antes del layout)
+            self.geometry(f"{inner_w+80}x{inner_h+120}")
+            self.update_idletasks()
+            outer_w = self.winfo_width(); outer_h = self.winfo_height()
+            view_w = self._viewport.winfo_width(); view_h = self._viewport.winfo_height()
+        deco_w = max(0, outer_w - view_w)
+        deco_h = max(0, outer_h - view_h)
+        self.geometry(f"{inner_w + deco_w}x{inner_h + deco_h}")
 
-            # 2) Autotuning (lectura de memorias)
-            #    $;2;ID;2;sp0;sp1;sp2;sp3;!  => 7 campos
-            if partes[0] == "2" and len(partes) == 7 and partes[2] == "2":
-                id_omega_rx = _safe_int(partes[1])
-                sp_list = partes[3:7]
-                win = getattr(self, "_autotuning_win", None)
-                if win is not None and getattr(win, "id_omega", None) == id_omega_rx:
-                    win.actualizar_setpoints(sp_list)
-                return
+    def _montar_ventana_en_viewport(self, frame: tk.Frame):
+        """Monta un Frame dentro del viewport fijo 1024×530 sin destruirlo.
+        Se ocultan otros hijos y se levanta el objetivo."""
+        # Asegurar que el viewport existe
+        if not hasattr(self, "_viewport"):
+            self._ajustar_tamano_ventana(1024, 530)
 
-            # 3) Estado de temperatura de Omega1 y Omega2 (al entrar)
-            #    $;2; m1; sp1; mem1; svn1; p1; i1; d1;  m2; sp2; mem2; svn2; p2; i2; d2; !
-            #    => total 15 campos (1 cmd + 14 datos)
-            if partes[0] == "2" and len(partes) == 15:
-                data = partes[1:15]
-                o1 = data[0:7]
-                o2 = data[7:14]
-                vo = self._ventanas.get("VentanaOmega")
-                if vo is not None and hasattr(vo, "aplicar_estado_omegas"):
-                    vo.aplicar_estado_omegas(o1, o2)
-                else:
-                    self._log_debug("[INFO] Estado Omega recibido pero VentanaOmega no está instanciada")
-                return
+        # Ocultar cualquier otro hijo y dejar solo el objetivo
+        for w in list(self._viewport.winfo_children()):
+            if w is frame:
+                continue
+            try:
+                w.grid_forget()
+            except Exception:
+                pass
 
-            # 4) Parámetros PID de una memoria
-            #    $;2;ID;svn;p;i;d;!  => 6 campos
-            if partes[0] == "2" and len(partes) == 6:
-                id_omega_rx = _safe_int(partes[1])
-                svn, p, i, d = partes[2], partes[3], partes[4], partes[5]
-                vo = self._ventanas.get("VentanaOmega")
-                if vo is not None and hasattr(vo, "actualizar_parametros_omega") and id_omega_rx is not None:
-                    vo.actualizar_parametros_omega(id_omega_rx, svn, p, i, d)
-                else:
-                    self._log_debug("[INFO] Parámetros PID recibidos pero VentanaOmega no está lista")
-                return
-
-            # 5) Variables de proceso (CMD=5) – VentanaPrincipal y VentanaGraph
-            #    $;5;Tω1;Tω2;Th1;Th2;Tc1;Tc2;Pmez*10;Ph2*10;Psal*10; Q_O2;Q_CO2;Q_N2;Q_H2;PotW;HorasOn;!
-            if partes[0] == "5" and len(partes) >= 16:
-                vp = self._ventanas.get("VentanaPrincipal") if hasattr(self, "_ventanas") else None
-                if vp is not None and hasattr(vp, "aplicar_datos_cmd5"):
-                    vp.aplicar_datos_cmd5(partes)
-
-                vg = getattr(self, "_ventana_graph", None)
-                if vg is not None and hasattr(vg, "on_rx_cmd5"):
-                    vg.on_rx_cmd5(partes)
-                return
-
-            self._log_debug(f"[RX NO RUTEADO] {partes}")
-
-        except Exception as e:
-            print(f"[RX ERROR] {e}")
-
-    # ---------------------------------------------------------------------
-    # Navegación entre ventanas
-    # ---------------------------------------------------------------------
-    def _obtener_ventana(self, nombre: str) -> tk.Frame:
-        """Crea (si es necesario) y devuelve la instancia de la ventana."""
-        if nombre not in self._ventanas:
-            Clase = self._clases[nombre]
-            frame = Clase(self, self, self.arduino)  # (master, controlador, arduino)
+        # En este proyecto las ventanas se crean con master=self._viewport
+        # (Tk no permite reparentar dinámicamente un widget).
+        try:
             frame.grid(row=0, column=0, sticky="nsew")
+            frame.tkraise()
+        except Exception as e:
+            print(f"[NAV] No se pudo montar la ventana: {e}")
+
+        self._viewport.grid_rowconfigure(0, weight=1)
+        self._viewport.grid_columnconfigure(0, weight=1)
+
+    # ==============================================================
+    # Navegación
+    # ==============================================================
+    def _obtener_ventana(self, nombre: str) -> tk.Frame:
+        frame = self._ventanas.get(nombre)
+        if frame is None:
+            Clase = self._clases.get(nombre)
+            if Clase is None:
+                raise KeyError(f"No hay clase registrada para '{nombre}'.")
+            frame = Clase(self._viewport, self, self.serial)  # (master, controlador, arduino)
             self._ventanas[nombre] = frame
-        return self._ventanas[nombre]
+        return frame
 
     def mostrar_ventana(self, nombre: str) -> None:
-        """Oculta las demás y trae al frente la ventana seleccionada sin destruirla."""
-        frame_objetivo = self._obtener_ventana(nombre)
-
-        for frame in self._ventanas.values():
-            if frame is not frame_objetivo:
-                frame.grid_remove()
-
-        frame_objetivo.grid()
-        frame_objetivo.tkraise()
+        frame = self._obtener_ventana(nombre)
+        self._montar_ventana_en_viewport(frame)
         self._ventana_activa = nombre
-
-        # Enviar identificador al entrar a VentanaOmega
+        # Identificador al entrar a Temperatura (según necesidad original)
         if nombre == "VentanaOmega":
             try:
                 self.enviar_a_arduino("$;2;9;!")
             except Exception as e:
-                print(f"[WARN] No se pudo enviar identificador de VentanaOmega: {e}")
+                print(f"[WARN] No se pudo enviar identificador VentanaOmega: {e}")
 
-    # ---------------------------------------------------------------------
-    # Cierre limpio
-    # ---------------------------------------------------------------------
-    def _on_close(self) -> None:
-        """Libera recursos de comunicación y destruye la ventana raíz."""
+    # ==============================================================
+    # Serial I/O
+    # ==============================================================
+    def enviar_a_arduino(self, msg: str) -> None:
+        """Encola `msg` para envío. Si no hay SerialManager, imprime por consola."""
+        if self.serial and hasattr(self.serial, "send"):
+            try:
+                self.serial.send(msg)
+                return
+            except Exception as e:
+                print(f"[SERIAL] Error enviando: {e}")
+        print("[TX]", msg)
+
+    def _poll_rx(self):
+        """Consulta la cola RX sin bloquear y rutea mensajes a las ventanas."""
         try:
-            if self.serial is not None:
-                self.serial.stop()
-        except Exception:
+            if self.rx_queue is not None:
+                while True:
+                    line = self.rx_queue.get_nowait()
+                    self._procesar_linea_rx(line)
+        except queue.Empty:
             pass
+        finally:
+            self.after(100, self._poll_rx)
+
+    def _procesar_linea_rx(self, line: str) -> None:
+        line = (line or "").strip()
+        if not line:
+            return
+        # protocolo: $;{cmd};...;!
+        if not line.startswith("$") or not line.endswith("!"):
+            return
+        payload = line[2:-1] if line.startswith("$;") else line[1:-1]
+        partes = payload.split(";") if payload else []
+        if not partes:
+            return
+        cmd = partes[0]
+        # CMD=5 → datos para gráfica
+        if cmd == "5":
+            # intentar enviar a la ventana de gráfica si existe
+            v = self._ventanas.get("VentanaGraph")
+            if v and hasattr(v, "on_rx_cmd5"):
+                try:
+                    v.on_rx_cmd5(partes)
+                except Exception as e:
+                    print(f"[Graph] Error en on_rx_cmd5: {e}")
+
+    # ==============================================================
+    # Cierre
+    # ==============================================================
+    def _on_close(self):
         try:
-            if self.arduino is not None:
-                self.arduino.close()
+            if self.serial and hasattr(self.serial, "stop"):
+                self.serial.stop()
         except Exception:
             pass
         self.destroy()
 
-    # ---------------------------------------------------------------------
-    # Utilidades internas
-    # ---------------------------------------------------------------------
-    def _log_debug(self, msg: str) -> None:
-        """Escribe una traza ligera si DEBUG está activo."""
-        if self.DEBUG:
-            print(msg, file=sys.stderr)
 
-
-# -------------------------------------------------------------------------
-# Funciones auxiliares
-# -------------------------------------------------------------------------
-
-def _safe_int(texto: str) -> Optional[int]:
-    """Convierte a int devolviendo None en caso de error."""
-    try:
-        return int(texto)
-    except Exception:
-        return None
+# ---------------------------------------------------------------
+# Arranque manual (si se ejecuta este módulo directamente)
+# ---------------------------------------------------------------
+if __name__ == "__main__":
+    app = Aplicacion()
+    app.mainloop()
