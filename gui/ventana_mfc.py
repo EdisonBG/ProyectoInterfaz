@@ -105,21 +105,21 @@ class VentanaMfc(tk.Frame):
 
 
     # ------------------------ UI ------------------------
-    def _crear_ui(self):
-        # Layout raíz: barra + panel
+    def _crear_ui(self) -> None:
+        # Raíz: barra izquierda fija + panel contenido
         self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=0, minsize=140)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra de navegación sin márgenes para aprovechar espacio
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=95)
         barra.grid(row=0, column=0, sticky="nsw")
-        barra.grid_propagate(False)
 
         cont = ttk.Frame(self)
-        cont.grid(row=0, column=1, sticky="nsew")
-        cont.grid_columnconfigure(0, weight=1, uniform="mfc")
-        cont.grid_columnconfigure(1, weight=1, uniform="mfc")
+        cont.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
+        for c in range(2):
+            cont.grid_columnconfigure(c, weight=1, uniform="mfc")
+        for r in range(2):
+            cont.grid_rowconfigure(r, weight=1)
 
         secciones = [
             (1, "MFC 1 (O₂)"),
@@ -132,13 +132,6 @@ class VentanaMfc(tk.Frame):
             col = (idx - 1) % 2
             frame = self._crear_seccion_mfc(cont, mfc_id, titulo)
             frame.grid(row=fila, column=col, padx=8, pady=8, sticky="nsew")
-
-        # Recalcular % inicial
-        self._recalc_mix_percentages()
-
-        # Si BYPASS=2 al abrir, igualar gas de MFC3 al de MFC1 (o viceversa)
-        if self._bypass == 2:
-            self._sync_gases_if_needed(1)  # toma el gas de MFC1 como referencia
 
     def _crear_seccion_mfc(self, parent, mfc_id: int, titulo: str) -> ttk.LabelFrame:
         """Sección por MFC: gas (combo), flujo (entry + leyenda), Abrir/Cerrar, Enviar flujo, % mezcla."""
