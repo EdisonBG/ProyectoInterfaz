@@ -10,7 +10,7 @@ Controlador principal de la interfaz (Tk) con viewport fijo 1024×530 + estilos 
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox  # <-- agregado messagebox
 import queue
 
 # Constantes táctiles (obligatorias)
@@ -31,8 +31,8 @@ from .ventana_valv import VentanaValv
 from .ventana_auto import VentanaAuto
 from .ventana_graph import VentanaGraph
 
-# Serial
-from .serial_manager import SerialManager  # start(), stop(), send(str) y rx_queue
+# Serial (usa tu SerialManager con send()/enviar_a_arduino()/recv_nowait())
+from .serial_manager import SerialManager
 
 
 class Aplicacion(tk.Tk):
@@ -61,16 +61,15 @@ class Aplicacion(tk.Tk):
         self._ajustar_tamano_ventana(USABLE_WIDTH, USABLE_HEIGHT)
 
         # ---- Serial no bloqueante ----
-        self.serial = None
-        self.rx_queue: queue.Queue[str] | None = None
+        self.serial: SerialManager | None = None
         try:
             self.serial = SerialManager(port=serial_port, baud=baud)
             self.serial.start()
-            self.rx_queue = self.serial.rx_queue
         except Exception as e:
             print(f"[WARN] No se pudo iniciar SerialManager: {e}")
+            self.serial = None  # sigue corriendo en modo “simulado”
 
-        # ---- Primer pantalla ----
+        # ---- Primera pantalla ----
         self.mostrar_ventana("VentanaPrincipal")
 
         # Poll de RX (usa POLL_MS de constants)
@@ -145,7 +144,7 @@ class Aplicacion(tk.Tk):
         if not hasattr(self, "_viewport"):
             self._ajustar_tamano_ventana(USABLE_WIDTH, USABLE_HEIGHT)
 
-        for w in list(self._viewport.winfo_children()):
+        for w in list(self._viewport.winfo_children()):  # oculta el resto
             if w is frame:
                 continue
             try:
@@ -171,7 +170,7 @@ class Aplicacion(tk.Tk):
             Clase = self._clases.get(nombre)
             if Clase is None:
                 raise KeyError(f"No hay clase registrada para '{nombre}'.")
-            # (master, controlador, arduino)
+            # (master, controlador, arduino/serial)
             frame = Clase(self._viewport, self, self.serial)
             self._ventanas[nombre] = frame
         return frame
@@ -193,39 +192,58 @@ class Aplicacion(tk.Tk):
     # ==============================================================
     def enviar_a_arduino(self, msg: str) -> None:
         """Encola `msg` para envío. Si no hay SerialManager, imprime por consola."""
-        if self.serial and hasattr(self.serial, "send"):
+        if self.serial and hasattr(self.serial, "enviar_a_arduino"):
             try:
-                self.serial.send(msg)
+                self.serial.enviar_a_arduino(msg)  # alias seguro hacia send()
                 return
             except Exception as e:
                 print(f"[SERIAL] Error enviando: {e}")
         print("[TX]", msg)
 
     def _poll_rx(self):
-        """Consulta la cola RX sin bloquear y rutea mensajes a las ventanas."""
+        """Consulta RX sin bloquear y rutea mensajes a las ventanas."""
         try:
-            if self.rx_queue is not None:
-                while True:
-                    line = self.rx_queue.get_nowait()
-                    self._procesar_linea_rx(line)
-        except queue.Empty:
-            pass
+            if self.serial:
+                # Usa helper del SerialManager; si no existe, cae a q_in
+                try:
+                    lines = self.serial.recv_nowait()
+                except AttributeError:
+                    # compat: acceder a la cola q_in directamente
+                    lines = []
+                    try:
+                        while True:
+                            lines.append(self.serial.q_in.get_nowait())
+                    except (queue.Empty, AttributeError):
+                        pass
+
+                for raw in lines:
+                    self._procesar_linea_rx(raw)
         finally:
-            self.after(POLL_MS, self._poll_rx)  # usa constante
+            self.after(POLL_MS, self._poll_rx)  # reprograma
 
     def _procesar_linea_rx(self, line: str) -> None:
         line = (line or "").strip()
         if not line:
             return
         # protocolo: $;{cmd};...;!
-        if not line.startswith("$") or not line.endswith("!"):
+        if not (line.startswith("$") and line.endswith("!")):
             return
+
+        # Extrae payload sin $ y !
         payload = line[2:-1] if line.startswith("$;") else line[1:-1]
         partes = payload.split(";") if payload else []
         if not partes:
             return
+
         cmd = partes[0]
-        # CMD=5 → datos para gráfica
+
+        # ---- ALERTA DE PRESIÓN SEGURIDAD ----
+        # Trama especificada: $;1;4;!
+        if cmd == "1" and len(partes) >= 2 and partes[1] == "4":
+            self._alerta_presion_superada()
+            return  # tras atender alerta, no hace falta continuar
+
+        # ---- CMD=5 → datos para gráfica ----
         if cmd == "5":
             v = self._ventanas.get("VentanaGraph")
             if v and hasattr(v, "on_rx_cmd5"):
@@ -233,6 +251,101 @@ class Aplicacion(tk.Tk):
                     v.on_rx_cmd5(partes)
                 except Exception as e:
                     print(f"[Graph] Error en on_rx_cmd5: {e}")
+
+        # Aquí puedes enrutar más comandos si los usas (CMD=1,2,3,4,...)
+
+    # ==============================================================
+    # Lógica de alerta y reseteo de SP de gas
+    # ==============================================================
+    def _alerta_presion_superada(self) -> None:
+        """
+        Muestra un popup de alerta y pone a 0 los setpoints de gas en los entries
+        visibles (Auto y MFC cuando es posible). También puedes añadir aquí los
+        comandos a Arduino para poner las salidas a 0 si lo requieres.
+        """
+        try:
+            messagebox.showerror("Seguridad", "Presión de seguridad superada")
+        except Exception:
+            print("[ALERTA] Presión de seguridad superada")
+
+        # 1) Intentar poner a 0 en VentanaAuto (tenemos acceso directo a los entries)
+        va = self._ventanas.get("VentanaAuto")
+        if va and hasattr(va, "cells"):
+            try:
+                for c in range(1, 9):
+                    col = va.cells.get(c)
+                    if not col:
+                        continue
+                    for key in ("m1_f", "m2_f", "m3_f", "m4_f"):
+                        ent = col.get(key)
+                        if ent:
+                            try:
+                                ent.delete(0, tk.END)
+                                ent.insert(0, "0")
+                            except Exception:
+                                pass
+                # si quieres además mandar comando inmediato a Arduino para cero PWM:
+                for mfc_id in (1, 2, 3, 4):
+                    self.enviar_a_arduino(f"$;1;{mfc_id};1;0;!")
+            except Exception as e:
+                print("[Auto] No se pudo forzar 0 en flujos:", e)
+
+        # 2) Intentar poner a 0 en VentanaMfc (si expone algún método evidente)
+        vmfc = self._ventanas.get("VentanaMfc")
+        if vmfc:
+            # Si tu VentanaMfc tiene un método explícito, úsalo:
+            if hasattr(vmfc, "poner_gases_a_cero"):
+                try:
+                    vmfc.poner_gases_a_cero()
+                except Exception:
+                    pass
+            elif hasattr(vmfc, "forzar_cero_flujos"):
+                try:
+                    vmfc.forzar_cero_flujos()
+                except Exception:
+                    pass
+            else:
+                # Fallback: recorre widgets buscando entries de flujo (heurístico seguro)
+                try:
+                    self._zero_numeric_entries(vmfc)
+                except Exception as e:
+                    print("[MFC] No se pudo forzar 0 en entradas:", e)
+
+    def _zero_numeric_entries(self, root: tk.Misc) -> None:
+        """
+        Heurístico de respaldo: recorre el subárbol de widgets y pone a '0' cualquier Entry
+        que contenga solo dígitos/float positivo. No toca campos vacíos ni de texto libre.
+        Úsalo solo como fallback cuando la ventana no expone API propia.
+        """
+        try:
+            import re
+            num_re = re.compile(r"^\s*\d+(\.\d+)?\s*$")
+        except Exception:
+            num_re = None
+
+        def visit(w: tk.Misc):
+            for child in w.winfo_children():
+                # ttk.Entry y tk.Entry
+                if isinstance(child, (tk.Entry, ttk.Entry)):
+                    try:
+                        val = child.get()
+                        if val is None:
+                            continue
+                        s = str(val).strip()
+                        if not s:
+                            continue
+                        if num_re and num_re.match(s):
+                            child.delete(0, tk.END)
+                            child.insert(0, "0")
+                    except Exception:
+                        pass
+                # recursión
+                try:
+                    visit(child)
+                except Exception:
+                    pass
+
+        visit(root)
 
     # ==============================================================
     # Cierre
@@ -244,11 +357,3 @@ class Aplicacion(tk.Tk):
         except Exception:
             pass
         self.destroy()
-
-
-# ---------------------------------------------------------------
-# Arranque manual (si se ejecuta este módulo directamente)
-# ---------------------------------------------------------------
-if __name__ == "__main__":
-    app = Aplicacion()
-    app.mainloop()
