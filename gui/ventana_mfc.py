@@ -1,11 +1,24 @@
 # gui/ventana_mfc.py
+from __future__ import annotations
+
 import os
 import csv
 import tkinter as tk
 from tkinter import ttk, messagebox
+
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 16)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
 
 class VentanaMfc(tk.Frame):
     """
@@ -84,13 +97,12 @@ class VentanaMfc(tk.Frame):
             st.theme_use("clam")
         except Exception:
             pass
-        st.configure("SelBtn.TButton", padding=6)
-        st.map("SelBtn.TButton",
-               background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
-        st.configure("SelBtnOn.TButton", padding=6, background="#007acc", foreground="white")
-        st.map("SelBtnOn.TButton",
-               background=[("!disabled", "#007acc"), ("pressed", "#0062a3")],
-               foreground=[("!disabled", "white")])
+        # Aplicar fuente táctil a los botones de selección
+        st.configure("SelBtn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("SelBtn.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+        st.configure("SelBtnOn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
+        st.map("SelBtnOn.TButton", background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+
 
     # ------------------------ UI ------------------------
     def _crear_ui(self):
