@@ -201,10 +201,10 @@ class VentanaMfc(tk.Frame):
             .grid(row=row, column=0, columnspan=2, padx=6, pady=(8, 4))
 
         return frame
-    # ------------------------------------------------------------------
-    # BYPASS (leer/recargar)
-    # ------------------------------------------------------------------
+
+    # ------------------------ Bypass (leer/recargar) ------------------------
     def _leer_bypass_desde_csv(self) -> int:
+        """Lee la clave BYP de valv_pos.csv. Devuelve 1 o 2 (default 1 si no existe)."""
         try:
             if os.path.exists(self._pos_file):
                 with open(self._pos_file, newline="", encoding="utf-8") as f:
@@ -217,10 +217,12 @@ class VentanaMfc(tk.Frame):
         return 1
 
     def _reload_bypass_and_refresh(self) -> None:
+        """Llamable externamente si cambia el bypass en la otra ventana y vuelve a esta."""
         prev = self._bypass
         self._bypass = self._leer_bypass_desde_csv()
+        # Si acabamos de entrar a BYPASS=2, igualar gases 1↔3
         if self._bypass == 2 and prev != 2:
-            self._sync_gases_if_needed(1)
+            self._sync_gases_if_needed(1)  # usa MFC1 como referencia
         self._recalc_mix_percentages()
 
     # ------------------------ Lógica de máximos ------------------------
@@ -231,13 +233,13 @@ class VentanaMfc(tk.Frame):
         return self.BASE_MAX[gas]
 
     # ------------------------ Handlers de UI ------------------------
-    def _on_cambio_gas(self, mfc_id: int):
+    def _on_cambio_gas(self, mfc_id: int) -> None:
         """Actualiza leyenda (cap del entry si corresponde). No afecta % mezcla."""
         gas = self.refs[mfc_id]["combo"].get()
         maxv = self._maximo_mfc_por_gas(mfc_id, gas)
         self.refs[mfc_id]["legend"].configure(text=f"min: 0   max: {maxv}")
 
-        ent = self.refs[mfc_id]["entry"]
+        ent: ttk.Entry = self.refs[mfc_id]["entry"]
         txt = (ent.get() or "").strip()
         if txt:
             try:
@@ -252,7 +254,7 @@ class VentanaMfc(tk.Frame):
         # Si BYPASS=2 y es MFC1 o MFC3, igualar el otro
         self._sync_gases_if_needed(mfc_id)
 
-    def _on_submit_flujo(self, mfc_id: int, entry: ttk.Entry, valor):
+    def _on_submit_flujo(self, mfc_id: int, entry: ttk.Entry, valor) -> None:
         """Normaliza/capa el flujo y recalcula % mezcla."""
         try:
             f = float(valor)
@@ -269,26 +271,26 @@ class VentanaMfc(tk.Frame):
         # Recalcular % mezcla por cambio de SP
         self._recalc_mix_percentages()
 
-    def _actualizar_estilos_on_off(self, mfc_id: int):
+    def _actualizar_estilos_on_off(self, mfc_id: int) -> None:
         refs = self.refs[mfc_id]
         est = self.estado_mfc[mfc_id]
         refs["btn_open"].configure(style="SelBtnOn.TButton" if est == "open" else "SelBtn.TButton")
         refs["btn_close"].configure(style="SelBtnOn.TButton" if est == "close" else "SelBtn.TButton")
 
-    # ------------------------ Abrir/Cerrar ------------------------
-    def _btn_open(self, mfc_id: int):
+    # ------------------------ Abrir/Cerrar MFCS------------------------
+    def _btn_open(self, mfc_id: int) -> None:
         self.estado_mfc[mfc_id] = "open"
         self._actualizar_estilos_on_off(mfc_id)
         self._enviar_mensaje(f"$;1;{mfc_id};2;1;!")
 
-    def _btn_close(self, mfc_id: int):
+    def _btn_close(self, mfc_id: int) -> None:
         self.estado_mfc[mfc_id] = "close"
         self._actualizar_estilos_on_off(mfc_id)
         self._enviar_mensaje(f"$;1;{mfc_id};2;2;!")
 
     # ------------------------ Enviar flujo (SP -> PWM) ------------------------
     def _enviar_flujo(self, mfc_id: int):
-        ent = self.refs[mfc_id]["entry"]
+        ent: ttk.Entry = self.refs[mfc_id]["entry"]
         txt = (ent.get() or "").strip()
         if not txt:
             self._alerta("Dato faltante", f"Ingrese el flujo para MFC {mfc_id}.")
@@ -314,17 +316,17 @@ class VentanaMfc(tk.Frame):
     # ------------------------ % Mezcla ------------------------
     def _sp_val(self, mfc_id: int) -> float:
         """Lee el SP actual del entry (float, 0 si vacío)."""
-        ent = self.refs[mfc_id]["entry"]
+        ent: ttk.Entry = self.refs[mfc_id]["entry"]
         try:
             return float((ent.get() or "0").strip())
         except Exception:
             return 0.0
 
-    def _set_mix_percent(self, mfc_id: int, percent: float):
+    def _set_mix_percent(self, mfc_id: int, percent: float) -> None:
         lbl = self.refs[mfc_id]["mix_lbl"]
         lbl.configure(text=f"% de mezcla: {percent:.1f} %")
 
-    def _recalc_mix_percentages(self):
+    def _recalc_mix_percentages(self) -> None:
         """Recalcula y pinta los % de mezcla en función del BYPASS y los SP."""
         bypass = self._bypass or 1
 
@@ -378,15 +380,15 @@ class VentanaMfc(tk.Frame):
         pwm = int(round((flujo / max_flujo) * 255))
         return max(0, min(255, pwm))
 
-    def _alerta(self, titulo: str, mensaje: str):
+    def _alerta(self, titulo: str, mensaje: str) -> None:
         messagebox.showerror(titulo, mensaje)
 
-    def _enviar_mensaje(self, mensaje: str):
+    def _enviar_mensaje(self, mensaje: str) -> None:
         print("[TX MFC]", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(mensaje)
 
-    def _sync_gases_if_needed(self, changed_id: int):
+    def _sync_gases_if_needed(self, changed_id: int) -> None:
         """
         Si BYPASS=2 y cambió el gas de MFC1 o MFC3, iguala el otro.
         Usa una bandera para evitar loops de eventos.
