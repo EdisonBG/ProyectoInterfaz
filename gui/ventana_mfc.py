@@ -398,3 +398,22 @@ class VentanaMfc(tk.Frame):
             self._on_cambio_gas(other)
         finally:
             self._syncing_gas = False
+
+    def reset_flujos_a_cero(self):
+        """
+        Pone en '0' los entries de flujo de los 4 MFC SIN enviar ningún mensaje.
+        """
+        try:
+            for mid in (1, 2, 3, 4):
+                ent = self.refs[mid]["entry"] if "entry" in self.refs[mid] else self.refs[mid]["ent"]
+                ent.delete(0, tk.END)
+                ent.insert(0, "0")
+        except Exception as e:
+            print(f"[MFC] No se pudieron poner en 0 los flujos: {e}")
+
+    
+        if hasattr(self, "_recalc_mix_percentages"):
+            try:
+                self._recalc_mix_percentages()
+            except Exception:
+                pass

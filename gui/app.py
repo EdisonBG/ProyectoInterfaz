@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import messagebox
 import serial
 from .ventana_principal import VentanaPrincipal
 from .ventana_mfc import VentanaMfc
@@ -122,6 +123,27 @@ class Aplicacion(tk.Tk):
 
             cuerpo = limpio[1:-1]
             partes = [p for p in cuerpo.split(";") if p != ""]
+
+            # === ALERTA: Presión de seguridad superada ===
+            # Formato exacto: $;1;4;!  -> partes == ["1", "4"]
+            if len(partes) == 2 and partes[0] == "1" and partes[1] == "4":
+                # 1) Pop-up
+                try:
+                    messagebox.showwarning("Alerta", "Se superó la presión de seguridad")
+                except Exception:
+                    # En caso de que el mensaje llegue durante cierre de app, evitar crash
+                    print("[WARN] No se pudo mostrar el pop-up de seguridad")
+
+                # 2) Poner entradas MFC en 0 (si la ventana existe)
+                vmfc = self._ventanas.get("VentanaMfc")
+                if vmfc is not None and hasattr(vmfc, "reset_flujos_a_cero"):
+                    try:
+                        vmfc.reset_flujos_a_cero()  # no envía nada, sólo setea 0 en los entries
+                    except Exception as e:
+                        print(f"[WARN] No se pudieron resetear los MFC: {e}")
+                return
+
+
             if len(partes) < 3:
                 return
 
