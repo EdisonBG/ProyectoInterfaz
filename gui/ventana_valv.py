@@ -1,9 +1,21 @@
+from __future__ import annotations
+
 import os
 import csv
 import tkinter as tk
 from tkinter import ttk
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton, LabeledEntryNum
+
+# Constantes táctiles (si no existen, se aplican valores por defecto)
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 16)
+        ENTRY_WIDTH = 12
+    C = _C_()
 
 
 class VentanaValv(tk.Frame):
@@ -36,7 +48,7 @@ class VentanaValv(tk.Frame):
 
     # ------------- init -------------
     def __init__(self, master, controlador, arduino, *args, **kwargs):
-        super().__init__(master)
+        super().__init__(master,*args, **kwargs)
         self.controlador = controlador
         self.arduino = arduino
 
@@ -47,10 +59,10 @@ class VentanaValv(tk.Frame):
         self.v1_pos = tk.StringVar(value="A")
         self.v2_pos = tk.StringVar(value="A")
 
-        # Conexión equipo 2
+        # Conexión equipo 2 (deshabilita V2 y cambia comando de V1)
         self.conexion_equipo2 = tk.BooleanVar(value=False)
 
-        # Solenoide
+        # Solenoide de seguridad (presión máxima 20.0 bar)
         self.sol_abierta = tk.BooleanVar(value=False)
         self.sol_presion = 20.0  # bar
 
@@ -62,7 +74,6 @@ class VentanaValv(tk.Frame):
         self.bypass_sel = tk.IntVar(value=1)  # 1=Bypass 1, 2=Bypass 2
 
         # Estilos / UI
-        self._configurar_estilos()
         self._build_ui()
 
         # Cargar y reflejar V1/V2/BYP guardadas
@@ -72,29 +83,13 @@ class VentanaValv(tk.Frame):
         # Refrescar texto del botón BYP según persistencia
         self.btn_bypass.configure(text=self._texto_bypass())
 
-    # ------------- Estilos -------------
-    def _configurar_estilos(self):
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
 
-        style.configure("AB.TButton", padding=6)
-        style.map("AB.TButton",
-                  background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
-
-        style.configure("ABSelected.TButton",
-                        padding=6, background="#007acc", foreground="white")
-        style.map("ABSelected.TButton",
-                  background=[("!disabled", "#007acc"), ("pressed", "#0062a3")],
-                  foreground=[("!disabled", "white")])
 
     # ------------- UI -------------
     def _build_ui(self):
         # Layout raíz: barra izq + contenido der
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(0, weight=0, minsize=140)
         self.grid_columnconfigure(1, weight=1)
 
         # Barra navegación
