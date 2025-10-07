@@ -134,54 +134,62 @@ class VentanaMfc(tk.Frame):
             frame.grid(row=fila, column=col, padx=8, pady=8, sticky="nsew")
 
     def _crear_seccion_mfc(self, parent, mfc_id: int, titulo: str) -> ttk.LabelFrame:
-        """Sección por MFC: gas (combo), flujo (entry + leyenda), Abrir/Cerrar, Enviar flujo, % mezcla."""
         frame = ttk.LabelFrame(parent, text=titulo)
-        # 3 columnas: etiqueta/controles, valor, %mezcla a la derecha
         frame.grid_columnconfigure(0, weight=0)
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_columnconfigure(2, weight=0)
 
         row = 0
 
-        # Etiqueta % mezcla (arriba derecha)
-        mix_lbl = ttk.Label(frame, text="% de mezcla: 0.0 %")
+        # % mezcla (arriba derecha)
+        mix_lbl = ttk.Label(frame, text="% de mezcla: 0.0 %", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         mix_lbl.grid(row=row, column=2, padx=(4, 6), pady=(6, 0), sticky="ne")
         self.refs[mfc_id]["mix_lbl"] = mix_lbl
 
-        # Combobox gas
-        ttk.Label(frame, text="Gas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-        combo = ttk.Combobox(frame, values=self.GAS_LIST, state="readonly", width=10)
+        # Gas
+        ttk.Label(frame, text="Gas:", font=getattr(C, "FONT_BASE", ("Calibri", 16))).grid(
+            row=row, column=0, padx=5, pady=5, sticky="e"
+        )
+        combo = ttk.Combobox(
+            frame,
+            values=self.GAS_LIST,
+            state="readonly",
+            width=getattr(C, "COMBO_WIDTH", 12),
+            height=130,  # se conserva el parámetro original
+            font=getattr(C, "FONT_BASE", ("Calibri", 16)),
+        )
         combo.set(self.DEFAULT_GAS[mfc_id])
         combo.grid(row=row, column=1, padx=5, pady=5, sticky="w")
         combo.bind("<<ComboboxSelected>>", lambda _e, m=mfc_id: self._on_cambio_gas(m))
         self.refs[mfc_id]["combo"] = combo
         row += 1
 
-        # Entry de flujo
-        ttk.Label(frame, text="Flujo (mL/min):").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-        entry = ttk.Entry(frame, width=10)
-        entry.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-        entry.bind(
-            "<Button-1>",
-            lambda e, ent=entry, m=mfc_id: TecladoNumerico(
-                self, ent, on_submit=lambda v, mm=m, en=ent: self._on_submit_flujo(mm, en, v)
-            ),
+        # Flujo (LabeledEntryNum + teclado numérico)
+        campo_flujo = LabeledEntryNum(
+            frame,
+            "Flujo (mL/min):",
+            width=getattr(C, "ENTRY_WIDTH", 12),
         )
-        self.refs[mfc_id]["entry"] = entry
+        campo_flujo.grid(row=row, column=0, columnspan=2, sticky="w")
+        campo_flujo.bind_numeric(
+            lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+            on_submit=lambda v, m=mfc_id: self._on_submit_flujo(m, campo_flujo.entry, v),
+        )
+        self.refs[mfc_id]["entry"] = campo_flujo.entry
         row += 1
 
         # Leyenda min/max
         maxv = self._maximo_mfc_por_gas(mfc_id, combo.get())
-        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}")
+        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         legend.grid(row=row, column=0, columnspan=2, padx=5, pady=(0, 6), sticky="w")
         self.refs[mfc_id]["legend"] = legend
         row += 1
 
         # Botones Abrir / Cerrar
-        btn_open = ttk.Button(frame, text="Abrir MFC", style="SelBtn.TButton",
-                              command=lambda m=mfc_id: self._btn_open(m))
-        btn_close = ttk.Button(frame, text="Cerrar MFC", style="SelBtn.TButton",
-                               command=lambda m=mfc_id: self._btn_close(m))
+        btn_open = TouchButton(frame, text="Abrir MFC", style="SelBtn.TButton",
+                               command=lambda m=mfc_id: self._btn_open(m))
+        btn_close = TouchButton(frame, text="Cerrar MFC", style="SelBtn.TButton",
+                                command=lambda m=mfc_id: self._btn_close(m))
         btn_open.grid(row=row, column=0, padx=6, pady=6, sticky="w")
         btn_close.grid(row=row, column=1, padx=6, pady=6, sticky="w")
         self.refs[mfc_id]["btn_open"] = btn_open
@@ -189,14 +197,14 @@ class VentanaMfc(tk.Frame):
         row += 1
 
         # Botón Enviar flujo
-        ttk.Button(frame, text="Enviar flujo", command=lambda m=mfc_id: self._enviar_flujo(m))\
+        TouchButton(frame, text="Enviar flujo", command=lambda m=mfc_id: self._enviar_flujo(m))\
             .grid(row=row, column=0, columnspan=2, padx=6, pady=(8, 4))
 
         return frame
-
-    # ------------------------ Bypass (leer/recargar) ------------------------
+    # ------------------------------------------------------------------
+    # BYPASS (leer/recargar)
+    # ------------------------------------------------------------------
     def _leer_bypass_desde_csv(self) -> int:
-        """Lee la clave BYP de valv_pos.csv. Devuelve 1 o 2 (default 1 si no existe)."""
         try:
             if os.path.exists(self._pos_file):
                 with open(self._pos_file, newline="", encoding="utf-8") as f:
@@ -208,13 +216,11 @@ class VentanaMfc(tk.Frame):
             pass
         return 1
 
-    def _reload_bypass_and_refresh(self):
-        """Llamable externamente si cambia el bypass en la otra ventana y vuelve a esta."""
+    def _reload_bypass_and_refresh(self) -> None:
         prev = self._bypass
         self._bypass = self._leer_bypass_desde_csv()
-        # Si acabamos de entrar a BYPASS=2, igualar gases 1↔3
         if self._bypass == 2 and prev != 2:
-            self._sync_gases_if_needed(1)  # usa MFC1 como referencia
+            self._sync_gases_if_needed(1)
         self._recalc_mix_percentages()
 
     # ------------------------ Lógica de máximos ------------------------
