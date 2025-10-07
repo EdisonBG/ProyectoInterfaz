@@ -15,8 +15,8 @@ TK_SCALING: float = 1.20
 
 # Fuentes (se usa Calibri; si no está instalada, Tkinter caerá a la fuente por defecto)
 FONT_FAMILY: str = "Calibri"
-FONT_SIZE_BASE: int = 11
-FONT_SIZE_HEADING: int = 14
+FONT_SIZE_BASE: int = 16
+FONT_SIZE_HEADING: int = 20
 FONT_BASE = (FONT_FAMILY, FONT_SIZE_BASE)
 FONT_HEADING = (FONT_FAMILY, FONT_SIZE_HEADING)
 
@@ -40,3 +40,8 @@ COMBO_PAD = (8, 8)
 
 # Temporizadores
 POLL_MS: int = 50  # intervalo de sondeo para comunicación serie
+
+
+# Entry y Combobox: anchos lógicos (en caracteres)
+ENTRY_WIDTH: int = 12
+COMBO_WIDTH: int = 12

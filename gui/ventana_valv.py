@@ -1,7 +1,9 @@
 """
 Ventana de válvulas y bombas (optimizada para 1024×530 y entorno táctil).
 
-Versión completa con `LabeledEntryNum` y todos los helpers (_texto_sol, etc.).
+- Conserva toda la lógica original.
+- Aplica tamaños táctiles usando ui.constants cuando existan (fuente base y anchos).
+- Usa LabeledEntryNum con teclado numérico para la presión de seguridad.
 """
 
 from __future__ import annotations
@@ -14,6 +16,15 @@ from tkinter import ttk
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 from ui.widgets import TouchButton, LabeledEntryNum
+
+# Constantes táctiles (si no existen, se aplican valores por defecto)
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 16)
+        ENTRY_WIDTH = 12
+    C = _C_()
 
 
 class VentanaValv(tk.Frame):
@@ -83,7 +94,9 @@ class VentanaValv(tk.Frame):
         card_v1 = ttk.LabelFrame(wrap, text="Válvula 1 (Entrada)")
         card_v1.grid(row=0, column=0, sticky="nsew", **card_pad)
         card_v1.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v1, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
+        ttk.Label(card_v1, text="Posición:", font=C.FONT_BASE).grid(
+            row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w"
+        )
         btns_v1 = ttk.Frame(card_v1)
         btns_v1.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
         self.btn_v1_a = TouchButton(btns_v1, text="A", command=lambda: self._seleccionar_posicion("v1", "A"))
@@ -95,7 +108,9 @@ class VentanaValv(tk.Frame):
         card_v2 = ttk.LabelFrame(wrap, text="Válvula 2 (Salida)")
         card_v2.grid(row=0, column=1, sticky="nsew", **card_pad)
         card_v2.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v2, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
+        ttk.Label(card_v2, text="Posición:", font=C.FONT_BASE).grid(
+            row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w"
+        )
         btns_v2 = ttk.Frame(card_v2)
         btns_v2.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
         self.btn_v2_a = TouchButton(btns_v2, text="A", command=lambda: self._seleccionar_posicion("v2", "A"))
@@ -124,7 +139,11 @@ class VentanaValv(tk.Frame):
         self.btn_sol_toggle = TouchButton(card_sol, text=self._texto_sol(), command=self._toggle_sol)
         self.btn_sol_toggle.grid(row=0, column=0, columnspan=2, padx=in_padx, pady=(in_pady, 6), sticky="w")
 
-        campo_p = LabeledEntryNum(card_sol, "Presión de seguridad (bar):", width=10)
+        campo_p = LabeledEntryNum(
+            card_sol,
+            "Presión de seguridad (bar):",
+            width=getattr(C, "ENTRY_WIDTH", 12),
+        )
         campo_p.grid(row=1, column=0, columnspan=2, sticky="w")
         campo_p.bind_numeric(
             lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),

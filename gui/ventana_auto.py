@@ -1,67 +1,69 @@
-"""
-Ventana Auto – refactor táctil + scroll + validación y ejecución completas.
-
-- Layout 1024×530: barra izquierda fija + panel derecho con controles, monitor y tabla.
-- Entradas numéricas normalizadas (enteros y decimales) con `TecladoNumerico`.
-- Tabla scrolleable 8 columnas × múltiples filas (categorías definidas en ROWS).
-- Acciones: Validar, Iniciar, Pausar, Reanudar, Detener, Guardar/Cargar preset.
-- Persistencia de BYPASS desde `valv_pos.csv` para información (no obligatorio para ejecutar).
-- Mensajería de ejecución (resumen):
-    • MFC flujo (PWM):           $;1;{mfc};1;{pwm};!
-    • Válvula 1 pos A/B:         $;3;1;1;{1|2};!
-    • Válvula 2 pos A/B:         $;3;2;1;{1|2};!
-    • Solenoide (auto presión):  $;3;5;0;{p10};!
-    • Peristáltica 1 ON/OFF:     $;3;6;1;{1|2};!
-    • Peristáltica 2 ON/OFF:     $;3;7;1;{1|2};!
-
-Notas:
-- Este archivo implementa una ejecución por etapas simples (hasta 8 columnas). Cada etapa puede definir:
-  tiempos de etapa, válvulas conmutadas por tA/tB, presión objetivo, estado de peristálticas,
-  gas y flujo por cada MFC, setpoints de hornos (se exponen pero no se envían aquí; integrar si se requiere).
-"""
-
-from __future__ import annotations
-
-import os
+# gui/ventana_auto.py
 import csv
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 16)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
 
-# -----------------------------
-# Helpers comunes
-# -----------------------------
+
+# ========================== Utilidades comunes ==========================
 
 def clamp(v, a, b):
+    """Recorta v al rango [a, b]."""
     return a if v < a else (b if v > b else v)
 
 
-def mmss(seg):
-    seg = max(0, int(seg))
-    m, s = divmod(seg, 60)
+def mmss(segundos: int) -> str:
+    """Devuelve MM:SS desde un entero de segundos (recortado a >=0)."""
+    s = max(0, int(segundos))
+    m, s = divmod(s, 60)
     return f"{m:02d}:{s:02d}"
 
 
 def flujo_a_pwm(flujo_ml_min: float, maximo: int) -> int:
+    """Convierte flujo en mL/min a un PWM [0..255] dado un máximo por gas."""
     maximo = max(1, int(maximo))
     f = clamp(float(flujo_ml_min), 0.0, float(maximo))
-    pwm = round((f / float(maximo)) * 255.0)
-    return int(clamp(pwm, 0, 255))
+    return int(clamp(round((f / float(maximo)) * 255.0), 0, 255))
 
 
-# -----------------------------
-# Límites MFC (por gas)
-# -----------------------------
+# ======================= Límites y defaults MFC =========================
 
 GASES = ("O2", "N2", "H2", "CO2", "CO", "Aire")
 
+# MFC1 (por defecto O2)
+MFC1_LIMITS = {
+    "O2": 10000, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
+}
+# MFC2 (por defecto CO2)
+MFC2_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060
+}
+# MFC3 (por defecto N2)
+MFC3_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
+}
+# MFC4 (por defecto H2)
+MFC4_LIMITS = {
+    "O2": 9920, "N2": 10000, "H2": 10000, "CO2": 7370, "CO": 10000, "Aire": 10060
+}
+
 MFC_DEFAULTS = {
-    1: ("O2",  {"O2": 10000, "N2": 10000, "H2": 10100, "CO2":  7370, "CO": 10000, "Aire": 10060}),
-    2: ("CO2", {"O2":  9920, "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060}),
-    3: ("N2",  {"O2":  9920, "N2": 10000, "H2": 10100, "CO2":  7370, "CO": 10000, "Aire": 10060}),
-    4: ("H2",  {"O2":  9920, "N2": 10000, "H2": 10000, "CO2":  7370, "CO": 10000, "Aire": 10060}),
+    1: ("O2", MFC1_LIMITS),
+    2: ("CO2", MFC2_LIMITS),
+    3: ("N2", MFC3_LIMITS),
+    4: ("H2", MFC4_LIMITS),
 }
 
 MAX_SP = 600
@@ -69,31 +71,32 @@ MAX_PRES = 20.0
 
 
 class VentanaAuto(tk.Frame):
-    """Secuenciador automático por etapas (hasta 8 columnas)."""
+    """Secuenciador automático por etapas con control de Válvulas, Peristálticas, MFC y SP de hornos."""
 
+    # Definición de filas (títulos y tipo de celda)
     ROWS = [
-        ("Etapa", "label"),                    # fila 0 (cabeceras 1..8 en columnas)
-        ("Tiempo de etapa (min)", "int"),     # fila 1
-        ("", "spacer"),                      # 2
-        ("Válvulas - Posición inicial", "combo_pos"),   # 3
-        ("Válvulas - Tiempo en A (min)", "int"),        # 4
-        ("Válvulas - Tiempo en B (min)", "int"),        # 5
-        ("Presión de proceso (bar)", "decimal1"),       # 6
-        ("", "spacer"),                      # 7
-        ("Peristáltica 1", "combo_onoff"),              # 8
-        ("Peristáltica 2", "combo_onoff"),              # 9
-        ("", "spacer"),                      # 10
-        ("MFC1 - Gas", "combo_gas"),                     # 11
-        ("MFC1 - Flujo (mL/min)", "flow_mfc1"),          # 12
-        ("MFC2 - Gas", "combo_gas"),                     # 13
-        ("MFC2 - Flujo (mL/min)", "flow_mfc2"),          # 14
-        ("MFC3 - Gas", "combo_gas"),                     # 15
-        ("MFC3 - Flujo (mL/min)", "flow_mfc3"),          # 16
-        ("MFC4 - Gas", "combo_gas"),                     # 17
-        ("MFC4 - Flujo (mL/min)", "flow_mfc4"),          # 18
-        ("", "spacer"),                      # 19
-        ("Setpoint Horno 1 (°C)", "sp_temp"),            # 20 (no se envía en esta versión)
-        ("Setpoint Horno 2 (°C)", "sp_temp"),            # 21 (no se envía en esta versión)
+        ("Etapa", "label"),
+        ("Tiempo de etapa (min)", "int"),
+        ("", "spacer"),
+        ("Válvulas - Posición inicial", "combo_pos"),
+        ("Válvulas - Tiempo en A (min)", "int"),
+        ("Válvulas - Tiempo en B (min)", "int"),
+        ("Presión de proceso (bar)", "decimal1"),
+        ("", "spacer"),
+        ("Peristáltica 1", "combo_onoff"),
+        ("Peristáltica 2", "combo_onoff"),
+        ("", "spacer"),
+        ("MFC1 - Gas", "combo_gas"),
+        ("MFC1 - Flujo (mL/min)", "flow_mfc1"),
+        ("MFC2 - Gas", "combo_gas"),
+        ("MFC2 - Flujo (mL/min)", "flow_mfc2"),
+        ("MFC3 - Gas", "combo_gas"),
+        ("MFC3 - Flujo (mL/min)", "flow_mfc3"),
+        ("MFC4 - Gas", "combo_gas"),
+        ("MFC4 - Flujo (mL/min)", "flow_mfc4"),
+        ("", "spacer"),
+        ("Setpoint Horno 1 (°C)", "sp_temp"),
+        ("Setpoint Horno 2 (°C)", "sp_temp"),
     ]
 
     def __init__(self, master, controlador, arduino):
@@ -104,63 +107,72 @@ class VentanaAuto(tk.Frame):
         # Estado de ejecución
         self._run_active = False
         self._paused = False
-        self._tick_id: str | None = None
+        self._tick_id = None
+        self._active_cols = []   # columnas (1..8) con etapas válidas
+        self._col_ptr = -1       # índice en _active_cols
+        self._stage_remaining = 0
+        self._seg_remaining = 0
+        self._seg_pos = "A"
+        self._seg_tA = 0
+        self._seg_tB = 0
 
-        # Progreso/temporizadores
-        self._active_cols: list[int] = []
-        self._col_ptr = -1
-        self._stage_remaining = 0  # seg restantes en etapa
-        self._seg_remaining = 0    # seg restantes para cambio de posición válvula
-        self._seg_pos = "A"        # posición actual válvula
-        self._seg_tA = 0           # duración A (seg)
-        self._seg_tB = 0           # duración B (seg)
-
-        # Info BYPASS (si existe en CSV). No es condicionante aquí.
+        # Estado BYPASS leído desde ventana de válvulas
         self._bypass = self._leer_bypass()
 
-        # Celdas de la grilla: por columna 1..8 un dict de widgets
+        # Referencias a celdas por columna
         self.cells: dict[int, dict[str, tk.Widget]] = {c: {} for c in range(1, 9)}
 
-        # Construcción UI
         self._build_ui()
 
     # ------------------------------------------------------------------
-    # Construcción de UI
+    # Construcción de UI (barra, paneles, grilla)
     # ------------------------------------------------------------------
     def _build_ui(self):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
+        # --------- barra de navegación (columna 0) ---------
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=120)
+        barra.configure(width=140)
         barra.grid(row=0, column=0, sticky="ns")
         barra.grid_propagate(False)
 
+        # --------- contenedor derecho (columna 1) ---------
         main = ttk.Frame(self)
         main.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
-        main.grid_rowconfigure(3, weight=1)
+        main.grid_rowconfigure(3, weight=1)  # fila de la grilla
         main.grid_columnconfigure(0, weight=1)
 
+        # --------- fila 1: controles superiores ---------
         self._build_controls(main)
+
+        # --------- fila 2: monitor ---------
         self._build_monitor(main)
+
+        # --------- fila 3: canvas scrolleable con grid ---------
         self._build_grid(main)
 
     def _build_controls(self, parent):
         wrap = ttk.Frame(parent)
         wrap.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        # expandir al centro para que “quepa” cómodamente en 1024x600
         for i in range(0, 7):
             wrap.grid_columnconfigure(i, weight=0)
         wrap.grid_columnconfigure(7, weight=1)
 
-        ttk.Button(wrap, text="Validar", command=self._cmd_validar).grid(row=0, column=0, padx=4, pady=2)
-        ttk.Button(wrap, text="Iniciar", command=self._cmd_iniciar).grid(row=0, column=1, padx=4, pady=2)
-        self.btn_pausar = ttk.Button(wrap, text="Pausar", command=self._cmd_pausar, state="disabled")
+        TouchButton(wrap, text="Validar", command=self._cmd_validar).grid(row=0, column=0, padx=4, pady=2)
+        TouchButton(wrap, text="Iniciar", command=self._cmd_iniciar).grid(row=0, column=1, padx=4, pady=2)
+
+        self.btn_pausar = TouchButton(wrap, text="Pausar", command=self._cmd_pausar, state="disabled")
         self.btn_pausar.grid(row=0, column=2, padx=4, pady=2)
-        self.btn_reanudar = ttk.Button(wrap, text="Reanudar", command=self._cmd_reanudar, state="disabled")
+
+        self.btn_reanudar = TouchButton(wrap, text="Reanudar", command=self._cmd_reanudar, state="disabled")
         self.btn_reanudar.grid(row=0, column=3, padx=4, pady=2)
-        ttk.Button(wrap, text="Detener", command=self._cmd_detener).grid(row=0, column=4, padx=4, pady=2)
-        ttk.Button(wrap, text="Guardar preset", command=self._cmd_guardar_preset).grid(row=0, column=5, padx=8, pady=2)
-        ttk.Button(wrap, text="Cargar preset", command=self._cmd_cargar_preset).grid(row=0, column=6, padx=4, pady=2)
+
+        TouchButton(wrap, text="Detener", command=self._cmd_detener).grid(row=0, column=4, padx=4, pady=2)
+
+        TouchButton(wrap, text="Guardar preset", command=self._cmd_guardar_preset).grid(row=0, column=5, padx=8, pady=2)
+        TouchButton(wrap, text="Cargar preset", command=self._cmd_cargar_preset).grid(row=0, column=6, padx=4, pady=2)
 
     def _build_monitor(self, parent):
         box = ttk.LabelFrame(parent, text="Monitor")
@@ -174,16 +186,17 @@ class VentanaAuto(tk.Frame):
         self.var_mon_rest_seg = tk.StringVar(value="-")
         self.var_mon_pres = tk.StringVar(value="-")
 
-        ttk.Label(box, text="Etapa:").grid(row=0, column=0, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_etapa).grid(row=0, column=1, padx=2, pady=4, sticky="w")
-        ttk.Label(box, text="Posición válvulas:").grid(row=0, column=2, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pos).grid(row=0, column=3, padx=2, pady=4, sticky="w")
-        ttk.Label(box, text="Restante etapa:").grid(row=0, column=4, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_etapa).grid(row=0, column=5, padx=2, pady=4, sticky="w")
-        ttk.Label(box, text="Cambio válvulas en:").grid(row=0, column=6, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_seg).grid(row=0, column=7, padx=2, pady=4, sticky="w")
-        ttk.Label(box, text="Presión etapa (bar):").grid(row=0, column=8, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pres).grid(row=0, column=9, padx=2, pady=4, sticky="w")
+        def lbl(r, c, text=None, var=None):
+            if text:
+                ttk.Label(box, text=text, font=C.FONT_BASE).grid(row=0, column=c, padx=6, pady=4, sticky="e")
+            if var:
+                ttk.Label(box, textvariable=var, font=C.FONT_BASE).grid(row=0, column=c+1, padx=2, pady=4, sticky="w")
+
+        lbl(0, 0, "Etapa:", self.var_mon_etapa)
+        lbl(0, 2, "Posición válvulas:", self.var_mon_pos)
+        lbl(0, 4, "Restante etapa:", self.var_mon_rest_etapa)
+        lbl(0, 6, "Cambio válvulas en:", self.var_mon_rest_seg)
+        lbl(0, 8, "Presión etapa (bar):", self.var_mon_pres)
 
     def _build_grid(self, parent):
         holder = ttk.Frame(parent)
@@ -191,15 +204,16 @@ class VentanaAuto(tk.Frame):
         holder.grid_rowconfigure(0, weight=1)
         holder.grid_columnconfigure(0, weight=1)
 
+        # Canvas con scrollbars
         self.canvas = tk.Canvas(holder, highlightthickness=0)
         vsb = ttk.Scrollbar(holder, orient="vertical", command=self.canvas.yview)
         hsb = ttk.Scrollbar(holder, orient="horizontal", command=self.canvas.xview)
         self.canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-
         self.canvas.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         hsb.grid(row=1, column=0, sticky="ew")
 
+        # Frame interno dentro del canvas
         self.grid_frame = ttk.Frame(self.canvas)
         self.canvas.create_window((0, 0), window=self.grid_frame, anchor="nw")
         self.grid_frame.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
@@ -208,48 +222,60 @@ class VentanaAuto(tk.Frame):
         label_pady = (4, 2)
         cell_pad = dict(padx=3, pady=2)
 
-        # Columna 0 (nombres de filas)
+        # Columna 0: etiquetas (categorías)
         for r, (text, kind) in enumerate(self.ROWS):
-            lbl = ttk.Label(self.grid_frame, text=text, anchor="e", justify="right")
+            lbl = ttk.Label(self.grid_frame, text=text, anchor="e", justify="right", font=C.FONT_BASE)
             lbl.grid(row=r, column=0, sticky="e", padx=label_padx, pady=label_pady)
 
-        # Columnas 1..8 (etapas)
+        # Columnas 1..8: etapas
         for c in range(1, 9):
-            head = ttk.Label(self.grid_frame, text=str(c), anchor="center")
+            # Cabecera fija con número de etapa
+            head = ttk.Label(self.grid_frame, text=str(c), anchor="center", font=C.FONT_BASE)
             head.grid(row=0, column=c, sticky="nsew", **cell_pad)
 
+            # Fila 1: Tiempo de etapa (entry entero, default 0)
             ent_t_etapa = self._make_entry_int(self.grid_frame, default="0")
             ent_t_etapa.grid(row=1, column=c, sticky="w", **cell_pad)
 
-            cmb_pos = ttk.Combobox(self.grid_frame, values=("A", "B"), state="readonly", width=5)
+            # Fila 3: Posición inicial válvulas (A/B)
+            cmb_pos = ttk.Combobox(self.grid_frame, values=("A", "B"), state="readonly", width=C.COMBO_WIDTH, font=C.FONT_BASE)
             cmb_pos.set("A")
             cmb_pos.grid(row=3, column=c, sticky="w", **cell_pad)
 
+            # Fila 4 y 5: tiempos A y B
             ent_ta = self._make_entry_int(self.grid_frame, default="0")
             ent_ta.grid(row=4, column=c, sticky="w", **cell_pad)
-
             ent_tb = self._make_entry_int(self.grid_frame, default="0")
             ent_tb.grid(row=5, column=c, sticky="w", **cell_pad)
 
-            ent_pres = self._make_entry_dec(self.grid_frame, default="0.0", max_dec=1, cap_max=MAX_PRES)
+            # Fila 6: presión de proceso
+            ent_pres = self._make_entry_dec(self.grid_frame, default="0.0", max_dec=1)
             ent_pres.grid(row=6, column=c, sticky="w", **cell_pad)
 
-            cmb_p1 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=6)
+            # Fila 8 y 9: peristálticas ON/OFF
+            cmb_p1 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=C.COMBO_WIDTH, font=C.FONT_BASE)
             cmb_p1.set("OFF")
             cmb_p1.grid(row=8, column=c, sticky="w", **cell_pad)
 
-            cmb_p2 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=6)
+            cmb_p2 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=C.COMBO_WIDTH, font=C.FONT_BASE)
             cmb_p2.set("OFF")
             cmb_p2.grid(row=9, column=c, sticky="w", **cell_pad)
 
+            # (espacio)
+
+            # MFC1..4: gas + flujo con límites
             def make_gas_flow(row_gas, row_flow, mfc_id):
                 gas_default = MFC_DEFAULTS[mfc_id][0]
-                cmb = ttk.Combobox(self.grid_frame, values=GASES, state="readonly", width=8)
+                cmb = ttk.Combobox(self.grid_frame, values=GASES, state="readonly", width=C.COMBO_WIDTH, font=C.FONT_BASE)
                 cmb.set(gas_default)
                 cmb.grid(row=row_gas, column=c, sticky="w", **cell_pad)
+
                 ent = self._make_entry_int(self.grid_frame, default="0")
                 ent.grid(row=row_flow, column=c, sticky="w", **cell_pad)
+
+                # al abrir teclado y al salir, normaliza con límite del gas actual
                 self._attach_flow_logic(ent, mfc_id, cmb)
+
                 return cmb, ent
 
             cmb_m1, ent_m1 = make_gas_flow(11, 12, 1)
@@ -257,12 +283,13 @@ class VentanaAuto(tk.Frame):
             cmb_m3, ent_m3 = make_gas_flow(15, 16, 3)
             cmb_m4, ent_m4 = make_gas_flow(17, 18, 4)
 
+            # Fila 20-21: SP hornos 1 y 2 (capado a 600)
             ent_t1 = self._make_entry_int(self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t1.grid(row=20, column=c, sticky="w", **cell_pad)
-
             ent_t2 = self._make_entry_int(self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t2.grid(row=21, column=c, sticky="w", **cell_pad)
 
+            # Registro de referencias de la columna
             self.cells[c] = {
                 "t_etapa": ent_t_etapa,
                 "pos_ini": cmb_pos,
@@ -277,470 +304,532 @@ class VentanaAuto(tk.Frame):
                 "m4_gas": cmb_m4, "m4_f": ent_m4,
                 "t1": ent_t1, "t2": ent_t2,
             }
-        self._enable_touch_scroll()
 
-    # ------------------------------------------------------------------
-    # Validación y preset (guardar/cargar)
-    # ------------------------------------------------------------------
-    def _cmd_validar(self) -> None:
-        errores = []
-        etapas_activas = []
-        for c in range(1, 9):
-            v_t = self._read_int(self.cells[c]["t_etapa"], 0)
-            if v_t <= 0:
-                continue
-            etapas_activas.append(c)
-            # Validaciones simples
-            v_ta = self._read_int(self.cells[c]["t_a"], 0)
-            v_tb = self._read_int(self.cells[c]["t_b"], 0)
-            v_pres = self._read_float(self.cells[c]["pres"], 0.0)
-            if v_t < 0:
-                errores.append(f"Col {c}: Tiempo de etapa inválido")
-            if v_ta < 0 or v_tb < 0:
-                errores.append(f"Col {c}: Tiempos A/B inválidos")
-            if not (0.0 <= v_pres <= MAX_PRES):
-                errores.append(f"Col {c}: Presión fuera de rango (0..{MAX_PRES} bar)")
-            for mfc_id in (1, 2, 3, 4):
-                gas = self.cells[c][f"m{mfc_id}_gas"].get()
-                if gas not in GASES:
-                    errores.append(f"Col {c}: Gas MFC{mfc_id} inválido")
-                maxv = self._max_mfc(mfc_id, gas)
-                try:
-                    f = float((self.cells[c][f"m{mfc_id}_f"].get() or "0").strip())
-                except Exception:
-                    f = -1
-                if f < 0 or f > maxv:
-                    errores.append(f"Col {c}: Flujo MFC{mfc_id} fuera de 0..{maxv}")
+    # ---------------------- helpers de celdas ----------------------
+    def _make_entry_int(self, parent, *, default="0", cap_max=None):
+        e = ttk.Entry(parent, width=C.ENTRY_WIDTH, font=C.FONT_BASE)
+        e.insert(0, default)
 
-        if not etapas_activas:
-            messagebox.showwarning("Validación", "No hay etapas activas (columna con tiempo > 0)")
-            return
+        def _norm():
+            txt = (e.get() or "").strip()
+            try:
+                v = int(float(txt))
+            except Exception:
+                v = 0
+            if cap_max is not None:
+                v = clamp(v, 0, cap_max)
+            else:
+                v = max(0, v)
+            e.delete(0, tk.END)
+            e.insert(0, str(v))
 
-        if errores:
-            msg = "".join(errores[:20])
-            if len(errores) > 20:
-                msg += f"... y {len(errores)-20} más"
-            messagebox.showerror("Errores de validación", msg)
-        else:
-            messagebox.showinfo("Validación", f"Validación completa. Etapas activas: {etapas_activas}")
+        # teclado y normalización
+        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        e.bind("<FocusOut>", lambda _e: _norm())
+        # validación en escritura
+        vcmd = (self.register(self._validate_numeric), "%P", "%d", 1, 0)  # entero
+        e.configure(validate="key", validatecommand=vcmd)
+        return e
 
-    def _cmd_guardar_preset(self) -> None:
-        path = filedialog.asksaveasfilename(title="Guardar preset", defaultextension=".csv",
-                                            filetypes=[("CSV", "*.csv")])
-        if not path:
-            return
+    def _make_entry_dec(self, parent, *, default="0.0", max_dec=1):
+        e = ttk.Entry(parent, width=C.ENTRY_WIDTH, font=C.FONT_BASE)
+        e.insert(0, default)
+
+        def _norm():
+            txt = (e.get() or "").strip()
+            try:
+                v = float(txt)
+            except Exception:
+                v = 0.0
+            v = clamp(round(v, max_dec), 0.0, MAX_PRES)
+            e.delete(0, tk.END)
+            e.insert(0, f"{v:.{max_dec}f}")
+
+        # teclado y normalización
+        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, f"{float(v):.{max_dec}f}"), _norm())))
+        e.bind("<FocusOut>", lambda _e: _norm())
+        # validación en escritura
+        vcmd = (self.register(self._validate_numeric), "%P", "%d", 0, max_dec)  # decimal con max_dec
+        e.configure(validate="key", validatecommand=vcmd)
+        return e
+
+    def _attach_flow_logic(self, entry: ttk.Entry, mfc_id: int, cmb_gas: ttk.Combobox):
+        """Asocia normalización de flujo según gas seleccionado en el MFC indicado."""
+        def _norm_flow():
+            gas = cmb_gas.get()
+            if gas not in GASES:
+                gas = MFC_DEFAULTS[mfc_id][0]
+            lim = MFC_DEFAULTS[mfc_id][1][gas]
+            txt = (entry.get() or "").strip()
+            try:
+                n = int(float(txt))
+            except Exception:
+                n = 0
+            n = clamp(n, 0, lim)
+            entry.delete(0, tk.END)
+            entry.insert(0, str(n))
+
+        entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry, on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
+        entry.bind("<FocusOut>", lambda _e: _norm_flow())
+        cmb_gas.bind("<<ComboboxSelected>>", lambda _e: _norm_flow())
+
+    @staticmethod
+    def _validate_numeric(new_text: str, action: str, es_entero: int, max_dec: int):
+        """Valida números mientras se escribe (permite vacío)."""
+        if action == "0":  # borrado siempre ok
+            return True
+        s = (new_text or "").strip()
+        if s == "":
+            return True
         try:
-            with open(path, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                # Encabezado: nombre de fila + valores col 1..8
-                for r, (text, kind) in enumerate(self.ROWS):
-                    row = [text]
-                    if kind == "label":
-                        row.extend([str(c) for c in range(1, 9)])
-                    else:
-                        for c in range(1, 9):
-                            row.append(self._cell_value_str(r, c))
-                    w.writerow(row)
-            messagebox.showinfo("Preset", "Preset guardado correctamente.")
-        except Exception as e:
-            messagebox.showerror("Preset", f"No se pudo guardar el preset: {e}")
+            if es_entero:
+                int(float(s))
+            else:
+                # limitar cantidad de decimales
+                if s.count(".") > 1:
+                    return False
+                if "." in s:
+                    dec = s.split(".", 1)[1]
+                    if len(dec) > max_dec:
+                        return False
+                float(s)
+            return True
+        except Exception:
+            return False
 
-    def _cmd_cargar_preset(self) -> None:
-        path = filedialog.askopenfilename(title="Cargar preset", defaultextension=".csv",
-                                          filetypes=[("CSV", "*.csv")])
-        if not path:
-            return
+    # ---------------------- BYPASS desde CSV ----------------------
+    def _leer_bypass(self) -> int:
+        """Lee BYPASS (1 o 2) desde el CSV de valv_pos.csv si existe; por defecto 1."""
         try:
-            with open(path, newline="", encoding="utf-8") as f:
+            fpath = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
+            if not os.path.exists(fpath):
+                return 1
+            with open(fpath, newline="", encoding="utf-8") as f:
                 rd = csv.reader(f)
-                rows = list(rd)
-            # Mapear por texto de fila
-            mapa = {row[0]: row[1:] for row in rows if row}
-            for r, (text, kind) in enumerate(self.ROWS):
-                vals = mapa.get(text)
-                if not vals:
-                    continue
-                for c in range(1, 9):
-                    val = vals[c-1] if c-1 < len(vals) else ""
-                    self._apply_cell_value(r, c, val)
-            messagebox.showinfo("Preset", "Preset cargado.")
-        except Exception as e:
-            messagebox.showerror("Preset", f"No se pudo cargar el preset: {e}")
+                for nombre, pos in rd:
+                    if (nombre or "").strip().upper() == "BYP":
+                        v = (pos or "").strip()
+                        return 2 if v == "2" else 1
+        except Exception:
+            pass
+        return 1
 
-    # ------------------------------------------------------------------
-    # Ejecución: iniciar/pausar/reanudar/detener
-    # ------------------------------------------------------------------
-    def _cmd_iniciar(self) -> None:
-        if self._run_active:
-            messagebox.showwarning("Auto", "La ejecución ya está en curso.")
-            return
-        # Preparar lista de columnas activas
-        self._active_cols = [c for c in range(1, 9) if self._read_int(self.cells[c]["t_etapa"], 0) > 0]
+    # ===================== COMANDOS SUPERIORES =====================
+    def _cmd_validar(self):
+        """Valida las 8 columnas y marca las columnas activas."""
+        activos = []
+        for c in range(1, 9):
+            try:
+                if self._col_valida(c):
+                    activos.append(c)
+            except Exception:
+                pass
+        self._active_cols = activos
+        if not activos:
+            messagebox.showwarning("Validación", "No hay etapas válidas.")
+        else:
+            messagebox.showinfo("Validación", f"Etapas válidas: {', '.join(map(str, activos))}")
+
+    def _cmd_iniciar(self):
         if not self._active_cols:
-            messagebox.showwarning("Auto", "No hay etapas activas (tiempo > 0).")
+            self._cmd_validar()
+            if not self._active_cols:
+                return
+        if self._run_active:
             return
-        self._col_ptr = -1
         self._run_active = True
         self._paused = False
         self.btn_pausar.configure(state="normal")
         self.btn_reanudar.configure(state="disabled")
-        self._next_stage()
+        self._col_ptr = 0
+        self._iniciar_etapa(self._active_cols[self._col_ptr])
+        self._tick()
 
-    def _cmd_pausar(self) -> None:
+    def _cmd_pausar(self):
         if not self._run_active or self._paused:
             return
         self._paused = True
-        if self._tick_id is not None:
-            try:
-                self.after_cancel(self._tick_id)
-            except Exception:
-                pass
-            self._tick_id = None
         self.btn_pausar.configure(state="disabled")
         self.btn_reanudar.configure(state="normal")
 
-    def _cmd_reanudar(self) -> None:
+    def _cmd_reanudar(self):
         if not self._run_active or not self._paused:
             return
         self._paused = False
         self.btn_pausar.configure(state="normal")
         self.btn_reanudar.configure(state="disabled")
-        self._schedule_tick()
 
-    def _cmd_detener(self) -> None:
-        self._stop_all()
-        messagebox.showinfo("Auto", "Ejecución detenida.")
-
-    def _stop_all(self) -> None:
+    def _cmd_detener(self):
+        if not self._run_active:
+            return
         self._run_active = False
         self._paused = False
-        if self._tick_id is not None:
+        self.btn_pausar.configure(state="disabled")
+        self.btn_reanudar.configure(state="disabled")
+        self._stage_remaining = 0
+        self._seg_remaining = 0
+        self._seg_pos = "A"
+        self._col_ptr = -1
+        self._active_cols = []
+        if self._tick_id:
             try:
                 self.after_cancel(self._tick_id)
             except Exception:
                 pass
-            self._tick_id = None
-        self.btn_pausar.configure(state="disabled")
-        self.btn_reanudar.configure(state="disabled")
-        # Limpieza de monitor
-        self.var_mon_etapa.set("-")
-        self.var_mon_pos.set("-")
-        self.var_mon_rest_etapa.set("-")
-        self.var_mon_rest_seg.set("-")
-        self.var_mon_pres.set("-")
+        self._tick_id = None
+        messagebox.showinfo("Auto", "Proceso detenido.")
 
-    # ------------------------------------------------------------------
-    # Avance de etapas y temporización
-    # ------------------------------------------------------------------
-    def _next_stage(self) -> None:
-        """Avanza a la siguiente etapa activa; si no hay más, detiene."""
-        self._col_ptr += 1
-        if self._col_ptr >= len(self._active_cols):
-            self._stop_all()
-            messagebox.showinfo("Auto", "Secuencia completada.")
+    def _cmd_guardar_preset(self):
+        path = filedialog.asksaveasfilename(
+            title="Guardar preset",
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv")],
+        )
+        if not path:
             return
-        col = self._active_cols[self._col_ptr]
-        # Leer parámetros de la etapa
-        t_min = self._read_int(self.cells[col]["t_etapa"], 0)
-        self._stage_remaining = max(1, int(t_min) * 60)
-        pos_ini = (self.cells[col]["pos_ini"].get() or "A").strip().upper()
-        self._seg_pos = "A" if pos_ini != "B" else "B"
-        self._seg_tA = max(0, int(self._read_int(self.cells[col]["t_a"], 0) * 60))
-        self._seg_tB = max(0, int(self._read_int(self.cells[col]["t_b"], 0) * 60))
-        self._seg_remaining = self._seg_tA if self._seg_pos == "A" else self._seg_tB
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["col", "t_etapa", "pos_ini", "t_a", "t_b", "pres",
+                            "p1", "p2",
+                            "m1_gas", "m1_f", "m2_gas", "m2_f", "m3_gas", "m3_f", "m4_gas", "m4_f",
+                            "t1_sp", "t2_sp"])
+                for c in range(1, 9):
+                    row = self._collect_column(c)
+                    if row is None:
+                        continue
+                    w.writerow([
+                        c,
+                        row.get("t_etapa", "0"),
+                        row.get("pos_ini", "A"),
+                        row.get("t_a", "0"),
+                        row.get("t_b", "0"),
+                        row.get("pres", "0.0"),
+                        row.get("p1", "OFF"),
+                        row.get("p2", "OFF"),
+                        row.get("m1_gas", "O2"), row.get("m1_f", "0"),
+                        row.get("m2_gas", "CO2"), row.get("m2_f", "0"),
+                        row.get("m3_gas", "N2"), row.get("m3_f", "0"),
+                        row.get("m4_gas", "H2"), row.get("m4_f", "0"),
+                        row.get("t1_sp", "0"), row.get("t2_sp", "0"),
+                    ])
+            messagebox.showinfo("Preset", "Preset guardado correctamente.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo guardar:\n{e}")
 
-        # Envíos al inicio de etapa
-        self._enviar_valvulas_pos(self._seg_pos)
-        pres = self._read_float(self.cells[col]["pres"], 0.0)
-        self._enviar_presion_auto(pres)
-        p1 = self.cells[col]["p1"].get() == "ON"
-        p2 = self.cells[col]["p2"].get() == "ON"
-        self._enviar_peristalticas(p1, p2)
-        self._enviar_mfcs(col)
+    def _cmd_cargar_preset(self):
+        path = filedialog.askopenfilename(
+            title="Cargar preset",
+            filetypes=[("CSV", "*.csv")],
+        )
+        if not path:
+            return
+        try:
+            with open(path, newline="", encoding="utf-8") as f:
+                rd = csv.DictReader(f)
+                for row in rd:
+                    try:
+                        c = int(row.get("col", "0"))
+                    except Exception:
+                        continue
+                    if not (1 <= c <= 8):
+                        continue
+                    self._apply_row(c, row)
+            messagebox.showinfo("Preset", "Preset cargado.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar:\n{e}")
 
-        # Monitor
-        self.var_mon_etapa.set(str(col))
-        self.var_mon_pos.set(self._seg_pos)
-        self.var_mon_rest_etapa.set(mmss(self._stage_remaining))
-        self.var_mon_rest_seg.set(mmss(self._seg_remaining) if self._seg_remaining > 0 else "-")
-        self.var_mon_pres.set(f"{pres:.1f}")
-
-        # Programar ticks
-        self._schedule_tick()
-
-    def _schedule_tick(self) -> None:
-        if self._run_active and not self._paused:
+    # ===================== LÓGICA PRINCIPAL AUTO =====================
+    def _tick(self):
+        """Reloj de 1s para actualizar tiempos cuando el proceso está activo."""
+        if not self._run_active:
+            return
+        if self._paused:
             self._tick_id = self.after(1000, self._tick)
-
-    def _tick(self) -> None:
-        if not self._run_active or self._paused:
-            return
-        # Contadores
-        self._stage_remaining -= 1
-        if self._stage_remaining <= 0:
-            self._next_stage()
             return
 
-        if self._seg_tA > 0 or self._seg_tB > 0:
+        # Decremento de contadores
+        if self._seg_remaining > 0:
             self._seg_remaining -= 1
-            if self._seg_remaining <= 0:
-                # Conmutar posición
-                self._seg_pos = "B" if self._seg_pos == "A" else "A"
-                self._enviar_valvulas_pos(self._seg_pos)
-                self._seg_remaining = self._seg_tA if self._seg_pos == "A" else self._seg_tB
+        self._stage_remaining = max(0, self._stage_remaining - 1)
 
-        # Actualizar monitor
+        # Cambio de posición de válvula si corresponde
+        if self._seg_remaining <= 0 and self._stage_remaining > 0:
+            self._flip_valve_pos()
+
+        # Fin de etapa
+        if self._stage_remaining <= 0:
+            # Siguiente etapa
+            self._col_ptr += 1
+            if self._col_ptr >= len(self._active_cols):
+                self._cmd_detener()
+                return
+            self._iniciar_etapa(self._active_cols[self._col_ptr])
+
+        # Actualización visual del monitor
+        self._refresh_monitor()
+
+        # Reprogramar
+        self._tick_id = self.after(1000, self._tick)
+
+    def _flip_valve_pos(self):
+        """Alterna posición A/B y reinicia temporizador de segmento."""
+        self._seg_pos = "B" if self._seg_pos == "A" else "A"
+        tA = self._seg_tA
+        tB = self._seg_tB
+        self._seg_remaining = 60 * (tA if self._seg_pos == "A" else tB)
+
+    def _iniciar_etapa(self, c: int):
+        """Carga setpoints/estados de la columna y envía comandos iniciales."""
+        row = self._collect_column(c)
+        if row is None:
+            return
+
+        # Tiempo de etapa y temporizadores de segmento
+        try:
+            tmin = int(float(row.get("t_etapa", "0")))
+        except Exception:
+            tmin = 0
+        self._stage_remaining = 60 * max(0, tmin)
+
+        self._seg_tA = max(0, int(float(row.get("t_a", "0"))))
+        self._seg_tB = max(0, int(float(row.get("t_b", "0"))))
+        self._seg_pos = row.get("pos_ini", "A")
+        self._seg_remaining = 60 * (self._seg_tA if self._seg_pos == "A" else self._seg_tB)
+
+        # Envío de presión (capada a 20.0)
+        try:
+            p = float(row.get("pres", "0.0"))
+        except Exception:
+            p = 0.0
+        p = clamp(round(p, 1), 0.0, MAX_PRES)
+        # CMD válvula solenoide (id 5): set presión
+        p10 = int(round(p * 10))
+        self._tx(f"$;3;5;0;{p10};!")
+
+        # Peristálticas
+        p1 = row.get("p1", "OFF").upper().strip() == "ON"
+        p2 = row.get("p2", "OFF").upper().strip() == "ON"
+        self._tx(f"$;3;6;1;{'1' if p1 else '2'};!")
+        self._tx(f"$;3;7;1;{'1' if p2 else '2'};!")
+
+        # MFC: gases y flujos a PWM
+        for mfc_id in (1, 2, 3, 4):
+            gas = row.get(f"m{mfc_id}_gas", MFC_DEFAULTS[mfc_id][0])
+            if gas not in GASES:
+                gas = MFC_DEFAULTS[mfc_id][0]
+            lim = MFC_DEFAULTS[mfc_id][1][gas]
+            try:
+                f = float(row.get(f"m{mfc_id}_f", "0"))
+            except Exception:
+                f = 0.0
+            f = clamp(f, 0.0, float(lim))
+            pwm = flujo_a_pwm(f, lim)
+            self._tx(f"$;1;{mfc_id};1;{pwm};!")
+
+        # Hornos SP
+        for horno_id in (1, 2):
+            k = f"t{horno_id}_sp"
+            try:
+                sp = int(float(row.get(k, "0")))
+            except Exception:
+                sp = 0
+            sp = clamp(sp, 0, MAX_SP)
+            self._tx(f"$;2;{horno_id};2;1;{sp};!")
+
+        self._refresh_monitor()
+
+    def _refresh_monitor(self):
+        """Pinta monitor con etapa actual, posición de válvulas y tiempos restantes."""
+        if self._col_ptr < 0 or self._col_ptr >= len(self._active_cols):
+            self.var_mon_etapa.set("-")
+            self.var_mon_pos.set("-")
+            self.var_mon_rest_etapa.set("-")
+            self.var_mon_rest_seg.set("-")
+            self.var_mon_pres.set("-")
+            return
+        c = self._active_cols[self._col_ptr]
+        self.var_mon_etapa.set(str(c))
         self.var_mon_pos.set(self._seg_pos)
         self.var_mon_rest_etapa.set(mmss(self._stage_remaining))
-        self.var_mon_rest_seg.set(mmss(self._seg_remaining) if self._seg_remaining > 0 else "-")
+        self.var_mon_rest_seg.set(mmss(self._seg_remaining))
+        # Mostrar presión configurada de la columna actual
+        row = self._collect_column(c)
+        try:
+            p = float(row.get("pres", "0.0")) if row else 0.0
+        except Exception:
+            p = 0.0
+        self.var_mon_pres.set(f"{clamp(round(p, 1), 0.0, MAX_PRES):.1f}")
 
-        # Siguiente tick
-        self._schedule_tick()
+    # ================== VALIDACIÓN / PRESETS / HELPERS ==================
+    def _collect_column(self, c: int):
+        """Agrupa valores de la columna c en un dict con claves canónicas."""
+        col = self.cells.get(c)
+        if not col:
+            return None
 
-    # ------------------------------------------------------------------
-    # Envíos (Arduino)
-    # ------------------------------------------------------------------
-    def _send(self, msg: str) -> None:
-        print("[TX AUTO]", msg)
+        def get_e(name, default=""):
+            w = col.get(name)
+            if w is None:
+                return default
+            if isinstance(w, ttk.Combobox):
+                return (w.get() or "").strip()
+            if isinstance(w, ttk.Entry):
+                return (w.get() or "").strip()
+            return default
+
+        return {
+            "t_etapa": get_e("t_etapa", "0"),
+            "pos_ini": get_e("pos_ini", "A"),
+            "t_a": get_e("t_a", "0"),
+            "t_b": get_e("t_b", "0"),
+            "pres": get_e("pres", "0.0"),
+            "p1": get_e("p1", "OFF"),
+            "p2": get_e("p2", "OFF"),
+            "m1_gas": get_e("m1_gas", MFC_DEFAULTS[1][0]),
+            "m1_f": get_e("m1_f", "0"),
+            "m2_gas": get_e("m2_gas", MFC_DEFAULTS[2][0]),
+            "m2_f": get_e("m2_f", "0"),
+            "m3_gas": get_e("m3_gas", MFC_DEFAULTS[3][0]),
+            "m3_f": get_e("m3_f", "0"),
+            "m4_gas": get_e("m4_gas", MFC_DEFAULTS[4][0]),
+            "m4_f": get_e("m4_f", "0"),
+            "t1_sp": get_e("t1", "0"),
+            "t2_sp": get_e("t2", "0"),
+        }
+
+    def _apply_row(self, c: int, row: dict):
+        """Carga en UI la fila de preset para la columna c."""
+        def set_e(e: ttk.Entry, val: str):
+            try:
+                e.delete(0, tk.END)
+                e.insert(0, str(val))
+            except Exception:
+                pass
+
+        def set_cmb(cm: ttk.Combobox, val: str):
+            try:
+                cm.set(val)
+            except Exception:
+                pass
+
+        set_e(self.cells[c]["t_etapa"], row.get("t_etapa", "0"))
+        set_cmb(self.cells[c]["pos_ini"], row.get("pos_ini", "A"))
+        set_e(self.cells[c]["t_a"], row.get("t_a", "0"))
+        set_e(self.cells[c]["t_b"], row.get("t_b", "0"))
+        set_e(self.cells[c]["pres"], row.get("pres", "0.0"))
+        set_cmb(self.cells[c]["p1"], row.get("p1", "OFF"))
+        set_cmb(self.cells[c]["p2"], row.get("p2", "OFF"))
+        set_cmb(self.cells[c]["m1_gas"], row.get("m1_gas", MFC_DEFAULTS[1][0]))
+        set_e(self.cells[c]["m1_f"], row.get("m1_f", "0"))
+        set_cmb(self.cells[c]["m2_gas"], row.get("m2_gas", MFC_DEFAULTS[2][0]))
+        set_e(self.cells[c]["m2_f"], row.get("m2_f", "0"))
+        set_cmb(self.cells[c]["m3_gas"], row.get("m3_gas", MFC_DEFAULTS[3][0]))
+        set_e(self.cells[c]["m3_f"], row.get("m3_f", "0"))
+        set_cmb(self.cells[c]["m4_gas"], row.get("m4_gas", MFC_DEFAULTS[4][0]))
+        set_e(self.cells[c]["m4_f"], row.get("m4_f", "0"))
+        set_e(self.cells[c]["t1"], row.get("t1_sp", "0"))
+        set_e(self.cells[c]["t2"], row.get("t2_sp", "0"))
+
+    def _apply_flow_clamp(self, c: int, mfc_id: int):
+        gas = self.cells[c][f"m{mfc_id}_gas"].get()
+        if gas not in GASES:
+            gas = MFC_DEFAULTS[mfc_id][0]
+        lim = MFC_DEFAULTS[mfc_id][1][gas]
+        ent = self.cells[c][f"m{mfc_id}_f"]
+        try:
+            v = int(float((ent.get() or "0").strip()))
+        except Exception:
+            v = 0
+        v = clamp(v, 0, lim)
+        ent.delete(0, tk.END)
+        ent.insert(0, str(v))
+
+    # ===================== VALIDACIÓN DE ETAPA =====================
+    def _col_valida(self, c: int) -> bool:
+        """Valida una etapa: tiempos no negativos, presiones en rango, flujos dentro de límites."""
+        col = self._collect_column(c)
+        if col is None:
+            return False
+
+        # tiempo de etapa (>0 para considerarse válida)
+        try:
+            t = int(float(col.get("t_etapa", "0")))
+        except Exception:
+            t = 0
+        if t <= 0:
+            return False
+
+        # tiempos A/B
+        try:
+            tA = int(float(col.get("t_a", "0")))
+        except Exception:
+            tA = 0
+        try:
+            tB = int(float(col.get("t_b", "0")))
+        except Exception:
+            tB = 0
+        if tA < 0 or tB < 0:
+            return False
+
+        # presión
+        try:
+            p = float(col.get("pres", "0.0"))
+        except Exception:
+            p = 0.0
+        if not (0.0 <= p <= MAX_PRES):
+            return False
+
+        # peristálticas
+        if col.get("p1", "OFF") not in ("OFF", "ON"):
+            return False
+        if col.get("p2", "OFF") not in ("OFF", "ON"):
+            return False
+
+        # mfc flows
+        for m in (1, 2, 3, 4):
+            gas = col.get(f"m{m}_gas", MFC_DEFAULTS[m][0])
+            if gas not in GASES:
+                return False
+            try:
+                f = int(float(col.get(f"m{m}_f", "0")))
+            except Exception:
+                f = 0
+            lim = MFC_DEFAULTS[m][1][gas]
+            if f < 0 or f > lim:
+                return False
+
+        # SP hornos
+        for k in ("t1_sp", "t2_sp"):
+            try:
+                sp = int(float(col.get(k, "0")))
+            except Exception:
+                sp = 0
+            if not (0 <= sp <= MAX_SP):
+                return False
+
+        return True
+
+    # ===================== ENVÍO A ARDUINO =====================
+    def _tx(self, msg: str):
+        print("[TX Auto]", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             try:
                 self.controlador.enviar_a_arduino(msg)
             except Exception:
                 pass
 
-    def _enviar_valvulas_pos(self, pos: str) -> None:
-        code = "1" if (pos or "A").upper() == "A" else "2"
-        self._send(f"$;3;1;1;{code};!")  # V1
-        self._send(f"$;3;2;1;{code};!")  # V2
+    # ===================== SCROLL TÁCTIL =====================
+    def _enable_touch_scroll(self):
+        """Habilita desplazamiento táctil (drag) además de las barras de scroll."""
+        sf = {"x": 0, "y": 0}
 
-    def _enviar_presion_auto(self, pres_bar: float) -> None:
-        p = clamp(float(pres_bar), 0.0, MAX_PRES)
-        p10 = int(round(p * 10))
-        self._send(f"$;3;5;0;{p10};!")
+        def _start(e):
+            sf["x"], sf["y"] = e.x, e.y
+            self.canvas.scan_mark(e.x, e.y)
 
-    def _enviar_peristalticas(self, p1_on: bool, p2_on: bool) -> None:
-        self._send(f"$;3;6;1;{'1' if p1_on else '2'};!")
-        self._send(f"$;3;7;1;{'1' if p2_on else '2'};!")
+        def _drag(e):
+            self.canvas.scan_dragto(e.x, e.y, gain=1)
 
-    def _enviar_mfcs(self, col: int) -> None:
-        for mfc_id in (1, 2, 3, 4):
-            gas = self.cells[col][f"m{mfc_id}_gas"].get()
-            maxv = self._max_mfc(mfc_id, gas)
-            try:
-                flujo = float((self.cells[col][f"m{mfc_id}_f"].get() or "0").strip())
-            except Exception:
-                flujo = 0.0
-            flujo = clamp(flujo, 0.0, float(maxv))
-            pwm = flujo_a_pwm(flujo, maxv)
-            self._send(f"$;1;{mfc_id};1;{pwm};!")
-
-    # ------------------------------------------------------------------
-    # Lectura/normalización de celdas
-    # ------------------------------------------------------------------
-    def _cell_value_str(self, r: int, c: int) -> str:
-        kind = self.ROWS[r][1]
-        if kind in ("label", "spacer"):
-            return ""
-        w = self.cells[c].get(self._key_from_row(r))
-        if not w:
-            return ""
-        if isinstance(w, ttk.Combobox):
-            return (w.get() or "").strip()
-        return (w.get() or "").strip()
-
-    def _apply_cell_value(self, r: int, c: int, val: str) -> None:
-        kind = self.ROWS[r][1]
-        key = self._key_from_row(r)
-        w = self.cells[c].get(key)
-        if not w:
-            return
-        if isinstance(w, ttk.Combobox):
-            try:
-                w.set(val)
-            except Exception:
-                pass
-        else:
-            w.delete(0, tk.END)
-            w.insert(0, val)
-
-    def _key_from_row(self, r: int) -> str:
-        mapa = {
-            1: "t_etapa",
-            3: "pos_ini",
-            4: "t_a",
-            5: "t_b",
-            6: "pres",
-            8: "p1",
-            9: "p2",
-            11: "m1_gas", 12: "m1_f",
-            13: "m2_gas", 14: "m2_f",
-            15: "m3_gas", 16: "m3_f",
-            17: "m4_gas", 18: "m4_f",
-            20: "t1",
-            21: "t2",
-        }
-        return mapa.get(r, f"r{r}")
-
-    def _read_int(self, entry: ttk.Entry, default: int = 0) -> int:
-        try:
-            v = int(float((entry.get() or "").strip()))
-        except Exception:
-            v = default
-        return v
-
-    def _read_float(self, entry: ttk.Entry, default: float = 0.0) -> float:
-        try:
-            v = float((entry.get() or "").strip())
-        except Exception:
-            v = default
-        return v
-
-    # ------------------------------------------------------------------
-    # Entradas y límites
-    # ------------------------------------------------------------------
-    def _max_mfc(self, mfc_id: int, gas: str) -> int:
-        gas = gas if gas in MFC_DEFAULTS[mfc_id][1] else MFC_DEFAULTS[mfc_id][0]
-        return int(MFC_DEFAULTS[mfc_id][1][gas])
-
-    def _attach_flow_logic(self, entry: ttk.Entry, mfc_id: int, cmb_gas: ttk.Combobox) -> None:
-        """Asocia teclado numérico y capado por gas para el Entry de flujo."""
-        entry.bind(
-            "<Button-1>",
-            lambda _e, en=entry: TecladoNumerico(self, en, on_submit=lambda v: self._apply_flow_value(en, v, mfc_id, cmb_gas)),
-        )
-
-    def _apply_flow_value(self, entry: ttk.Entry, valor, mfc_id: int, cmb_gas: ttk.Combobox) -> None:
-        gas = cmb_gas.get()
-        maxv = self._max_mfc(mfc_id, gas)
-        try:
-            f = float(valor)
-        except Exception:
-            f = 0.0
-        f = clamp(f, 0.0, float(maxv))
-        entry.delete(0, tk.END)
-        entry.insert(0, str(int(f)) if float(f).is_integer() else f"{f}")
-
-    def _make_entry_int(self, parent, default: str = "0", cap_max: int | None = None) -> ttk.Entry:
-        e = ttk.Entry(parent, width=10)
-        e.insert(0, default)
-        def open_num():
-            TecladoNumerico(self, e, on_submit=lambda v: self._on_submit_int(e, v, cap_max))
-        e.bind("<Button-1>", lambda _e: open_num())
-        return e
-
-    def _on_submit_int(self, entry: ttk.Entry, valor, cap_max: int | None) -> None:
-        try:
-            v = int(float(valor))
-        except Exception:
-            v = 0
-        if cap_max is not None:
-            v = clamp(v, 0, cap_max)
-        entry.delete(0, tk.END)
-        entry.insert(0, str(v))
-
-    def _make_entry_dec(self, parent, default: str = "0.0", max_dec: int = 1, cap_max: float | None = None) -> ttk.Entry:
-        e = ttk.Entry(parent, width=10)
-        e.insert(0, default)
-        def open_num():
-            TecladoNumerico(self, e, on_submit=lambda v: self._on_submit_dec(e, v, max_dec, cap_max))
-        e.bind("<Button-1>", lambda _e: open_num())
-        return e
-
-    def _on_submit_dec(self, entry: ttk.Entry, valor, max_dec: int, cap_max: float | None) -> None:
-        try:
-            v = float(valor)
-        except Exception:
-            v = 0.0
-        if cap_max is not None:
-            v = clamp(v, 0.0, float(cap_max))
-        fmt = f"{{:.{max_dec}f}}"
-        entry.delete(0, tk.END)
-        entry.insert(0, fmt.format(v))
-
-    # ------------------------------------------------------------------
-    # BYPASS (informativo)
-    # ------------------------------------------------------------------
-    def _leer_bypass(self) -> int:
-        path = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
-        try:
-            if os.path.exists(path):
-                with open(path, newline="", encoding="utf-8") as f:
-                    for nombre, pos in csv.reader(f):
-                        if (nombre or "").strip().upper() == "BYP":
-                            v = (pos or "").strip()
-                            return 2 if v == "2" else 1
-        except Exception:
-            pass
-        return 1
-
-    # -----------------------------
-    # Scroll táctil (panning en Canvas)
-    # -----------------------------
-    def _enable_touch_scroll(self) -> None:
-        """Activa desplazamiento por arrastre en el canvas y rueda del mouse."""
-        # Arrastre directo sobre el canvas
-        self.canvas.bind("<ButtonPress-1>", self._on_scroll_start)
-        self.canvas.bind("<B1-Motion>", self._on_scroll_move)
-
-        # Arrastre también cuando el puntero está sobre widgets hijos del frame interno
-        self.grid_frame.bind("<ButtonPress-1>", self._on_inner_scroll_start, add="+")
-        self.grid_frame.bind("<B1-Motion>", self._on_inner_scroll_move, add="+")
-
-        # Rueda del mouse (Windows/macOS)
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        # Linux/X11: rueda arriba/abajo son Button-4/5
-        self.canvas.bind_all("<Button-4>", lambda e: self._wheel_units(-3))
-        self.canvas.bind_all("<Button-5>", lambda e: self._wheel_units(+3))
-
-        # Shift + rueda para scroll horizontal (donde aplique)
-        self.canvas.bind_all("<Shift-MouseWheel>", self._on_shift_mousewheel)
-
-    def _on_scroll_start(self, event):
-        """Marca el punto inicial de arrastre cuando el evento llega al canvas."""
-        self.canvas.scan_mark(event.x, event.y)
-
-    def _on_scroll_move(self, event):
-        """Arrastra el contenido según el movimiento."""
-        # gain=1 da una sensación más "pegada al dedo"; puedes probar 2 o 3 para más sensibilidad
-        self.canvas.scan_dragto(event.x, event.y, gain=1)
-
-    def _on_inner_scroll_start(self, event):
-        """Permite iniciar el arrastre aunque el puntero esté sobre un widget hijo."""
-        cx = self._to_canvas_x(event)
-        cy = self._to_canvas_y(event)
-        self.canvas.scan_mark(cx, cy)
-
-    def _on_inner_scroll_move(self, event):
-        """Arrastra desde widgets hijos, transformando coords al sistema del canvas."""
-        cx = self._to_canvas_x(event)
-        cy = self._to_canvas_y(event)
-        self.canvas.scan_dragto(cx, cy, gain=1)
-
-    def _to_canvas_x(self, event) -> int:
-        """Convierte coord X del evento (en coords del widget origen) a coords del canvas."""
-        return int(self.canvas.canvasx(event.x_root - self.canvas.winfo_rootx()))
-
-    def _to_canvas_y(self, event) -> int:
-        """Convierte coord Y del evento (en coords del widget origen) a coords del canvas."""
-        return int(self.canvas.canvasy(event.y_root - self.canvas.winfo_rooty()))
-
-    def _on_mousewheel(self, event):
-        """Scroll vertical con rueda (Windows/macOS)."""
-        # En Windows, event.delta suele ser múltiplo de 120; en macOS puede ser más pequeño
-        delta = event.delta
-        if delta == 0:
-            return
-        steps = -1 if delta > 0 else +1
-        self._wheel_units(steps * 3)  # ajusta 3 para más/menos sensibilidad
-
-    def _on_shift_mousewheel(self, event):
-        """Scroll horizontal con Shift + rueda."""
-        delta = event.delta
-        if delta == 0:
-            return
-        steps = -1 if delta > 0 else +1
-        self.canvas.xview_scroll(steps * 3, "units")
-
-    def _wheel_units(self, units: int):
-        """Helper para desplazar N 'units' verticalmente (positivo = abajo)."""
-        self.canvas.yview_scroll(units, "units")
+        self.canvas.bind("<ButtonPress-1>", _start)
+        self.canvas.bind("<B1-Motion>", _drag)

@@ -1,16 +1,10 @@
 """
-Controlador principal de la interfaz (Tk) con viewport fijo 1024×530.
+Controlador principal de la interfaz (Tk) con viewport fijo 1024×530 + estilos táctiles.
 
-- Mantiene un *viewport* de tamaño útil constante (1024×530) donde se montan
-  todas las ventanas para evitar recortes por la barra de título o bordes.
-- Navegación por nombre con `mostrar_ventana(nombre)` usada desde la barra.
-- Envío/recepción (no bloqueante) hacia Arduino mediante `SerialManager`.
-- Ruteo básico de RX: CMD=5 → `VentanaGraph.on_rx_cmd5(partes)`; 
-  se puede ampliar según necesidades.
-
-Este archivo sustituye al `app.py` anterior. Mantiene compatibilidad con
-las ventanas refactorizadas: `VentanaPrincipal`, `VentanaMfc`,
-`VentanaOmega`, `VentanaValv`, `VentanaAuto`, `VentanaGraph`.
+- Usa constantes de ui/constants.py para tamaños y fuentes globales (táctil).
+- Viewport 1024×530 (USABLE_WIDTH/USABLE_HEIGHT) que evita recortes.
+- Estilos ttk globales: TButton/TEntry/TCombobox con fuentes “dedo friendly”.
+- Serial no bloqueante con polling según POLL_MS.
 """
 
 from __future__ import annotations
@@ -18,6 +12,16 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 import queue
+
+# Constantes táctiles (obligatorias)
+from ui.constants import (
+    USABLE_WIDTH, USABLE_HEIGHT, TK_SCALING,
+    FONT_BASE, FONT_HEADING,
+    POLL_MS,
+)
+
+# Para leer opcionales sin romper si no existen
+from ui import constants as _C
 
 # Ventanas
 from .ventana_principal import VentanaPrincipal
@@ -28,7 +32,7 @@ from .ventana_auto import VentanaAuto
 from .ventana_graph import VentanaGraph
 
 # Serial
-from .serial_manager import SerialManager  # se asume provee `start()`, `stop()`, `send(str)` y `rx_queue`
+from .serial_manager import SerialManager  # start(), stop(), send(str) y rx_queue
 
 
 class Aplicacion(tk.Tk):
@@ -38,7 +42,10 @@ class Aplicacion(tk.Tk):
         super().__init__()
         self.title("Interfaz Arduino-Raspberry")
 
-        # --- Estado ---
+        # ---- Estilos globales “táctiles” ----
+        self._configurar_estilos_tactiles()
+
+        # ---- Estado ----
         self._ventanas: dict[str, tk.Frame] = {}
         self._clases: dict[str, type[tk.Frame]] = {
             "VentanaPrincipal": VentanaPrincipal,
@@ -50,10 +57,10 @@ class Aplicacion(tk.Tk):
         }
         self._ventana_activa: str | None = None
 
-        # --- Viewport fijo (área útil 1024×530) ---
-        self._ajustar_tamano_ventana(1024, 530)
+        # ---- Viewport fijo (área útil USABLE_WIDTH × USABLE_HEIGHT) ----
+        self._ajustar_tamano_ventana(USABLE_WIDTH, USABLE_HEIGHT)
 
-        # --- Serial no bloqueante ---
+        # ---- Serial no bloqueante ----
         self.serial = None
         self.rx_queue: queue.Queue[str] | None = None
         try:
@@ -63,35 +70,60 @@ class Aplicacion(tk.Tk):
         except Exception as e:
             print(f"[WARN] No se pudo iniciar SerialManager: {e}")
 
-        # --- Primer pantalla ---
+        # ---- Primer pantalla ----
         self.mostrar_ventana("VentanaPrincipal")
 
-        # Poll de RX
-        self.after(100, self._poll_rx)
+        # Poll de RX (usa POLL_MS de constants)
+        self.after(POLL_MS, self._poll_rx)
 
         # Cierra ordenado
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ==============================================================
-    # Viewport fijo 1024×530
+    # Estilos ttk táctiles
     # ==============================================================
-    def _ajustar_tamano_ventana(self, inner_w: int = 1024, inner_h: int = 530):
-        """Ajusta el tamaño de la ventana para que el área *interna* útil
-        sea exactamente `inner_w × inner_h`.
-        Crea un frame `_viewport` donde se montan las ventanas.
-        """
+    def _configurar_estilos_tactiles(self):
+        """Aplica escalado global y estilos base para widgets ttk."""
+
+        # Escalado DPI (afecta métricas base de Tk, alturas de controles)
         try:
-            # Escalado DPI a 96 (1.0) para evitar distorsiones en RPi
-            self.tk.call('tk', 'scaling', '-displayof', '.', 1.0)
+            self.tk.call('tk', 'scaling', '-displayof', '.', float(TK_SCALING))
         except Exception:
             pass
 
+        style = ttk.Style(self)
+
+        # Fuente por defecto para la mayoría de controles
+        style.configure(".", font=FONT_BASE)
+
+        # Botones estándar
+        style.configure("TButton", font=FONT_BASE, padding=(12, 8))
+
+        # Estilo específico “Touch” para botones grandes (opcionales)
+        _btn_font = getattr(_C, "BUTTON_FONT", FONT_HEADING)
+        _btn_pad = getattr(_C, "BTN_PAD", (14, 10))
+        style.configure("Touch.TButton", font=_btn_font, padding=_btn_pad)
+
+        # Entradas y combobox: la altura aumenta con la fuente base
+        style.configure("TEntry", font=FONT_BASE)
+        style.configure("TCombobox", font=FONT_BASE)
+
+        # Labels de sección/títulos
+        style.configure("Heading.TLabel", font=FONT_HEADING)
+
+    # ==============================================================
+    # Viewport fijo
+    # ==============================================================
+    def _ajustar_tamano_ventana(self, inner_w: int, inner_h: int):
+        """Ajusta la ventana para que el área interna útil sea exactamente inner_w × inner_h."""
+        # grid raíz
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
+        # Lienzo fijo donde se montan las ventanas
         self._viewport = ttk.Frame(self, width=inner_w, height=inner_h)
         self._viewport.grid(row=0, column=0, sticky="nsew")
-        self._viewport.grid_propagate(False)  # clave: no permitir que los hijos cambien el tamaño
+        self._viewport.grid_propagate(False)
 
         # Ajuste de geometry para compensar decoraciones
         self.update_idletasks()
@@ -100,7 +132,6 @@ class Aplicacion(tk.Tk):
         view_w = self._viewport.winfo_width()
         view_h = self._viewport.winfo_height()
         if outer_w == 1 and outer_h == 1:
-            # Primer pase (algunas WMs reportan 1x1 antes del layout)
             self.geometry(f"{inner_w+80}x{inner_h+120}")
             self.update_idletasks()
             outer_w = self.winfo_width(); outer_h = self.winfo_height()
@@ -110,13 +141,10 @@ class Aplicacion(tk.Tk):
         self.geometry(f"{inner_w + deco_w}x{inner_h + deco_h}")
 
     def _montar_ventana_en_viewport(self, frame: tk.Frame):
-        """Monta un Frame dentro del viewport fijo 1024×530 sin destruirlo.
-        Se ocultan otros hijos y se levanta el objetivo."""
-        # Asegurar que el viewport existe
+        """Monta un Frame dentro del viewport sin destruirlo."""
         if not hasattr(self, "_viewport"):
-            self._ajustar_tamano_ventana(1024, 530)
+            self._ajustar_tamano_ventana(USABLE_WIDTH, USABLE_HEIGHT)
 
-        # Ocultar cualquier otro hijo y dejar solo el objetivo
         for w in list(self._viewport.winfo_children()):
             if w is frame:
                 continue
@@ -125,8 +153,6 @@ class Aplicacion(tk.Tk):
             except Exception:
                 pass
 
-        # En este proyecto las ventanas se crean con master=self._viewport
-        # (Tk no permite reparentar dinámicamente un widget).
         try:
             frame.grid(row=0, column=0, sticky="nsew")
             frame.tkraise()
@@ -145,7 +171,8 @@ class Aplicacion(tk.Tk):
             Clase = self._clases.get(nombre)
             if Clase is None:
                 raise KeyError(f"No hay clase registrada para '{nombre}'.")
-            frame = Clase(self._viewport, self, self.serial)  # (master, controlador, arduino)
+            # (master, controlador, arduino)
+            frame = Clase(self._viewport, self, self.serial)
             self._ventanas[nombre] = frame
         return frame
 
@@ -153,6 +180,7 @@ class Aplicacion(tk.Tk):
         frame = self._obtener_ventana(nombre)
         self._montar_ventana_en_viewport(frame)
         self._ventana_activa = nombre
+
         # Identificador al entrar a Temperatura (según necesidad original)
         if nombre == "VentanaOmega":
             try:
@@ -183,7 +211,7 @@ class Aplicacion(tk.Tk):
         except queue.Empty:
             pass
         finally:
-            self.after(100, self._poll_rx)
+            self.after(POLL_MS, self._poll_rx)  # usa constante
 
     def _procesar_linea_rx(self, line: str) -> None:
         line = (line or "").strip()
@@ -199,7 +227,6 @@ class Aplicacion(tk.Tk):
         cmd = partes[0]
         # CMD=5 → datos para gráfica
         if cmd == "5":
-            # intentar enviar a la ventana de gráfica si existe
             v = self._ventanas.get("VentanaGraph")
             if v and hasattr(v, "on_rx_cmd5"):
                 try:

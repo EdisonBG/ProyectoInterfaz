@@ -1,5 +1,6 @@
 """
-Ventana de control de 4 MFC (Mass Flow Controllers) – v2 con LabeledEntryNum.
+Ventana de control de 4 MFC (Mass Flow Controllers) – táctil.
+Conserva la lógica original e incorpora tamaños/estilos desde ui.constants.
 """
 
 from __future__ import annotations
@@ -12,6 +13,16 @@ from tkinter import ttk, messagebox
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
+
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 16)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
 
 
 class VentanaMfc(tk.Frame):
@@ -76,9 +87,10 @@ class VentanaMfc(tk.Frame):
             st.theme_use("clam")
         except Exception:
             pass
-        st.configure("SelBtn.TButton", padding=(16, 12))
+        # Aplicar fuente táctil a los botones de selección
+        st.configure("SelBtn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         st.map("SelBtn.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
-        st.configure("SelBtnOn.TButton", padding=(16, 12), background="#bdbdbd")
+        st.configure("SelBtnOn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
         st.map("SelBtnOn.TButton", background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
 
     # ------------------------------------------------------------------
@@ -121,13 +133,22 @@ class VentanaMfc(tk.Frame):
         row = 0
 
         # % mezcla (arriba derecha)
-        mix_lbl = ttk.Label(frame, text="% de mezcla: 0.0 %")
+        mix_lbl = ttk.Label(frame, text="% de mezcla: 0.0 %", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         mix_lbl.grid(row=row, column=2, padx=(4, 6), pady=(6, 0), sticky="ne")
         self.refs[mfc_id]["mix_lbl"] = mix_lbl
 
         # Gas
-        ttk.Label(frame, text="Gas:").grid(row=row, column=0, padx=5, pady=5, sticky="e")
-        combo = ttk.Combobox(frame, values=self.GAS_LIST, state="readonly", width=10)
+        ttk.Label(frame, text="Gas:", font=getattr(C, "FONT_BASE", ("Calibri", 16))).grid(
+            row=row, column=0, padx=5, pady=5, sticky="e"
+        )
+        combo = ttk.Combobox(
+            frame,
+            values=self.GAS_LIST,
+            state="readonly",
+            width=getattr(C, "COMBO_WIDTH", 12),
+            height=130,  # se conserva el parámetro original
+            font=getattr(C, "FONT_BASE", ("Calibri", 16)),
+        )
         combo.set(self.DEFAULT_GAS[mfc_id])
         combo.grid(row=row, column=1, padx=5, pady=5, sticky="w")
         combo.bind("<<ComboboxSelected>>", lambda _e, m=mfc_id: self._on_cambio_gas(m))
@@ -135,7 +156,11 @@ class VentanaMfc(tk.Frame):
         row += 1
 
         # Flujo (LabeledEntryNum + teclado numérico)
-        campo_flujo = LabeledEntryNum(frame, "Flujo (mL/min):", width=10)
+        campo_flujo = LabeledEntryNum(
+            frame,
+            "Flujo (mL/min):",
+            width=getattr(C, "ENTRY_WIDTH", 12),
+        )
         campo_flujo.grid(row=row, column=0, columnspan=2, sticky="w")
         campo_flujo.bind_numeric(
             lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
@@ -146,7 +171,7 @@ class VentanaMfc(tk.Frame):
 
         # Leyenda min/max
         maxv = self._maximo_mfc_por_gas(mfc_id, combo.get())
-        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}")
+        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         legend.grid(row=row, column=0, columnspan=2, padx=5, pady=(0, 6), sticky="w")
         self.refs[mfc_id]["legend"] = legend
         row += 1
@@ -354,3 +379,4 @@ class VentanaMfc(tk.Frame):
             self._on_cambio_gas(other)
         finally:
             self._syncing_gas = False
+

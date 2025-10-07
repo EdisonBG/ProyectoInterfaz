@@ -1,218 +1,266 @@
-"""
-Ventana principal de monitoreo.
-
-Cambios clave:
-- Layout a dos columnas: barra fija izquierda + contenido expandible.
-- Uso del tema centralizado (gui/theme.py) y constantes de tamaño táctil.
-- Eliminación de fuentes/colores ad-hoc; se adopta esquema blanco/gris.
-- Conserva el posicionamiento absoluto de los labels sobre la imagen de fondo
-  (según coordenadas en LABEL_POS), pero los widgets padres usan grid coherente.
-"""
-
+# gui/ventana_principal.py
 from __future__ import annotations
 
 import os
 import tkinter as tk
-from tkinter import ttk, PhotoImage
+from tkinter import ttk
+
+# Imagen (Pillow opcional)
+try:
+    from PIL import Image, ImageTk
+    PIL_OK = True
+except Exception:
+    PIL_OK = False
 
 from .barra_navegacion import BarraNavegacion
 
-# ========================= POSICIONES DE LOS LABELS =========================
-# Coordenadas (x, y) en píxeles relativos al área de la imagen.
-LABEL_POS = {
-    "temp_omega1": (400, 170),
-    "temp_omega2": (660, 170),
-    "temp_horno1": (530, 140),
-    "temp_horno2": (530, 180),
-    "temp_cond1": (740, 80),
-    "temp_cond2": (740, 120),
-    "presion_mezcla": (260, 260),
-    "presion_h2": (260, 300),
-    "presion_salida": (260, 340),
-    "mfc_o2": (120, 420),
-    "mfc_co2": (120, 460),
-    "mfc_n2": (120, 500),
-    "mfc_h2": (120, 540),
-    "potencia_total": (700, 500),
-}
-
-
-def hhmm_from_hours(horas_float: float) -> str:
-    """Convierte horas decimales a formato "HH:MM"."""
-    try:
-        total_min = int(float(horas_float) * 60)
-    except Exception:
-        total_min = 0
-    h, m = divmod(total_min, 60)
-    return f"{h:02d}:{m:02d}"
+# Constantes táctiles
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        USABLE_WIDTH = 1024
+        USABLE_HEIGHT = 530
+        FONT_FAMILY = "Calibri"
+        FONT_SIZE_BASE = 16
+        FONT_SIZE_HEADING = 20
+        FONT_BASE = (FONT_FAMILY, FONT_SIZE_BASE)
+        FONT_HEADING = (FONT_FAMILY, FONT_SIZE_HEADING)
+        GAP_X = 8
+        GAP_Y = 8
+    C = _C_()
 
 
 class VentanaPrincipal(tk.Frame):
-    """Vista principal con imagen de proceso y overlays de variables."""
+    """
+    Ventana principal con:
+    - Barra de navegación (izquierda).
+    - Imagen de fondo (banner) redimensionada al contenedor.
+    - Labels superpuestos (overlays) sobre la imagen, posicionados con .place(x, y).
+
+    Notas:
+    - Los overlays son tk.Label (no ttk) para controlar color de fondo/primer plano.
+    - Existen helpers para crear/mover/actualizar overlays sin reescribir lógica.
+    """
+
+    # Ruta de la imagen por defecto (ajustar a la real). Se puede cambiar en tiempo de ejecución.
+    DEFAULT_IMG = os.path.join(os.path.dirname(__file__), "img", "principal.png")
 
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
         self.controlador = controlador
         self.arduino = arduino
 
-        # Registro para ruteo si el controlador mantiene un dict de ventanas
-        if hasattr(self.controlador, "_ventanas"):
-            self.controlador._ventanas["VentanaPrincipal"] = self
+        # Imagen y referencias
+        self._img_path = self.DEFAULT_IMG
+        self._img_tk = None  # mantener referencia para evitar GC
 
-        # Carga de imagen de fondo (una sola). Ajustar nombre real si difiere.
-        img_path = os.path.join(os.path.dirname(__file__), "..", "img")
-        fondo_file = os.path.join(img_path, "equipo_DFM.png")
-        if not os.path.exists(fondo_file):
-            fondo_file = os.path.join(img_path, "equipo_off.png")
-        self.img_fondo = PhotoImage(file=fondo_file)
+        # Overlays: nombre -> {"var": StringVar, "label": tk.Label, "x": int, "y": int, ...}
+        self._overlays: dict[str, dict] = {}
 
-        self._construir_ui()
+        self._build_ui()
+        self.after_idle(self._resize_banner)
 
-    # ------------------------------------------------------------------
+        # Ejemplo de overlays iniciales (posiciones de muestra). Ajustar con .mover_overlay(...)
+        # Se pueden borrar si no son necesarios.
+        self.crear_overlay("Estado conexión", "Desconectado", x=40, y=40, font=C.FONT_HEADING, fg="#222", bg=None)
+        self.crear_overlay("Puerto serie", "—", x=40, y=90, font=C.FONT_BASE, fg="#222", bg=None)
+        self.crear_overlay("Versión SW", "—", x=40, y=130, font=C.FONT_BASE, fg="#222", bg=None)
+        self.crear_overlay("Operador", "—", x=40, y=170, font=C.FONT_BASE, fg="#222", bg=None)
+        self.crear_overlay("Fecha", "—", x=40, y=210, font=C.FONT_BASE, fg="#222", bg=None)
+        self.crear_overlay("Hora", "—", x=40, y=250, font=C.FONT_BASE, fg="#222", bg=None)
+
+    # ---------------------------------------------------------------------
     # Construcción de UI
-    # ------------------------------------------------------------------
-    def _construir_ui(self) -> None:
-        # Layout a dos columnas: barra izq (ancho fijo) + contenido (expandible)
+    # ---------------------------------------------------------------------
+    def _build_ui(self):
+        # Rejilla principal: barra (col=0) + contenedor (col=1)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=0, minsize=140)
         self.grid_columnconfigure(1, weight=1)
 
-        # Barra navegación
+        # Barra izquierda
         barra = BarraNavegacion(self, self.controlador)
         barra.grid(row=0, column=0, sticky="nsw")
 
         # Contenedor derecho
-        cont = ttk.Frame(self)
-        cont.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
-        cont.grid_rowconfigure(0, weight=1)
-        cont.grid_columnconfigure(0, weight=1)
+        right = ttk.Frame(self)
+        right.grid(row=0, column=1, sticky="nsew", padx=C.GAP_X, pady=C.GAP_Y)
+        right.grid_rowconfigure(0, weight=1)
+        right.grid_columnconfigure(0, weight=1)
 
-        # Área gráfica (fija en tamaño y sin propagación) y borde leve
-        self.area_grafica = tk.Frame(
-            cont,
-            bg="white",
-            highlightthickness=1,
-            highlightbackground="#dddddd",
-        )
-        self.area_grafica.grid(row=0, column=0, sticky="nsew")
-        self.area_grafica.grid_propagate(False)
+        # Marco del banner (soporta <Configure> para redimensionar)
+        self.banner_frame = ttk.Frame(right)
+        self.banner_frame.grid(row=0, column=0, sticky="nsew")
+        self.banner_frame.bind("<Configure>", lambda _e: self._resize_banner())
 
-        # Imagen de fondo
-        self.lbl_fondo = tk.Label(self.area_grafica, image=self.img_fondo, bg="white", borderwidth=0)
-        self.lbl_fondo.place(x=0, y=0)
+        # Label de fondo que contendrá la imagen
+        # Se usa tk.Label para poder colocar hijos con .place() encima.
+        self.lbl_fondo = tk.Label(self.banner_frame, bd=0, highlightthickness=0)
+        self.lbl_fondo.place(relx=0, rely=0, relwidth=1, relheight=1)  # ocupa todo el frame
 
-        # Overlays (labels) de variables
-        self._vars: dict[str, tk.StringVar] = {}
-        self._labels: dict[str, tk.Label] = {}
-        self._crear_labels()
-
-        # Ajustar tamaño del área gráfica a la imagen si es menor que el contenedor
-        self.after(0, self._ajustar_area_a_imagen)
-
-    def _ajustar_area_a_imagen(self) -> None:
-        """Establece el tamaño del área gráfica para que coincida con la imagen si aplica."""
-        try:
-            w = self.img_fondo.width()
-            h = self.img_fondo.height()
-            # Limitar a un máximo razonable; el contenedor se encarga del scroll si existiera
-            self.area_grafica.configure(width=w, height=h)
-        except Exception:
-            pass
-
-    def _crear_labels(self) -> None:
-        """Crea los StringVar y labels posicionados de acuerdo con LABEL_POS."""
-        campos: dict[str, tuple[str, str]] = {
-            "temp_omega1": ("Ω1", "°C"),
-            "temp_omega2": ("Ω2", "°C"),
-            "temp_horno1": ("H1", "°C"),
-            "temp_horno2": ("H2", "°C"),
-            "temp_cond1": ("Cond1", "°C"),
-            "temp_cond2": ("Cond2", "°C"),
-            "presion_mezcla": ("P Mez", "bar"),
-            "presion_h2": ("P H2", "bar"),
-            "presion_salida": ("P Out", "bar"),
-            "mfc_o2": ("O2", "mL/min"),
-            "mfc_co2": ("CO2", "mL/min"),
-            "mfc_n2": ("N2", "mL/min"),
-            "mfc_h2": ("H2", "mL/min"),
-            "potencia_total": ("P Tot", "W"),
-        }
-
-        for key, (short, unit) in campos.items():
-            v = tk.StringVar(value=f"{short}: -- {unit}")
-            self._vars[key] = v
-            x, y = LABEL_POS.get(key, (10, 10))
-            lbl = tk.Label(
-                self.area_grafica,
-                textvariable=v,
-                bg="white",
-                fg="#111111",
-                font=("Calibri", 11, "bold"),
-                relief="solid",
-                bd=1,
-                padx=6,
-                pady=3,
+    # ---------------------------------------------------------------------
+    # Imagen/banner
+    # ---------------------------------------------------------------------
+    def _resize_banner(self):
+        """Redimensiona la imagen al tamaño del contenedor, manteniendo relación y cubriendo el área."""
+        if not PIL_OK:
+            # Placeholder cuando Pillow no está instalado
+            self.lbl_fondo.configure(
+                text="(Instalar Pillow para mostrar imagen)\n`pip install pillow`",
+                font=C.FONT_BASE, anchor="center", bg="#f0f0f0"
             )
-            lbl.place(x=x, y=y)
-            self._labels[key] = lbl
-
-    # ------------------------------------------------------------------
-    # RX -> actualización
-    # ------------------------------------------------------------------
-    def aplicar_datos_cmd5(self, partes: list[str]) -> None:
-        """Actualiza los overlays a partir de una trama CMD=5 ya separada por ';'."""
-        if len(partes) < 16:
             return
 
-        def to_float(s: str, default: float = 0.0) -> float:
+        self.update_idletasks()
+        w = max(1, self.banner_frame.winfo_width())
+        h = max(1, self.banner_frame.winfo_height())
+
+        if not os.path.exists(self._img_path):
+            # Placeholder si no existe imagen
+            from PIL import Image, ImageTk, ImageDraw
+            img = Image.new("RGB", (w, h), color=(240, 240, 240))
+            drw = ImageDraw.Draw(img)
+            drw.text((10, 10), "Sin imagen principal", fill=(80, 80, 80))
+            self._img_tk = ImageTk.PhotoImage(img)
+            self.lbl_fondo.configure(image=self._img_tk, text="")
+            return
+
+        # Redimensionado tipo "cover": llena el contenedor (recorta lados si hace falta)
+        try:
+            from PIL import Image, ImageTk
+            with Image.open(self._img_path) as im:
+                im = im.convert("RGB")
+                im_ratio = im.width / im.height
+                frame_ratio = w / h
+
+                if frame_ratio > im_ratio:
+                    # contenedor más ancho -> altura define; escalar por alto, recortar ancho
+                    new_h = h
+                    new_w = int(h * im_ratio)
+                else:
+                    # contenedor más alto -> ancho define; escalar por ancho, recortar alto
+                    new_w = w
+                    new_h = int(w / im_ratio)
+
+                im = im.resize((new_w, new_h), Image.LANCZOS)
+
+                # Pegar centrado en un lienzo del tamaño del frame
+                canvas = Image.new("RGB", (w, h), (255, 255, 255))
+                off_x = (w - new_w) // 2
+                off_y = (h - new_h) // 2
+                canvas.paste(im, (off_x, off_y))
+
+                self._img_tk = ImageTk.PhotoImage(canvas)
+                self.lbl_fondo.configure(image=self._img_tk, text="", bg="#ffffff")
+        except Exception:
+            # Fallback simple (stretch)
+            self._simple_fit(w, h)
+
+    def _simple_fit(self, w: int, h: int):
+        """Ajuste de imagen simple sin recorte (relleno blanco)."""
+        if not PIL_OK or not os.path.exists(self._img_path):
+            self.lbl_fondo.configure(text="(Imagen no disponible)", font=C.FONT_BASE, bg="#f0f0f0")
+            return
+        from PIL import Image, ImageTk
+        try:
+            with Image.open(self._img_path) as im:
+                im = im.convert("RGB")
+                im = im.resize((w, h), Image.LANCZOS)
+                self._img_tk = ImageTk.PhotoImage(im)
+                self.lbl_fondo.configure(image=self._img_tk, text="", bg="#ffffff")
+        except Exception:
+            self.lbl_fondo.configure(text="(Error cargando imagen)", font=C.FONT_BASE, bg="#f0f0f0")
+
+    # ---------------------------------------------------------------------
+    # Overlays (labels superpuestos)
+    # ---------------------------------------------------------------------
+    def crear_overlay(self, nombre: str, texto: str, *, x: int = 0, y: int = 0,
+                      font=None, fg: str = "#000", bg: str | None = None, anchor: str = "nw") -> None:
+        """
+        Crea un overlay si no existe; en caso contrario solo actualiza texto y posición.
+        - nombre: clave identificadora única.
+        - texto: valor inicial a mostrar.
+        - x, y: posición absoluta en píxeles dentro de banner_frame.
+        - font: tupla Tk (familia, tamaño[, estilo]); por defecto C.FONT_BASE.
+        - fg: color de texto (hex o nombre).
+        - bg: color de fondo del label; si None, usa fondo "transparente" lógico (igual al del contenedor).
+        - anchor: ancla del label respecto a (x, y) ("nw", "center", etc.).
+        """
+        if font is None:
+            font = getattr(C, "FONT_BASE", ("Calibri", 16))
+
+        if nombre in self._overlays:
+            self.set_overlay(nombre, texto)
+            self.mover_overlay(nombre, x, y, anchor=anchor)
+            return
+
+        # tk.Label para manejar colores fácilmente sobre imagen
+        lbl = tk.Label(self.banner_frame, text=texto, font=font, fg=fg,
+                       bg=(bg if bg is not None else self.lbl_fondo.cget("bg")))
+        lbl.place(x=x, y=y, anchor=anchor)
+
+        var = tk.StringVar(value=texto)
+        # Mantener var si se quiere enlazar en el futuro
+        self._overlays[nombre] = {"var": var, "label": lbl, "x": x, "y": y, "anchor": anchor}
+
+    def set_overlay(self, nombre: str, texto: str) -> None:
+        """Actualiza el texto de un overlay existente. Si no existe, no hace nada."""
+        info = self._overlays.get(nombre)
+        if not info:
+            return
+        lbl: tk.Label = info["label"]
+        lbl.configure(text=str(texto))
+        info["var"].set(str(texto))
+
+    def mover_overlay(self, nombre: str, x: int, y: int, *, anchor: str | None = None) -> None:
+        """Mueve el overlay a (x, y). Permite cambiar anchor."""
+        info = self._overlays.get(nombre)
+        if not info:
+            return
+        lbl: tk.Label = info["label"]
+        if anchor is None:
+            anchor = info.get("anchor", "nw")
+        lbl.place_configure(x=int(x), y=int(y), anchor=anchor)
+        info["x"], info["y"], info["anchor"] = int(x), int(y), anchor
+
+    def set_overlays(self, data: dict[str, str]) -> None:
+        """Actualiza múltiples overlays: {nombre: texto}."""
+        if not data:
+            return
+        for k, v in data.items():
+            self.set_overlay(k, v)
+
+    def borrar_overlay(self, nombre: str) -> None:
+        """Elimina un overlay por nombre."""
+        info = self._overlays.pop(nombre, None)
+        if info:
             try:
-                return float(s)
+                info["label"].destroy()
             except Exception:
-                return default
+                pass
 
-        def to_int(s: str, default: int = 0) -> int:
+    def limpiar_overlays(self) -> None:
+        """Elimina todos los overlays."""
+        for info in self._overlays.values():
             try:
-                return int(float(s))
+                info["label"].destroy()
             except Exception:
-                return default
+                pass
+        self._overlays.clear()
 
-        # Temperaturas (°C)
-        t_omega1 = to_float(partes[1])
-        t_omega2 = to_float(partes[2])
-        t_h1 = to_float(partes[3])
-        t_h2 = to_float(partes[4])
-        t_c1 = to_float(partes[5])
-        t_c2 = to_float(partes[6])
+    # ---------------------------------------------------------------------
+    # API pública sugerida (para otras partes de la app)
+    # ---------------------------------------------------------------------
+    def set_img_path(self, path: str) -> None:
+        """Cambia la imagen de fondo y fuerza redimensionado."""
+        if path and os.path.exists(path):
+            self._img_path = path
+            self._resize_banner()
 
-        # Presiones (llegan multiplicadas por 10)
-        p_mez = to_float(partes[7]) / 10.0
-        p_h2 = to_float(partes[8]) / 10.0
-        p_out = to_float(partes[9]) / 10.0
-
-        # Flujos (mL/min)
-        q_o2 = to_int(partes[10])
-        q_co2 = to_int(partes[11])
-        q_n2 = to_int(partes[12])
-        q_h2 = to_int(partes[13])
-
-        # Potencia (W)
-        p_tot = to_int(partes[14])
-
-        # Asignación a StringVars
-        self._vars["temp_omega1"].set(f"Ω1: {t_omega1:.1f} °C")
-        self._vars["temp_omega2"].set(f"Ω2: {t_omega2:.1f} °C")
-        self._vars["temp_horno1"].set(f"H1: {t_h1:.1f} °C")
-        self._vars["temp_horno2"].set(f"H2: {t_h2:.1f} °C")
-        self._vars["temp_cond1"].set(f"Cond1: {t_c1:.1f} °C")
-        self._vars["temp_cond2"].set(f"Cond2: {t_c2:.1f} °C")
-
-        self._vars["presion_mezcla"].set(f"P Mez: {p_mez:.1f} bar")
-        self._vars["presion_h2"].set(f"P H2: {p_h2:.1f} bar")
-        self._vars["presion_salida"].set(f"P Out: {p_out:.1f} bar")
-
-        self._vars["mfc_o2"].set(f"O2: {q_o2} mL/min")
-        self._vars["mfc_co2"].set(f"CO2: {q_co2} mL/min")
-        self._vars["mfc_n2"].set(f"N2: {q_n2} mL/min")
-        self._vars["mfc_h2"].set(f"H2: {q_h2} mL/min")
-
-        self._vars["potencia_total"].set(f"P Tot: {p_tot} W")
+    # Ejemplos de uso desde la App (no obligatorio):
+    # vp = controlador._ventanas.get("VentanaPrincipal")
+    # if vp:
+    #     vp.set_overlay("Estado conexión", "Conectado")
+    #     vp.mover_overlay("Estado conexión", 60, 60)
+    #     vp.set_overlays({"Fecha": "2025-10-03", "Hora": "14:25"})

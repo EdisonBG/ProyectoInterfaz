@@ -1,3 +1,5 @@
+
+
 """
 Ventana de gráfica en tiempo real – refactor táctil + TouchButton + ajustes 1024×530.
 
@@ -220,7 +222,7 @@ class VentanaGraph(tk.Frame):
         self.fig = Figure(figsize=(6.0, 3.2), dpi=100)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_xlabel("Tiempo (MM:SS)")
-        self.ax.set_ylabel("Valor")
+               # y-label se adapta con la leyenda
         self.ax.grid(True, linestyle="--", alpha=0.3)
 
         def _fmt_mmss(x, _pos):
