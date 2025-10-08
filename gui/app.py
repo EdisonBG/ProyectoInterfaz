@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 import serial
 from .ventana_principal import VentanaPrincipal
 from .ventana_mfc import VentanaMfc
@@ -24,6 +24,7 @@ class Aplicacion(tk.Tk):
         # Se intentara usar SerialManager (hilos RX/TX). Si falla, se intenta pyserial directo.
         self.serial = None     # SerialManager
         self.arduino = None    # pyserial.Serial directo (fallback)
+        self._alert_windows = {}  # dict: clave_alerta -> Toplevel
         try:
 
             self.serial = SerialManager(serial_port, baud)
@@ -124,24 +125,36 @@ class Aplicacion(tk.Tk):
             cuerpo = limpio[1:-1]
             partes = [p for p in cuerpo.split(";") if p != ""]
 
-            # === ALERTA: Presión de seguridad superada ===
-            # Formato exacto: $;1;4;!  -> partes == ["1", "4"]
+            # ---------------- Presión de seguridad superada ----------------
+            # Formato exacto: $;1;4;!
             if len(partes) == 2 and partes[0] == "1" and partes[1] == "4":
-                # 1) Pop-up
-                try:
-                    messagebox.showwarning("Alerta", "Se superó la presión de seguridad")
-                except Exception:
-                    # En caso de que el mensaje llegue durante cierre de app, evitar crash
-                    print("[WARN] No se pudo mostrar el pop-up de seguridad")
+                # Pop-up único (no modal, cerrable por el usuario)
+                self._show_alert_popup(
+                    key="pressure_security",
+                    title="Alerta de presión",
+                    body="Se superó la presión de seguridad."
+                )
 
-                # 2) Poner entradas MFC en 0 (si la ventana existe)
-                vmfc = self._ventanas.get("VentanaMfc")
+                # Poner entries de MFC a 0 (si ventana existe)
+                vmfc = getattr(self, "_ventanas", {}).get("VentanaMfc") if hasattr(self, "_ventanas") else None
                 if vmfc is not None and hasattr(vmfc, "reset_flujos_a_cero"):
                     try:
-                        vmfc.reset_flujos_a_cero()  # no envía nada, sólo setea 0 en los entries
+                        vmfc.reset_flujos_a_cero()
                     except Exception as e:
                         print(f"[WARN] No se pudieron resetear los MFC: {e}")
                 return
+
+            # ---------------- Error de sensor de presión ----------------
+            # Formato: $;3;4;N;!  con N en {1,2,3,4}
+            if len(partes) == 3 and partes[0] == "3" and partes[1] == "4":
+                sensor = partes[2]
+                if sensor in ("1", "2", "3", "4"):
+                    self._show_alert_popup(
+                        key=f"sensor_{sensor}",
+                        title="Error de sensor",
+                        body=f"Un sensor de presión está desconectado o fallando.\n\nSensor: {sensor}"
+                    )
+                    return
 
 
             if len(partes) < 3:
@@ -301,3 +314,69 @@ class Aplicacion(tk.Tk):
             except Exception as e:
                 print(
                     f"[WARN] No se pudo enviar identificador de VentanaOmega: {e}")
+                
+    def _show_alert_popup(self, key: str, title: str, body: str):
+        """
+        Muestra (o enfoca) un Toplevel de alerta no modal, único por 'key'.
+        - No bloquea la UI.
+        - El usuario puede cerrarlo.
+        - Si ya existe, solo lo trae al frente y actualiza el texto.
+        """
+        # Si ya existe y sigue viva, solo enfócala y actualiza:
+        win = self._alert_windows.get(key)
+        if win is not None and win.winfo_exists():
+            # Actualizar texto si cambió y traer al frente
+            try:
+                lbl = getattr(win, "_lbl_body", None)
+                if lbl is not None:
+                    lbl.configure(text=body)
+            except Exception:
+                pass
+            try:
+                win.deiconify()
+                win.lift()
+                win.focus_force()
+            except Exception:
+                pass
+            return
+
+        # Crear nueva ventana
+        win = tk.Toplevel(self)
+        self._alert_windows[key] = win
+
+        # Configuración básica
+        win.title(title)
+        win.attributes("-topmost", True)  # mantener arriba sin bloquear
+        win.resizable(False, False)
+
+        # Cerrar: borrar del registro
+        def _on_close():
+            try:
+                if key in self._alert_windows:
+                    del self._alert_windows[key]
+            except Exception:
+                pass
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+
+        # Contenido simple
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+
+        ttk.Label(frm, text=title, font=("Arial", 12, "bold")).pack(anchor="w", pady=(0, 6))
+        lbl_body = ttk.Label(frm, text=body, justify="left", wraplength=360)
+        lbl_body.pack(anchor="w")
+        win._lbl_body = lbl_body  # guardar referencia para actualizaciones
+
+        ttk.Button(frm, text="Cerrar", command=_on_close).pack(anchor="e", pady=(12, 0))
+
+        # Posicionar cerca del centro de la app
+        try:
+            win.update_idletasks()
+            x = self.winfo_rootx() + max(20, (self.winfo_width() - win.winfo_width()) // 2)
+            y = self.winfo_rooty() + max(20, (self.winfo_height() - win.winfo_height()) // 3)
+            win.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+

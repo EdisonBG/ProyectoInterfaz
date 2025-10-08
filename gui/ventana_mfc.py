@@ -417,3 +417,16 @@ class VentanaMfc(tk.Frame):
                 self._recalc_mix_percentages()
             except Exception:
                 pass
+
+    def reset_flujos_a_cero(self):
+        """
+        Pone los 4 entries de flujo en '0' sin enviar nada al Arduino.
+        """
+        try:
+            for i in range(1, 5):
+                ent = self.refs[i].get("entry")
+                if ent is not None:
+                    ent.delete(0, tk.END)
+                    ent.insert(0, "0")
+        except Exception as e:
+            print(f"[MFC] No se pudieron resetear los flujos: {e}")
