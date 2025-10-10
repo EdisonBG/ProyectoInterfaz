@@ -74,7 +74,7 @@ class VentanaValv(tk.Frame):
         self.bypass_sel = tk.IntVar(value=1)  # 1=Bypass 1, 2=Bypass 2
 
         # Estilos / UI
-        self._build_ui()
+        self._construir_ui()
 
         # Cargar y reflejar V1/V2/BYP guardadas
         self._cargar_posiciones()
@@ -82,11 +82,12 @@ class VentanaValv(tk.Frame):
         self._refrescar_botones("v2")
         # Refrescar texto del botón BYP según persistencia
         self.btn_bypass.configure(text=self._texto_bypass())
+        self._aplicar_estado_conexion() 
 
 
 
     # ------------- UI -------------
-    def _build_ui(self):
+    def _construir_ui(self) -> None:
         # Layout raíz: barra izq + contenido der
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=0, minsize=140)
@@ -94,18 +95,15 @@ class VentanaValv(tk.Frame):
 
         # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=95)
         barra.grid(row=0, column=0, sticky="nsw")
-        barra.grid_propagate(False)
-
 
         # Contenedor derecho
         wrap = ttk.Frame(self)
-        wrap.grid(row=0, column=1, sticky="nsew")  # sin padding para aprovechar ancho
+        wrap.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
         # Rejilla 2×N para "tarjetas"
         for c in (0, 1):
             wrap.grid_columnconfigure(c, weight=1, uniform="cols")
-        for r in range(4):
+        for r in range(3):
             wrap.grid_rowconfigure(r, weight=1, uniform="rows")
 
         card_pad = dict(padx=6, pady=6)
@@ -115,13 +113,11 @@ class VentanaValv(tk.Frame):
         card_v1 = ttk.LabelFrame(wrap, text="Válvula 1 (Entrada)")
         card_v1.grid(row=0, column=0, sticky="nsew", **card_pad)
         card_v1.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v1, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
+        ttk.Label(card_v1, text="Posición:", font=C.FONT_BASE).grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
         btns_v1 = ttk.Frame(card_v1)
         btns_v1.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-        self.btn_v1_a = ttk.Button(btns_v1, text="A", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v1", "A"))
-        self.btn_v1_b = ttk.Button(btns_v1, text="B", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v1", "B"))
+        self.btn_v1_a = TouchButton(btns_v1, text="A", command=lambda: self._seleccionar_posicion("v1", "A"))
+        self.btn_v1_b = TouchButton(btns_v1, text="B", command=lambda: self._seleccionar_posicion("v1", "B"))
         self.btn_v1_a.grid(row=0, column=0, padx=(0, 6))
         self.btn_v1_b.grid(row=0, column=1, padx=(6, 0))
 
@@ -129,59 +125,57 @@ class VentanaValv(tk.Frame):
         card_v2 = ttk.LabelFrame(wrap, text="Válvula 2 (Salida)")
         card_v2.grid(row=0, column=1, sticky="nsew", **card_pad)
         card_v2.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v2, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
+        ttk.Label(card_v2, text="Posición:",  font=C.FONT_BASE).grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
         btns_v2 = ttk.Frame(card_v2)
         btns_v2.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-        self.btn_v2_a = ttk.Button(btns_v2, text="A", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v2", "A"))
-        self.btn_v2_b = ttk.Button(btns_v2, text="B", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v2", "B"))
+        self.btn_v2_a = TouchButton(btns_v2, text="A", command=lambda: self._seleccionar_posicion("v2", "A"))
+        self.btn_v2_b = TouchButton(btns_v2, text="B", command=lambda: self._seleccionar_posicion("v2", "B"))
         self.btn_v2_a.grid(row=0, column=0, padx=(0, 6))
         self.btn_v2_b.grid(row=0, column=1, padx=(6, 0))
 
         # --- Tarjeta: Conexión equipo 2 ---
         card_con = ttk.LabelFrame(wrap, text="Conexión equipo 2")
         card_con.grid(row=1, column=0, sticky="nsew", **card_pad)
-        self.btn_con_eq2 = ttk.Button(card_con, text=self._texto_conexion(),
-                                      command=self._toggle_conexion)
+        self.btn_con_eq2 = TouchButton(card_con, text=self._texto_conexion(), command=self._toggle_conexion)
         self.btn_con_eq2.grid(row=0, column=0, padx=in_padx, pady=in_pady, sticky="w")
 
         # --- Tarjeta: Bypass ---
         card_bp = ttk.LabelFrame(wrap, text="Bypass")
         card_bp.grid(row=1, column=1, sticky="nsew", **card_pad)
         card_bp.grid_columnconfigure(0, weight=1)
-        self.btn_bypass = ttk.Button(
-            card_bp, text=self._texto_bypass(), command=self._toggle_bypass, width=18
-        )
+        self.btn_bypass = TouchButton(card_bp, text=self._texto_bypass(), command=self._toggle_bypass)
         self.btn_bypass.grid(row=0, column=0, padx=in_padx, pady=in_pady, sticky="w")
 
         # --- Tarjeta: Solenoide (seguridad) ---
         card_sol = ttk.LabelFrame(wrap, text="Válvula solenoide (seguridad)")
         card_sol.grid(row=2, column=0, sticky="nsew", **card_pad)
+        card_sol.grid_columnconfigure(0, weight=0)
         card_sol.grid_columnconfigure(1, weight=1)
-        self.btn_sol_toggle = ttk.Button(card_sol, text=self._texto_sol(), command=self._toggle_sol)
+        self.btn_sol_toggle = TouchButton(card_sol, text=self._texto_sol(), command=self._toggle_sol)
         self.btn_sol_toggle.grid(row=0, column=0, columnspan=2, padx=in_padx, pady=(in_pady, 6), sticky="w")
 
-        ttk.Label(card_sol, text="Presión de seguridad (bar):").grid(
-            row=1, column=0, padx=in_padx, pady=6, sticky="e"
+        campo_p = LabeledEntryNum(
+            card_sol,
+            "Presión de seguridad (bar):",
+            width=getattr(C, "ENTRY_WIDTH", 12),
         )
-        self.entry_p_seg = ttk.Entry(card_sol, width=10)
-        self.entry_p_seg.grid(row=1, column=1, padx=(4, in_padx), pady=6, sticky="w")
+        campo_p.grid(row=1, column=0, columnspan=2, sticky="w")
+        campo_p.bind_numeric(
+            lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+            on_submit=lambda v: self._aplicar_presion_y_enviar_auto(v),
+        )
+
+        self.entry_p_seg = campo_p.entry
+        self.entry_p_seg.delete(0, tk.END)
         self.entry_p_seg.insert(0, f"{self.sol_presion:.1f}")
-        self.entry_p_seg.bind("<Button-1>", lambda e: TecladoNumerico(
-            self, self.entry_p_seg, on_submit=lambda v: self._aplicar_presion_y_enviar_auto(v)))
-        self.entry_p_seg.bind("<FocusOut>", lambda _e: self._aplicar_presion_y_enviar_auto(self.entry_p_seg.get()))
 
         # --- Tarjeta: Peristálticas ---
         card_per = ttk.LabelFrame(wrap, text="Bombas peristálticas")
         card_per.grid(row=2, column=1, sticky="nsew", **card_pad)
-        self.btn_per1 = ttk.Button(card_per, text=self._texto_per1(), command=self._toggle_per1, width=20)
-        self.btn_per2 = ttk.Button(card_per, text=self._texto_per2(), command=self._toggle_per2, width=20)
+        self.btn_per1 = TouchButton(card_per, text=self._texto_per1(), command=self._toggle_per1)
+        self.btn_per2 = TouchButton(card_per, text=self._texto_per2(), command=self._toggle_per2)
         self.btn_per1.grid(row=0, column=0, padx=in_padx, pady=(in_pady, 6), sticky="w")
         self.btn_per2.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-
-        # Establecer estado inicial de conexión
-        self._aplicar_estado_conexion()
 
     # ------------- Persistencia V1/V2/BYP -------------
     def _cargar_posiciones(self):
@@ -215,15 +209,15 @@ class VentanaValv(tk.Frame):
             print(f"[WARN] No se pudo escribir {self._pos_file}: {e}")
 
     # ------------- Helpers UI -------------
-    def _refrescar_botones(self, cual: str):
+    def _refrescar_botones(self, cual: str) -> None:
         if cual == "v1":
             sel = self.v1_pos.get()
-            self.btn_v1_a.configure(style="ABSelected.TButton" if sel == "A" else "AB.TButton")
-            self.btn_v1_b.configure(style="ABSelected.TButton" if sel == "B" else "AB.TButton")
+            self.btn_v1_a.configure(style="SelBtnOn.TButton" if sel == "A" else "TButton")
+            self.btn_v1_b.configure(style="SelBtnOn.TButton" if sel == "B" else "TButton")
         elif cual == "v2":
             sel = self.v2_pos.get()
-            self.btn_v2_a.configure(style="ABSelected.TButton" if sel == "A" else "AB.TButton")
-            self.btn_v2_b.configure(style="ABSelected.TButton" if sel == "B" else "AB.TButton")
+            self.btn_v2_a.configure(style="SelBtnOn.TButton" if sel == "A" else "TButton")
+            self.btn_v2_b.configure(style="SelBtnOn.TButton" if sel == "B" else "TButton")
 
     def _texto_sol(self) -> str:
         return "Cerrar válvula" if self.sol_abierta.get() else "Abrir válvula"
@@ -241,7 +235,7 @@ class VentanaValv(tk.Frame):
         return f"Bypass {self.bypass_sel.get()}  (cambiar)"
 
     # ------------- Handlers V1/V2 -------------
-    def _seleccionar_posicion(self, cual: str, pos: str):
+    def _seleccionar_posicion(self, cual: str, pos: str) -> None:
         if pos not in ("A", "B"):
             return
         pos_code = "1" if pos == "A" else "2"
@@ -273,7 +267,7 @@ class VentanaValv(tk.Frame):
             self.controlador.enviar_a_arduino(mensaje)
 
     # ------------- Conexión equipo 2 -------------
-    def _toggle_conexion(self):
+    def _toggle_conexion(self) -> None:
         nuevo = not self.conexion_equipo2.get()
         self.conexion_equipo2.set(nuevo)
         self.btn_con_eq2.configure(text=self._texto_conexion())
@@ -284,7 +278,7 @@ class VentanaValv(tk.Frame):
             if hasattr(self.controlador, "enviar_a_arduino"):
                 self.controlador.enviar_a_arduino(msg)
 
-    def _aplicar_estado_conexion(self):
+    def _aplicar_estado_conexion(self) -> None:
         on = self.conexion_equipo2.get()
         state_v2 = ("disabled" if on else "normal")
         self.btn_v2_a.configure(state=state_v2)
@@ -303,7 +297,7 @@ class VentanaValv(tk.Frame):
             p = 20.0
         return round(p, 1)
 
-    def _aplicar_presion_y_enviar_auto(self, valor):
+    def _aplicar_presion_y_enviar_auto(self, valor) -> None:
         p = self._leer_presion_float_capada(valor)
         self.sol_presion = p
         self.entry_p_seg.delete(0, tk.END)
@@ -314,7 +308,7 @@ class VentanaValv(tk.Frame):
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
 
-    def _toggle_sol(self):
+    def _toggle_sol(self) -> None:
         p = self._leer_presion_float_capada(self.entry_p_seg.get())
         self.sol_presion = p
         self.entry_p_seg.delete(0, tk.END)
@@ -330,7 +324,7 @@ class VentanaValv(tk.Frame):
             self.controlador.enviar_a_arduino(msg)
 
     # ------------- Bypass (CMD 3; Valvs motor; manual; 1/2) -------------
-    def _toggle_bypass(self):
+    def _toggle_bypass(self) -> None:
         nuevo = 2 if self.bypass_sel.get() == 1 else 1
         if nuevo == self.bypass_sel.get():
             return  # sin cambio
@@ -351,7 +345,7 @@ class VentanaValv(tk.Frame):
             self.controlador.enviar_a_arduino(msg)
 
     # ------------- Peristálticas (6/7) -------------
-    def _toggle_per1(self):
+    def _toggle_per1(self) -> None:
         nuevo = not self.per1_on.get()
         self.per1_on.set(nuevo)
         self.btn_per1.configure(text=self._texto_per1())
@@ -361,7 +355,7 @@ class VentanaValv(tk.Frame):
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
 
-    def _toggle_per2(self):
+    def _toggle_per2(self) -> None:
         nuevo = not self.per2_on.get()
         self.per2_on.set(nuevo)
         self.btn_per2.configure(text=self._texto_per2())
