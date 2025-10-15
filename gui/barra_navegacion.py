@@ -34,6 +34,13 @@ class BarraNavegacion(ttk.Frame):
             foreground="white",
             background="#007acc",
         )
+        style.configure(
+            "CerrarMenu.TButton",
+            font=("Arial", 10, "bold"),
+            padding=5,
+            foreground="white",
+            background="#e74c3c",
+        )
 
         # Imágenes (opcionales)
         img_path = os.path.join(_app_base_dir(), "img")
@@ -58,16 +65,18 @@ class BarraNavegacion(ttk.Frame):
             ("Auto", self.img_auto, "VentanaAuto", None),
             ("Graph", self.img_graph, "VentanaGraph", None),
             ("Registros", self.img_folder, None, self._abrir_carpeta_registros),
+            ("Cerrar", self.img_folder, None, self._cerrar_app),
         ]
 
         for ro, (texto, imagen, destino, cmd_alt) in enumerate(botones):
             cmd = (lambda d=destino: self.controlador.mostrar_ventana(d)) if destino else cmd_alt
+            btn_style = "CerrarMenu.TButton" if texto == "Cerrar" else "BotonMenu.TButton"
             btn = ttk.Button(
                 self,
                 text=texto,
                 image=imagen,
                 compound="top" if imagen else "",
-                style="BotonMenu.TButton",
+                style=btn_style,
                 command=cmd,
             )
             btn.grid(row=ro, column=0, pady=5, sticky="ew")
@@ -88,3 +97,10 @@ class BarraNavegacion(ttk.Frame):
             import tkinter.messagebox as mb
             mb.showinfo("Registros",
                         f"Carpeta de registros:\n{reg_dir}\n\n(No se pudo abrir el explorador: {ex})")
+    def _cerrar_app(self):
+        top = self.winfo_toplevel()
+        try:
+            top.destroy()
+        except Exception:
+            import tkinter as tk
+            tk._default_root.destroy()
