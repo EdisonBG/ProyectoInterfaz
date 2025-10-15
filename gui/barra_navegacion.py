@@ -66,6 +66,7 @@ class BarraNavegacion(ttk.Frame):
             ("Graph", self.img_graph, "VentanaGraph", None),
             ("Registros", self.img_folder, None, self._abrir_carpeta_registros),
             ("Cerrar", self.img_folder, None, self._cerrar_app),
+            ("Minimizar", self.img_folder, None, self._minimizar_app)
         ]
 
         for ro, (texto, imagen, destino, cmd_alt) in enumerate(botones):
@@ -104,3 +105,14 @@ class BarraNavegacion(ttk.Frame):
         except Exception:
             import tkinter as tk
             tk._default_root.destroy()
+    
+    def _minimizar_app(self):
+        top = self.winfo_toplevel()
+        try:
+            top.iconify()            # Minimiza la ventana (deja ver el panel/menú)
+        except Exception:
+            # Fallbacks por si algún WM es quisquilloso
+            try:
+                top.state('iconic')
+            except Exception:
+                pass
