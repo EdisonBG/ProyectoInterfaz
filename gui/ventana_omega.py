@@ -4,6 +4,14 @@ from .barra_navegacion import BarraNavegacion
 from .panel_omega import PanelOmega
 
 
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        USABLE_WIDTH = 1280
+        USABLE_HEIGHT = 800
+    C = _C_()
+
 class VentanaOmega(tk.Frame):
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
@@ -16,14 +24,14 @@ class VentanaOmega(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
 
         # Columna 0 = barra fija; 1 y 2 = paneles expansibles y uniformes
-        self.grid_columnconfigure(
-            0, weight=0)     # ancho fijo de barra
+        BAR_W = 95
+        self.grid_columnconfigure(0, weight=0, minsize=BAR_W)   # ancho fijo de barra
         self.grid_columnconfigure(1, weight=1, uniform="omega")  # panel 1
         self.grid_columnconfigure(2, weight=1, uniform="omega")  # panel 2
 
         # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=95)
+        
         barra.grid(row=0, column=0, sticky="nsw")
         barra.grid_propagate(False)
 
@@ -34,23 +42,20 @@ class VentanaOmega(tk.Frame):
         self.paneles = {}  # <--- Guardamos referencias por id_omega
 
         # Wrapper 1
-        wrapper1 = tk.Frame(self, width=PANEL_W, height=PANEL_H)
-        wrapper1.grid(row=0, column=1, padx=10, pady=10, sticky="n")
-        wrapper1.grid_propagate(True)              # permitir crecer en alto
+        # Wrappers SIN tamaño fijo: se estiran a llenar su celda
+        wrapper1 = tk.Frame(self)
+        wrapper1.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")              # permitir crecer en alto
 
-        panel1 = PanelOmega(wrapper1, id_omega=1,
-                            controlador=self.controlador, arduino=self.arduino)
-        panel1.pack()  # usa pack simple dentro del wrapper (o .grid, pero sin place)
+        panel1 = PanelOmega(wrapper1, id_omega=1, controlador=self.controlador, arduino=self.arduino)
+        panel1.pack(fill="both", expand=True)
         self.paneles[1] = panel1
 
         # Wrapper 2
-        wrapper2 = tk.Frame(self, width=PANEL_W)
-        wrapper2.grid(row=0, column=2, padx=10, pady=10, sticky="n")
-        wrapper2.grid_propagate(True)
+        wrapper2 = tk.Frame(self)
+        wrapper2.grid(row=0, column=2, padx=10, pady=10, sticky="nsew")
 
-        panel2 = PanelOmega(wrapper2, id_omega=2,
-                            controlador=self.controlador, arduino=self.arduino)
-        panel2.pack()
+        panel2 = PanelOmega(wrapper2, id_omega=2, controlador=self.controlador, arduino=self.arduino)
+        panel2.pack(fill="both", expand=True)
         self.paneles[2] = panel2
 
         # --- Metodo llamado desde la App para volcar estados en los dos paneles ---
