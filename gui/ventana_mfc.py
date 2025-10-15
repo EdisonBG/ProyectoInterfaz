@@ -15,7 +15,7 @@ try:
     from ui import constants as C
 except Exception:
     class _C_:
-        FONT_BASE = ("Calibri", 16)
+        FONT_BASE = ("Calibri", 14)
         ENTRY_WIDTH = 12
         COMBO_WIDTH = 12
     C = _C_()
@@ -25,43 +25,56 @@ except Exception:
 # Cambia a False para volver al grid de siempre dentro de cada LabelFrame.
 USE_ABS_LAYOUT = True
 
-# Tamaño fijo del LabelFrame cuando uses .place (cada "cuadro" de MFC)
-SEC_W, SEC_H = 500, 240  # ajústalo a tu gusto
+# --- Título movible por píxeles y con fuente configurable (solo en modo absoluto) ---
+# Posición del "título" dibujado manualmente dentro de cada sección (x, y).
+TITLE_POS = {
+    1: (8, 2),
+    2: (8, 2),
+    3: (8, 2),
+    4: (8, 2),
+}
+# Fuente (familia, tamaño, estilo) por sección para el título.
+TITLE_FONT = {
+    1: ("Calibri", 14, "bold"),
+    2: ("Calibri", 14, "bold"),
+    3: ("Calibri", 14, "bold"),
+    4: ("Calibri", 14, "bold"),
+}
 
-# Coordenadas por MFC (x, y) para cada control dentro de su LabelFrame.
+# Coordenadas por MFC (horizontal, vertical) para cada control dentro de su LabelFrame.
 # Nota: "entry" posiciona el contenedor LabeledEntryNum completo (label+entry).
 POS = {
     1: {
-        "mix_lbl":   (200, 10),
-        "gas_lbl":   (12,  12), "combo":    (80, 10),
-        "entry":     (12,  60),
-        "legend":    (12,  100),
-        "btn_open":  (12,  136), "btn_close": (170, 136),
-        "btn_send":  (12,  180),
+        "mix_lbl":   (270, 2),
+        "rango_lbl": (50,  31),     "legend":    (197,  31),
+        "gas_lbl":   (118,  72), "combo":    (202, 70),
+        "entry":     (75, 106), 
+        "btn_open":  (55,  168), "btn_close": (213, 168),
+        "btn_send":  (123,  219),
     },
     2: {
-        "mix_lbl":   (360, 10),
-        "gas_lbl":   (12,  12), "combo":    (80, 10),
-        "entry":     (12,  60),
-        "legend":    (12,  100),
-        "btn_open":  (12,  136), "btn_close": (170, 136),
-        "btn_send":  (12,  180),
+        "mix_lbl":   (270, 2),
+        "rango_lbl": (50,  31),     "legend":    (197,  31),
+        "gas_lbl":   (118,  72), "combo":    (202, 70),
+        "entry":     (75, 106), 
+        "btn_open":  (55,  168), "btn_close": (213, 168),
+        "btn_send":  (123,  219),
     },
     3: {
-        "mix_lbl":   (360, 10),
-        "gas_lbl":   (12,  12), "combo":    (80, 10),
-        "entry":     (12,  60),
-        "legend":    (12,  100),
-        "btn_open":  (12,  136), "btn_close": (170, 136),
-        "btn_send":  (12,  180),
+        "mix_lbl":   (270, 2),
+        "rango_lbl": (50,  31),     "legend":    (197,  31),
+        "gas_lbl":   (118,  72), "combo":    (202, 70),
+        "entry":     (75, 106), 
+        "btn_open":  (55,  168), "btn_close": (213, 168),
+        "btn_send":  (123,  219),
     },
     4: {
-        "mix_lbl":   (360, 10),
-        "gas_lbl":   (12,  12), "combo":    (80, 10),
-        "entry":     (12,  60),
-        "legend":    (12,  100),
-        "btn_open":  (12,  136), "btn_close": (170, 136),
-        "btn_send":  (12,  180),
+        "mix_lbl":   (270, 2),
+        "rango_lbl": (50,  31),     "legend":    (197,  31),
+        "gas_lbl":   (118,  72), "combo":    (202, 70),
+        "entry":     (75, 106), 
+        "btn_open":  (55,  168), "btn_close": (213, 168),
+        "btn_send":  (123,  219),
     },
 }
 # ---------------------------------------------------------------------------
@@ -132,6 +145,8 @@ class VentanaMfc(tk.Frame):
 
         self._configurar_estilos()
         self._crear_ui()
+        self.bind("<Map>", self._reset_send_button_on_show)
+
 
         # Exponer referencia en el controlador
         if hasattr(self.controlador, "__setattr__"):
@@ -139,17 +154,43 @@ class VentanaMfc(tk.Frame):
 
     # ------------------------ Estilos ------------------------
     def _configurar_estilos(self):
+        GREEN = "#9bd7b1"    # verde
+        GREEN_D = "#27ae60"   # verde oscuro (pressed / activo)
+
+        RED   = "#FF4B3B"     # rojo
+        RED_D = "#db4231"     # rojo oscuro (pressed / activo)
+
         st = ttk.Style(self)
         try:
             st.theme_use("clam")
         except Exception:
             pass
         # Aplicar fuente táctil a los botones de selección
-        st.configure("SelBtn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        # boton de send
+        st.configure("SelBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         st.map("SelBtn.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
-        st.configure("SelBtnOn.TButton", padding=(16, 12), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
+        st.configure("SelBtnOn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
         st.map("SelBtnOn.TButton", background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
 
+        #boton de open
+        st.configure("Open.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("Open.TButton", background=[("!disabled", GREEN), ("pressed", GREEN_D)])
+        st.configure("OpenOn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("OpenOn.TButton", background=[("!disabled", GREEN_D), ("pressed", GREEN)])
+        
+        #boton de close
+        st.configure("Close.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("Close.TButton", background=[("!disabled", RED), ("pressed", RED_D)])
+        st.configure("CloseOn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("CloseOn.TButton", background=[("!disabled", RED_D), ("pressed", RED)])
+
+    def _reset_send_button_on_show(self, _e=None):
+    # Sólo resetea el estilo del botón "Enviar flujo" para cada MFC
+        for i in range(1, 5):
+            btn = self.refs[i].get("btn_send")
+            if btn:
+                base = getattr(btn, "_base_style", "SelBtn.TButton")  # fallback si no se guardó
+                btn.configure(style=base)
 
     # ------------------------ UI ------------------------
     def _crear_ui(self) -> None:
@@ -166,7 +207,7 @@ class VentanaMfc(tk.Frame):
         for c in range(2):
             cont.grid_columnconfigure(c, weight=1, uniform="mfc")
         for r in range(2):
-            cont.grid_rowconfigure(r, weight=1)
+            cont.grid_rowconfigure(r, weight=1, uniform="mfc")
 
         secciones = [
             (1, "MFC 1 (O₂)"),
@@ -181,101 +222,39 @@ class VentanaMfc(tk.Frame):
             frame.grid(row=fila, column=col, padx=8, pady=8, sticky="nsew")
 
     def _crear_seccion_mfc(self, parent, mfc_id: int, titulo: str) -> ttk.LabelFrame:
-        frame = ttk.LabelFrame(parent, text=titulo)
+        # En modo ABS colocamos un título movible manual y dejamos vacío el label nativo
+        frame = ttk.Frame(parent, borderwidth=2, relief="groove")
 
-        if not USE_ABS_LAYOUT:
-            # ---- MODO GRID: versión original (sin cambios de fondo) ----
-            frame.grid_columnconfigure(0, weight=0)
-            frame.grid_columnconfigure(1, weight=1)
-            frame.grid_columnconfigure(2, weight=0)
-            # frame.grid_columnconfigure(0, weight=1, uniform="btns",minsize=170)
-            # frame.grid_columnconfigure(1, weight=1, uniform="btns",minsize=170)
-            # frame.grid_columnconfigure(2, weight=0)
+        # ---- MODO ABSOLUTO: por píxeles con .place() dentro de cada sección ----
+        # Sin fijar ancho/alto: el frame se expande para llenar su celda (sticky="nsew")
+        # y todos los hijos se posicionan con coordenadas relativas a la esquina superior izquierda.
 
-            row = 0
+        # Título movible (dibujado manualmente)
+        title_lbl = ttk.Label(frame, text=titulo, font=TITLE_FONT.get(mfc_id, ("Calibri", 20, "bold")))
+        title_x, title_y = TITLE_POS.get(mfc_id, (10, 8))
+        title_lbl.place(x=title_x, y=title_y)
+        self.refs[mfc_id]["title_lbl"] = title_lbl
 
-            # % mezcla (arriba derecha)
-            mix_lbl = ttk.Label(frame, text="% Mezcla: 100.0 %", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
-            mix_lbl.grid(row=row, column=2, padx=(4, 6), pady=(6, 0), sticky="ne")
-            self.refs[mfc_id]["mix_lbl"] = mix_lbl
-
-            # Gas
-            ttk.Label(frame, text="Gas:", font=getattr(C, "FONT_BASE", ("Calibri", 16))).grid(
-                row=row, column=0, padx=5, pady=5, sticky="e"
-            )
-            combo = ttk.Combobox(
-                frame,
-                values=self.GAS_LIST,
-                state="readonly",
-                width=getattr(C, "COMBO_WIDTH", 12),
-                height=130,  # se conserva el parámetro original
-                font=getattr(C, "FONT_BASE", ("Calibri", 16)),
-            )
-            combo.set(self.DEFAULT_GAS[mfc_id])
-            combo.grid(row=row, column=1, padx=5, pady=5, sticky="w")
-            combo.bind("<<ComboboxSelected>>", lambda _e, m=mfc_id: self._on_cambio_gas(m))
-            self.refs[mfc_id]["combo"] = combo
-            row += 1
-
-            # Flujo (LabeledEntryNum + teclado numérico)
-            campo_flujo = LabeledEntryNum(
-                frame,
-                "Flujo (mL/min):",
-                width=getattr(C, "ENTRY_WIDTH", 12),
-            )
-            campo_flujo.grid(row=row, column=0, columnspan=2, sticky="w")
-            campo_flujo.bind_numeric(
-                lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
-                on_submit=lambda v, m=mfc_id: self._on_submit_flujo(m, campo_flujo.entry, v),
-            )
-            self.refs[mfc_id]["entry"] = campo_flujo.entry
-            row += 1
-
-            # Leyenda min/max
-            maxv = self._maximo_mfc_por_gas(mfc_id, combo.get())
-            legend = ttk.Label(frame, text=f"min: 0   max: {maxv}", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
-            legend.grid(row=row, column=0, columnspan=2, padx=5, pady=(0, 6), sticky="w")
-            self.refs[mfc_id]["legend"] = legend
-            row += 1
-
-            # Botones Abrir / Cerrar
-            btn_open = TouchButton(frame, text="Abrir MFC", style="SelBtn.TButton",
-                                   command=lambda m=mfc_id: self._btn_open(m))
-            btn_close = TouchButton(frame, text="Cerrar MFC", style="SelBtn.TButton",
-                                    command=lambda m=mfc_id: self._btn_close(m))
-            btn_open.grid(row=row, column=0, padx=6, pady=6, sticky="ew")
-            btn_close.grid(row=row, column=1, padx=6, pady=6, sticky="ew")
-            self.refs[mfc_id]["btn_open"] = btn_open
-            self.refs[mfc_id]["btn_close"] = btn_close
-            row += 1
-
-            # Botón Enviar flujo
-            TouchButton(frame, text="Enviar flujo", command=lambda m=mfc_id: self._enviar_flujo(m))\
-                .grid(row=row, column=0, columnspan=2, padx=6, pady=(8, 4))
-
-            return frame
-
-        # ---- MODO ABSOLUTO: por píxeles con .place() dentro del LabelFrame ----
-        # (El 2x2 de la pantalla se mantiene con grid; solo cambiamos el interior de cada cuadro)
-        frame.configure(width=SEC_W, height=SEC_H)
-        frame.grid_propagate(False)  # evita que el frame cambie de tamaño por sus hijos
-
-        # % mezcla
-        mix_lbl = ttk.Label(frame, text="% Mezcla: 100.0 %", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        # % mezcla (arriba derecha o donde quieras)
+        mix_lbl = ttk.Label(frame, text="% Mezcla: 100.0 %", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
         mix_lbl.place(x=POS[mfc_id]["mix_lbl"][0], y=POS[mfc_id]["mix_lbl"][1])
         self.refs[mfc_id]["mix_lbl"] = mix_lbl
 
+        # Rango del gas elegido
+        rango_lbl = ttk.Label(frame, text="Rango (mL/min):", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+        rango_lbl.place(x=POS[mfc_id]["rango_lbl"][0], y=POS[mfc_id]["rango_lbl"][1])
+
         # Gas (label + combo)
-        gas_lbl = ttk.Label(frame, text="Gas:", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        gas_lbl = ttk.Label(frame, text="Gas:", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
         gas_lbl.place(x=POS[mfc_id]["gas_lbl"][0], y=POS[mfc_id]["gas_lbl"][1])
 
         combo = ttk.Combobox(
             frame,
             values=self.GAS_LIST,
             state="readonly",
-            width=getattr(C, "COMBO_WIDTH", 12),
+            width=getattr(C, "COMBO_WIDTH", 10),
             height=130,
-            font=getattr(C, "FONT_BASE", ("Calibri", 16)),
+            font=getattr(C, "FONT_BASE", ("Calibri", 14)),
         )
         combo.set(self.DEFAULT_GAS[mfc_id])
         combo.place(x=POS[mfc_id]["combo"][0], y=POS[mfc_id]["combo"][1])
@@ -283,11 +262,14 @@ class VentanaMfc(tk.Frame):
         self.refs[mfc_id]["combo"] = combo
 
         # Flujo (LabeledEntryNum completo por posición)
-        campo_flujo = LabeledEntryNum(
-            frame,
-            "Flujo (mL/min):",
-            width=getattr(C, "ENTRY_WIDTH", 12),
-        )
+        campo_flujo = LabeledEntryNum(frame, "Flujo (mL/min):",
+            width=18,  # más largo
+            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),  # label más grande
+            entry_ipady=7,
+            # entry_font opcional si quieres cambiar también la fuente del entry:
+            # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+            )
+        
         campo_flujo.place(x=POS[mfc_id]["entry"][0], y=POS[mfc_id]["entry"][1])
         campo_flujo.bind_numeric(
             lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
@@ -297,22 +279,25 @@ class VentanaMfc(tk.Frame):
 
         # Leyenda min/max
         maxv = self._maximo_mfc_por_gas(mfc_id, combo.get())
-        legend = ttk.Label(frame, text=f"min: 0   max: {maxv}", font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        legend = ttk.Label(frame, text=f"min: 0      max: {maxv}", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
         legend.place(x=POS[mfc_id]["legend"][0], y=POS[mfc_id]["legend"][1])
         self.refs[mfc_id]["legend"] = legend
 
         # Botones
-        btn_open = TouchButton(frame, text="Abrir MFC", style="SelBtn.TButton",
+        btn_open = TouchButton(frame, text="Abrir MFC", style="Open.TButton",
                                command=lambda m=mfc_id: self._btn_open(m))
-        btn_close = TouchButton(frame, text="Cerrar MFC", style="SelBtn.TButton",
+        btn_close = TouchButton(frame, text="Cerrar MFC", style="Close.TButton",
                                 command=lambda m=mfc_id: self._btn_close(m))
         btn_open.place(x=POS[mfc_id]["btn_open"][0], y=POS[mfc_id]["btn_open"][1])
         btn_close.place(x=POS[mfc_id]["btn_close"][0], y=POS[mfc_id]["btn_close"][1])
         self.refs[mfc_id]["btn_open"] = btn_open
         self.refs[mfc_id]["btn_close"] = btn_close
 
-        btn_send = TouchButton(frame, text="Enviar flujo", command=lambda m=mfc_id: self._enviar_flujo(m))
+        btn_send = TouchButton(frame, text="Enviar flujo", style="SelBtn.TButton",
+                                command=lambda m=mfc_id: self._enviar_flujo(m))
         btn_send.place(x=POS[mfc_id]["btn_send"][0], y=POS[mfc_id]["btn_send"][1])
+        self.refs[mfc_id]["btn_send"] = btn_send
+        btn_send._base_style = btn_send.cget("style")  # <--- guardamos el estilo claro
 
         return frame
 
@@ -352,7 +337,7 @@ class VentanaMfc(tk.Frame):
         """Actualiza leyenda (cap del entry si corresponde). No afecta % mezcla."""
         gas = self.refs[mfc_id]["combo"].get()
         maxv = self._maximo_mfc_por_gas(mfc_id, gas)
-        self.refs[mfc_id]["legend"].configure(text=f"min: 0   max: {maxv}")
+        self.refs[mfc_id]["legend"].configure(text=f"min: 0      max: {maxv}")
 
         ent: ttk.Entry = self.refs[mfc_id]["entry"]
         txt = (ent.get() or "").strip()
@@ -389,8 +374,9 @@ class VentanaMfc(tk.Frame):
     def _actualizar_estilos_on_off(self, mfc_id: int) -> None:
         refs = self.refs[mfc_id]
         est = self.estado_mfc[mfc_id]
-        refs["btn_open"].configure(style="SelBtnOn.TButton" if est == "open" else "SelBtn.TButton")
-        refs["btn_close"].configure(style="SelBtnOn.TButton" if est == "close" else "SelBtn.TButton")
+        refs["btn_open"].configure(style="OpenOn.TButton" if est == "open" else "Open.TButton")
+        refs["btn_close"].configure(style="CloseOn.TButton" if est == "close" else "Close.TButton")
+        refs["btn_send"].configure(style="SelBtnOn.TButton" if est == "pressed" else "SelBtn.TButton")
 
     # ------------------------ Abrir/Cerrar MFCS------------------------
     def _btn_open(self, mfc_id: int) -> None:
@@ -427,6 +413,11 @@ class VentanaMfc(tk.Frame):
         # Desmarcar Abrir/Cerrar
         self.estado_mfc[mfc_id] = None
         self._actualizar_estilos_on_off(mfc_id)
+
+        #Cambiar color de send
+        self.estado_mfc[mfc_id] = "pressed"
+        self._actualizar_estilos_on_off(mfc_id)      
+        
 
     # ------------------------ % Mezcla ------------------------
     def _sp_val(self, mfc_id: int) -> float:

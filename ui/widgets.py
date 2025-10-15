@@ -83,14 +83,20 @@ class LabeledEntryNum(ttk.Frame):
         # Acceso al Entry real: campo.entry
     """
 
-    def __init__(self, master: tk.Misc | None, label: str, width: int = 10, **kwargs):
+    def __init__(self, master: tk.Misc | None, label: str, width: int = 10,
+                 label_font=None, entry_font=None, entry_ipady: int | None = None, **kwargs):
         super().__init__(master, **kwargs)
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text=label).grid(row=0, column=0, padx=5, pady=5, sticky="e")
-        self.entry = TouchEntry(self, width=width)
+        self.label = ttk.Label(self, text=label, font=label_font)  
+        self.label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+
+        self.entry = TouchEntry(self, width=width, font=entry_font)  
         self.entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        if entry_ipady is not None:
+            self.entry.grid_configure(ipady=entry_ipady)
 
     def bind_numeric(self, opener, on_submit=None) -> None:
         """Asocia un abridor de teclado numérico externo.
