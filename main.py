@@ -53,10 +53,49 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
-    try:
-        # En X11/Wayland con Tk 8.6+, “utility” suele ocultar el botón de maximizar
-        app.attributes("-type", "utility")
-    except Exception:
-        pass
+    # --- Wayland: neutralizar "Maximizar" sin quitar barra de título ---
+
     
+
+    # Tamaño "bueno" (tu tamaño de pantalla/área útil en modo ventana)
+    W0, H0 = app.winfo_width(), app.winfo_height()
+
+    # Deja que el usuario pueda cerrar/minimizar normalmente
+    app.resizable(True, True)  # No desactiva la barra; solo preparamos el antimax.
+
+    # Guard para evitar bucles
+    _restoring = {"on": False}
+
+    def _restore_size_and_front():
+        """Vuelve a tamaño normal y trae la ventana al frente (sin maximizar)."""
+        try:
+            app.state('normal')  # por si el WM puso 'zoomed'
+        except Exception:
+            pass
+        # Restablece tamaño y posición actual (no tocamos X/Y salvo que quieras fijarlos)
+        app.geometry(f"{W0}x{H0}+{app.winfo_x()}+{app.winfo_y()}")
+        # Pulso topmost para vencer al compositor si el panel se superpone
+        app.lift()
+        app.attributes("-topmost", True)
+        app.after(120, lambda: app.attributes("-topmost", False))
+
+    def _anti_maximize(evt=None):
+        # Si ya estamos restaurando, no reentrar
+        if _restoring["on"]:
+            return
+        # Detecta intento del WM: estado 'zoomed' o tamaño distinto al fijo
+        zoomed = (app.state() == 'zoomed')
+        sizediff = (app.winfo_width() != W0 or app.winfo_height() != H0)
+        if zoomed or sizediff:
+            _restoring["on"] = True
+            try:
+                # pequeña espera ayuda a evitar “rebote” visual en Wayland
+                app.after(30, _restore_size_and_front)
+            finally:
+                app.after(80, lambda: _restoring.__setitem__("on", False))
+
+    # Engancha cuando el WM cambia estado/tamaño (clic en maximizar, tile, etc.)
+    app.bind("<Configure>", _anti_maximize)
+
+
     app.mainloop()
