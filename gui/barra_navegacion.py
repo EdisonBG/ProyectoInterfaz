@@ -108,11 +108,13 @@ class BarraNavegacion(ttk.Frame):
     
     def _minimizar_app(self):
         top = self.winfo_toplevel()
+        # queremos volver en fullscreen cuando se restaure
+        top._want_fullscreen = True
         try:
-            top.attributes("-fullscreen", False)  # salir de fullscreen
+            top.attributes("-fullscreen", False)  # salir de fullscreen para que minimice normal
         except Exception:
             pass
         try:
-            top.iconify()  # minimizar (aparece el ícono en la barra)
+            top.iconify()
         except Exception:
             pass

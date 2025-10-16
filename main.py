@@ -32,7 +32,7 @@ if __name__ == "__main__":
         app.withdraw()
     except Exception:
         pass
-    app.after(150, _show_after_withdraw)
+    app.after(120, _show_after_withdraw)
 
     # 2) Ciclo corto de refuerzos (durante ~1.2 s)
     def _focus_cycle(n=0):
@@ -53,10 +53,23 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
     
-    # Quitar barra de título pero que sea gestionada -> fullscreen verdadero
-    app.attributes("-fullscreen", True)
+    # --- Pantalla completa gestionada + "recordar volver a fullscreen" ---
+    app.attributes("-fullscreen", True)   # sin barra de título
+    app._want_fullscreen = True           # bandera de preferencia
 
-    # (opcional) atajo para salir de fullscreen si te hace falta:
-    app.bind("<Escape>", lambda e: app.attributes("-fullscreen", False))
+    def _reapply_fullscreen(_=None):
+        # Al restaurar desde la barra de tareas, vuelve a fullscreen si así se prefirió
+        if getattr(app, "_want_fullscreen", False):
+            app.after(50, lambda: app.attributes("-fullscreen", True))
+
+    # Cuando reaparece o toma foco (tras minimizar/restaurar)
+    app.bind("<Map>", _reapply_fullscreen, add="+")
+    app.bind("<FocusIn>", _reapply_fullscreen, add="+")
+
+    # (Opcional) salir de fullscreen con ESC, y NO volver automáticamente
+    def _exit_fs(_=None):
+        app._want_fullscreen = False
+        app.attributes("-fullscreen", False)
+    app.bind("<Escape>", _exit_fs)
     
     app.mainloop()
