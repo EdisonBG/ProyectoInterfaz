@@ -53,14 +53,27 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
-    # Toma el tamaño actual (el que quieres mantener “a pantalla completa”)
     W, H = app.winfo_width(), app.winfo_height()
+    app.resizable(True, True)  # puedes dejarlo True; igual vamos a forzar el tamaño
 
-    # 1) Impide que la ventana crezca o encoja => el botón de maximizar queda deshabilitado
-    app.minsize(W, H)
-    app.maxsize(W, H)
+    _restoring = {"on": False}
 
-    # Opcional: también bloquea el redimensionamiento manual (no afecta a minimizar/cerrar)
-    app.resizable(False, False)
+    def _keep_size(evt=None):
+        if _restoring["on"]:
+            return
+        cur_w, cur_h = app.winfo_width(), app.winfo_height()
+        if cur_w != W or cur_h != H or app.state() != 'normal':
+            _restoring["on"] = True
+            try:
+                # vuelve a estado normal y al tamaño deseado
+                app.state('normal')
+                app.geometry(f"{W}x{H}+{app.winfo_x()}+{app.winfo_y()}")
+            finally:
+                # pequeño delay evita bucles en Wayland
+                app.after(50, lambda: _restoring.__setitem__("on", False))
+
+    # Engancha cuando el WM intenta cambiar tamaño/estado
+    app.bind("<Configure>", _keep_size)
+
 
     app.mainloop()
