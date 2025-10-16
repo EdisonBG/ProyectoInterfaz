@@ -43,6 +43,7 @@ if __name__ == "__main__":
 
     # 3) Si el primer click llega demasiado pronto, lo “tragamos” y pedimos foco
     _first_click_done = {"v": False}
+
     def _swallow_until_focused(ev=None):
         if not _first_click_done["v"]:
             _ensure_front_and_focus()
@@ -52,10 +53,10 @@ if __name__ == "__main__":
     # también al map/idle por si el WM ignora el primero
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
-    
+
     # --- Pantalla completa gestionada + "recordar volver a fullscreen" ---
     app.attributes("-fullscreen", True)   # sin barra de título
-    app._want_fullscreen = True           # bandera de preferencia
+    app._want_fullscreen = True         # bandera de preferencia
 
     def _reapply_fullscreen(_=None):
         # Al restaurar desde la barra de tareas, vuelve a fullscreen si así se prefirió
@@ -71,5 +72,5 @@ if __name__ == "__main__":
         app._want_fullscreen = False
         app.attributes("-fullscreen", False)
     app.bind("<Escape>", _exit_fs)
-    
+
     app.mainloop()
