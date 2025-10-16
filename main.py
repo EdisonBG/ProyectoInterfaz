@@ -1,6 +1,67 @@
 import tkinter as tk
 from gui.app import Aplicacion
 
+def _make_title_buttons_shield(root: tk.Tk, cluster_w: int = 160):
+    """
+    Crea un Toplevel invisible y sin bordes que se coloca encima del
+    grupo de botones de la barra de título (lado derecho), bloqueando toques/clics.
+    cluster_w: ancho aproximado (px) ocupado por [min, max, close].
+    """
+
+    # 1) calcular alto real de la barra de título (diferencia rooty - y)
+    root.update_idletasks()
+    title_h = root.winfo_rooty() - root.winfo_y()
+    if title_h <= 0:
+        title_h = 32  # heurística
+
+    # 2) crear escudo
+    shield = tk.Toplevel(root)
+    shield.overrideredirect(True)          # sin bordes/decoro
+    try:
+        shield.attributes("-alpha", 0.01)  # casi invisible, pero clicable
+    except Exception:
+        pass
+    try:
+        shield.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    # 3) función para recolocar el escudo cuando la ventana cambie
+    def _reposition(_=None):
+        try:
+            root.update_idletasks()
+            # esquina sup. izquierda de la ventana en pantalla
+            rx, ry = root.winfo_rootx(), root.winfo_rooty()
+            rw, rh = root.winfo_width(), root.winfo_height()
+            # escudo ocupa (cluster_w x title_h) en el extremo derecho
+            x = rx + max(0, rw - cluster_w)
+            y = ry
+            shield.geometry(f"{cluster_w}x{title_h}+{x}+{y}")
+            shield.lift()  # encima de la ventana
+        except Exception:
+            pass
+
+    # 4) bloquear eventos de ratón/táctil sobre el escudo
+    for seq in ("<ButtonPress-1>", "<ButtonRelease-1>", "<B1-Motion>",
+                "<ButtonPress-2>", "<ButtonPress-3>", "<ButtonRelease-2>", "<ButtonRelease-3>"):
+        shield.bind(seq, lambda e: "break")
+
+    # 5) seguir a la ventana principal
+    root.bind("<Configure>", _reposition, add="+")
+    root.bind("<Map>", _reposition, add="+")
+    root.bind("<FocusIn>", _reposition, add="+")
+    _reposition()
+
+    # 6) limpiar al cerrar
+    def _cleanup():
+        try:
+            if shield.winfo_exists():
+                shield.destroy()
+        except Exception:
+            pass
+        root.destroy()
+    root.protocol("WM_DELETE_WINDOW", _cleanup)
+
 if __name__ == "__main__":
     app = Aplicacion()
     app.geometry("1024x600+0+0")  # si la usas
@@ -53,45 +114,7 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
-    # Tamaño “ventana pantalla completa” que quieres mantener
-
-    W0, H0 = 1024, 600   # <- tu tamaño objetivo
-
-    # Intercepta "maximizar" del WM y vuelve a 1024x600 manteniendo barra de título
-    _restoring = {"on": False}
-
-    def _force_windowed_size():
-        # vuelve a modo normal y a tu tamaño objetivo, y tráela al frente
-        try:
-            app.state('normal')
-        except Exception:
-            pass
-        app.geometry(f"{W0}x{H0}+{app.winfo_x()}+{app.winfo_y()}")
-        # pulso topmost: evita que el panel se quede por encima
-        app.lift()
-        app.attributes("-topmost", True)
-        app.after(120, lambda: app.attributes("-topmost", False))
-
-    def _intercept_maximize(_=None):
-        if _restoring["on"]:
-            return
-        # Si el WM pasa la ventana a 'zoomed' o intenta cambiar tamaño → restaurar
-        zoomed = (app.state() == 'zoomed')
-        sizediff = (app.winfo_width() != W0 or app.winfo_height() != H0)
-        if zoomed or sizediff:
-            _restoring["on"] = True
-            try:
-                app.after(30, _force_windowed_size)   # pequeño delay ayuda en Wayland
-            finally:
-                app.after(80, lambda: _restoring.__setitem__("on", False))
-
-    # Engancha cuando el WM cambia estado/tamaño (botón Maximizar, tile, etc.)
-    app.bind("<Configure>", _intercept_maximize)
-
-    # (Opcional) arranque consistente: asegúrate de que nace en W0×H0 al frente
-    def _ensure_start():
-        _force_windowed_size()
-    app.after_idle(_ensure_start)
+    _make_title_buttons_shield(app, cluster_w=160)
 
     
     app.mainloop()
