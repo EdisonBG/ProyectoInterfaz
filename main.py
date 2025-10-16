@@ -53,27 +53,10 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
-    W, H = app.winfo_width(), app.winfo_height()
-    app.resizable(True, True)  # puedes dejarlo True; igual vamos a forzar el tamaño
-
-    _restoring = {"on": False}
-
-    def _keep_size(evt=None):
-        if _restoring["on"]:
-            return
-        cur_w, cur_h = app.winfo_width(), app.winfo_height()
-        if cur_w != W or cur_h != H or app.state() != 'normal':
-            _restoring["on"] = True
-            try:
-                # vuelve a estado normal y al tamaño deseado
-                app.state('normal')
-                app.geometry(f"{W}x{H}+{app.winfo_x()}+{app.winfo_y()}")
-            finally:
-                # pequeño delay evita bucles en Wayland
-                app.after(50, lambda: _restoring.__setitem__("on", False))
-
-    # Engancha cuando el WM intenta cambiar tamaño/estado
-    app.bind("<Configure>", _keep_size)
-
-
+    try:
+        # En X11/Wayland con Tk 8.6+, “utility” suele ocultar el botón de maximizar
+        app.attributes("-type", "utility")
+    except Exception:
+        pass
+    
     app.mainloop()
