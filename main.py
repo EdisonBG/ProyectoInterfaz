@@ -53,5 +53,14 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
+    # Toma el tamaño actual (el que quieres mantener “a pantalla completa”)
+    W, H = app.winfo_width(), app.winfo_height()
+
+    # 1) Impide que la ventana crezca o encoja => el botón de maximizar queda deshabilitado
+    app.minsize(W, H)
+    app.maxsize(W, H)
+
+    # Opcional: también bloquea el redimensionamiento manual (no afecta a minimizar/cerrar)
+    app.resizable(False, False)
 
     app.mainloop()
