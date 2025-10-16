@@ -53,49 +53,45 @@ if __name__ == "__main__":
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
-    # --- Wayland: neutralizar "Maximizar" sin quitar barra de título ---
+    # Tamaño “ventana pantalla completa” que quieres mantener
 
-    
+    W0, H0 = 1024, 600   # <- tu tamaño objetivo
 
-    # Tamaño "bueno" (tu tamaño de pantalla/área útil en modo ventana)
-    W0, H0 = app.winfo_width(), app.winfo_height()
-
-    # Deja que el usuario pueda cerrar/minimizar normalmente
-    app.resizable(True, True)  # No desactiva la barra; solo preparamos el antimax.
-
-    # Guard para evitar bucles
+    # Intercepta "maximizar" del WM y vuelve a 1024x600 manteniendo barra de título
     _restoring = {"on": False}
 
-    def _restore_size_and_front():
-        """Vuelve a tamaño normal y trae la ventana al frente (sin maximizar)."""
+    def _force_windowed_size():
+        # vuelve a modo normal y a tu tamaño objetivo, y tráela al frente
         try:
-            app.state('normal')  # por si el WM puso 'zoomed'
+            app.state('normal')
         except Exception:
             pass
-        # Restablece tamaño y posición actual (no tocamos X/Y salvo que quieras fijarlos)
         app.geometry(f"{W0}x{H0}+{app.winfo_x()}+{app.winfo_y()}")
-        # Pulso topmost para vencer al compositor si el panel se superpone
+        # pulso topmost: evita que el panel se quede por encima
         app.lift()
         app.attributes("-topmost", True)
         app.after(120, lambda: app.attributes("-topmost", False))
 
-    def _anti_maximize(evt=None):
-        # Si ya estamos restaurando, no reentrar
+    def _intercept_maximize(_=None):
         if _restoring["on"]:
             return
-        # Detecta intento del WM: estado 'zoomed' o tamaño distinto al fijo
+        # Si el WM pasa la ventana a 'zoomed' o intenta cambiar tamaño → restaurar
         zoomed = (app.state() == 'zoomed')
         sizediff = (app.winfo_width() != W0 or app.winfo_height() != H0)
         if zoomed or sizediff:
             _restoring["on"] = True
             try:
-                # pequeña espera ayuda a evitar “rebote” visual en Wayland
-                app.after(30, _restore_size_and_front)
+                app.after(30, _force_windowed_size)   # pequeño delay ayuda en Wayland
             finally:
                 app.after(80, lambda: _restoring.__setitem__("on", False))
 
-    # Engancha cuando el WM cambia estado/tamaño (clic en maximizar, tile, etc.)
-    app.bind("<Configure>", _anti_maximize)
+    # Engancha cuando el WM cambia estado/tamaño (botón Maximizar, tile, etc.)
+    app.bind("<Configure>", _intercept_maximize)
 
+    # (Opcional) arranque consistente: asegúrate de que nace en W0×H0 al frente
+    def _ensure_start():
+        _force_windowed_size()
+    app.after_idle(_ensure_start)
 
+    
     app.mainloop()
