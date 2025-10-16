@@ -1,17 +1,24 @@
-# main.py
-
-import tkinter as tk
 from gui.app import Aplicacion
+import tkinter as tk
 
 if __name__ == "__main__":
     app = Aplicacion()
-    app.overrideredirect(True)  # <- quita la barra de título/bordes del sistema
-    
-    # cuando la ventana vuelve a mostrarse (deiconify), reactivar overrideredirect
-    def _reapply_over(_e=None):
-        # un pequeño delay evita parpadeos en algunos WMs
-        app.after(50, lambda: app.overrideredirect(True))
 
-    app.bind("<Map>", _reapply_over)
-    
+    # (opcional) tu tamaño:
+    app.geometry("1024x600+0+0")
+
+    # --- Traer al frente y tomar foco con “impulso” corto de topmost ---
+    app.update_idletasks()
+    app.lift()
+    app.focus_force()
+    app.attributes("-topmost", True)
+    app.after(150, lambda: app.attributes("-topmost", False))  # suelta topmost
+
+    # Por si el WM ignora el primer intento, repite al entrar al mapa/primer idle:
+    def _ensure_front(_=None):
+        app.lift()
+        app.focus_force()
+    app.bind("<Map>", _ensure_front)           # cuando la ventana se muestra
+    app.after_idle(_ensure_front)              # al primer idle del loop
+
     app.mainloop()
