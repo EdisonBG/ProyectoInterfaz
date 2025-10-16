@@ -108,12 +108,11 @@ class BarraNavegacion(ttk.Frame):
     
     def _minimizar_app(self):
         top = self.winfo_toplevel()
-        try: 
-            top.overrideredirect(False)
-            top.update_idletasks()
-            try:
-                top.iconify()            # Minimiza la ventana (deja ver el panel/menú)
-            except Exception:
-                top.state('iconic')
+        try:
+            top.attributes("-fullscreen", False)  # salir de fullscreen
+        except Exception:
+            pass
+        try:
+            top.iconify()  # minimizar (aparece el ícono en la barra)
         except Exception:
             pass
