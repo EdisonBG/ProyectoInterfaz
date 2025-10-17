@@ -8,7 +8,17 @@ from .ventana_autotuning import VentanaAutotuning
 class PanelOmega(ttk.Frame):
     def __init__(self, master, id_omega, controlador, arduino, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")  # ya lo usas en otras vistas
+        except Exception:
+            pass
 
+        st.configure(
+            "BigRadio.TRadiobutton",
+            font=("Calibri", 13),    # <-- tamaño del texto
+            padding=(12, 8)          # <-- más área clicable alrededor
+        )
         # === Identificacion y referencias ===
         self.id_omega = id_omega                 # Numero de Omega (1,2,..)
         self.controlador = controlador           # App para envio centralizado
@@ -30,16 +40,16 @@ class PanelOmega(ttk.Frame):
         self.grid_columnconfigure(1, weight=1)
 
         # === Titulo ===
-        ttk.Label(self, text=f"Omega {id_omega}", font=("Arial", 14, "bold"))\
+        ttk.Label(self, text=f"Controlador {id_omega}", font=("Calibri", 16, "bold"))\
             .grid(row=0, column=0, columnspan=2, pady=(6, 8))
 
         # selector PID/Rampa
         selector = ttk.Frame(self)
         selector.grid(row=1, column=0, columnspan=2, pady=(0, 6))
         ttk.Radiobutton(selector, text="PID", variable=self.modo_control,
-                        value="PID", command=self._on_modo_cambiado).pack(side="left", padx=6)
-        ttk.Radiobutton(selector, text="Rampa", variable=self.modo_control,
-                        value="Rampa", command=self._on_modo_cambiado).pack(side="left", padx=6)
+                        value="PID", command=self._on_modo_cambiado, style="BigRadio.TRadiobutton").pack(side="left", padx=6)
+        ttk.Radiobutton(selector, text="RAMPA", variable=self.modo_control,
+                        value="Rampa", command=self._on_modo_cambiado, style="BigRadio.TRadiobutton").pack(side="left", padx=6)
 
         # =================================================================
         # =================== CONTENEDOR PID (solo setpoint + botones) =====

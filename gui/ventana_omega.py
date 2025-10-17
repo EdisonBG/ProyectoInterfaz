@@ -48,30 +48,46 @@ class VentanaOmega(tk.Frame):
 
         # Permitir expansión de lo interno
         for s in (section1, section2):
-            s.grid_rowconfigure(0, weight=1)
             s.grid_columnconfigure(0, weight=1)
+            s.grid_rowconfigure(0, weight=1)         # contenido crece
+            s.grid_rowconfigure(1, weight=0, minsize=210)  # footer fijo de 80px
+        
+        # ----- Contenido principal (arriba) -----
+        content1 = ttk.Frame(section1, style="Omega.TFrame")
+        content2 = ttk.Frame(section2, style="Omega.TFrame")
+        content1.grid(row=0, column=0, sticky="nsew")
+        content2.grid(row=0, column=0, sticky="nsew")
 
-        # Paneles Omega dentro de cada “card”
+        # Paneles Omega dentro de cada contenido superior
         self.paneles = {}
-        panel1 = PanelOmega(section1, id_omega=1, controlador=self.controlador, arduino=self.arduino)
-        panel2 = PanelOmega(section2, id_omega=2, controlador=self.controlador, arduino=self.arduino)
-
-        # (Opcional) mismo estilo de fondo dentro del card si PanelOmega es ttk.Frame
+        panel1 = PanelOmega(content1, id_omega=1, controlador=self.controlador, arduino=self.arduino)
+        panel2 = PanelOmega(content2, id_omega=2, controlador=self.controlador, arduino=self.arduino)
         try:
             panel1.configure(style="Omega.TFrame")
             panel2.configure(style="Omega.TFrame")
         except Exception:
-            pass  # si no aplica, ignora
+            pass
 
-        # Padding interno del card para que no pegue al borde
         panel1.pack(fill="both", expand=True, padx=10, pady=10)
         panel2.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Guardar referencias
         self.paneles[1] = panel1
         self.paneles[2] = panel2
 
-    
+        #footer1 = tk.Frame(section1, style="Omega.TFrame", height=200, bd=2, relief="groove", highlightthickness=0, bg = "#e6e6e6")
+        #footer2 = tk.Frame(section2, height=200, bd=2, relief="groove", highlightthickness=0, bg = "#e6e6e6")
+
+        footer1 = ttk.Frame(section1, style="Omega.TFrame", borderwidth=2, relief="groove")
+        footer2 = ttk.Frame(section2, style="Omega.TFrame", borderwidth=2, relief="groove")
+
+        # Que el footer llene la fila completa (alto y ancho)
+        footer1.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        footer2.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+
+        # Respetar height=80 aunque no tenga hijos
+        footer1.grid_propagate(False)
+        footer2.grid_propagate(False)
+
+
     def aplicar_estado_omegas(self, datos_omega1, datos_omega2):
         """
         datos_omegaX es una tupla/lista: [modo, sp, mem, svn, p, i, d]
