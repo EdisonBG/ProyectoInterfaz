@@ -20,11 +20,6 @@ except Exception:
         COMBO_WIDTH = 12
     C = _C_()
 
-# ---------------------------------------------------------------------------
-# --- Layout absoluto opcional (por píxeles) ---
-# Cambia a False para volver al grid de siempre dentro de cada LabelFrame.
-USE_ABS_LAYOUT = True
-
 # --- Título movible por píxeles y con fuente configurable (solo en modo absoluto) ---
 # Posición del "título" dibujado manualmente dentro de cada sección (x, y).
 TITLE_POS = {

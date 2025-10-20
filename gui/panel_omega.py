@@ -3,26 +3,47 @@ from tkinter import ttk , messagebox
 from .ventana_rampa import VentanaRampa
 from .teclado_numerico import TecladoNumerico
 from .ventana_autotuning import VentanaAutotuning
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 14)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
+
+
+# Coordenadas por MFC (horizontal, vertical) para cada control dentro de su LabelFrame.
+# Nota: "entry" posiciona el contenedor LabeledEntryNum completo (label+entry).
+POS = {
+    1: {
+        "set_lbl": (10, 10),
+        "campo_setpoint": (23, 1),
+        "btn_toggle": (233, 60),
+        "btn_enviar_sp": (30, 60),              # ← punto donde dibujar botón Enviar
+        "btn_send_wh": (140, 44),          # ← tamaño del botón (px)
+    },
+    2: {
+        "set_lbl": (10, 10),
+        "campo_setpoint": (23, 1),
+        "btn_toggle": (233, 60),
+        "btn_enviar_sp": (30, 60),              # ← punto donde dibujar botón Enviar
+        "btn_send_wh": (140, 44),          # ← tamaño del botón (px)
+    },
+}
 
 class PanelOmega(ttk.Frame):
     def __init__(self, master, id_omega, controlador, arduino, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
-        st = ttk.Style(self)
-        try:
-            st.theme_use("clam")  # ya lo usas en otras vistas
-        except Exception:
-            pass
-
-        st.configure(
-            "BigRadio.TRadiobutton",
-            font=("Calibri", 13),    # <-- tamaño del texto
-            padding=(12, 8)          # <-- más área clicable alrededor
-        )
         # === Identificacion y referencias ===
         self.id_omega = id_omega                 # Numero de Omega (1,2,..)
         self.controlador = controlador           # App para envio centralizado
         self.arduino = arduino                   # Fallback serial directo
+        self._configurar_estilos() 
+        self.refs = {}  # almacena referencias como en MFC
 
         # === Estado interno ===
         self.modo_control = tk.StringVar(value="PID")  # 'PID' o 'Rampa'
@@ -57,29 +78,52 @@ class PanelOmega(ttk.Frame):
         self.frame_pid = ttk.Frame(self)
         self.frame_pid.grid_columnconfigure(0, weight=0)
         self.frame_pid.grid_columnconfigure(1, weight=1)
+        
+        # mismo fondo que el footer, pero sin borde/relieve
+        sp_area = ttk.Frame(self.frame_pid, style="Omega.TFrame")
+        sp_area.grid(row=0, column=0, columnspan=2, sticky="nw")
+        sp_area.configure(width=400, height=290)  # tamaño del área
+        sp_area.grid_propagate(False)             # respeta el tamaño
+        # sin relieve
+        sp_area.configure(borderwidth=0, relief="flat")
+
 
         # Setpoint (solo en PID)
-        ttk.Label(self.frame_pid, text="Setpoint:").grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
-        self.entry_setpoint = ttk.Entry(self.frame_pid, width=10)
-        self.entry_setpoint.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        self.entry_setpoint.bind(
-            "<Button-1>",
-            lambda e: TecladoNumerico(
-                self, self.entry_setpoint, on_submit=self._guardar_setpoint_int
+        campo_setpoint = LabeledEntryNum(sp_area, "Setpoint temperatura (°C):",
+            width=18,  # más largo
+            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),  # label más grande
+            entry_ipady=7,
+            # entry_font opcional si quieres cambiar también la fuente del entry:
+            # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
             )
-        )
+        
+        campo_setpoint.place(x=POS[id_omega]["campo_setpoint"][0], y=POS[id_omega]["campo_setpoint"][1])
+        self.entry_setpoint = campo_setpoint.entry
+        campo_setpoint.bind_numeric( lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+            on_submit=lambda v: self._guardar_setpoint_int(v),)
+        self.refs["campo_setpoint"] = campo_setpoint.entry
 
         # Botones PID (Enviar SP, Enviar parametros, Iniciar autotuning)
         btns_pid = ttk.Frame(self.frame_pid)
         btns_pid.grid(row=1, column=0, columnspan=2,
                       padx=5, pady=(8, 4), sticky="w")
 
-        self.btn_enviar_sp = ttk.Button(
-            btns_pid, text="Enviar", command=self.enviar_pid_solo_sp)
-        self.btn_enviar_sp.grid(
-            row=0, column=0, padx=(0, 8), pady=0, sticky="w")
+        btn_enviar_sp = TouchButton(sp_area, text="Enviar setpoint", style="SelBtn.TButton",
+                                command=self.enviar_pid_solo_sp)
+        btn_enviar_sp.place(x=POS[id_omega]["btn_enviar_sp"][0], y=POS[id_omega]["btn_enviar_sp"][1])
+        self.refs["btn_enviar_sp"] = btn_enviar_sp
+        btn_enviar_sp._base_style = btn_enviar_sp.cget("style")  # <--- guardamos el estilo claro
 
+        initial_style = "StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton"
+
+        self.btn_toggle = TouchButton(sp_area, text=self._texto_toggle(), style=initial_style,
+                                command=self._toggle_omega)
+        self.btn_toggle.place(x=POS[id_omega]["btn_toggle"][0], y=POS[id_omega]["btn_toggle"][1])
+        self.refs["btn_toggle"] = self.btn_toggle
+        
+
+        
+        
         self.btn_enviar_param = ttk.Button(
             btns_pid, text="Enviar parametros", command=self.enviar_parametros)
         self.btn_enviar_param.grid(
@@ -160,8 +204,8 @@ class PanelOmega(ttk.Frame):
         # =================================================================
         # =================== TOGGLE RUN/STOP =============================
         # =================================================================
-        self.btn_toggle = ttk.Button(
-            self, text=self._texto_toggle(), command=self._toggle_omega)
+        #self.btn_toggle = ttk.Button(
+           # self, text=self._texto_toggle(), command=self._toggle_omega)
 
         # Mostrar UI inicial
         self.actualizar_vista()
@@ -171,6 +215,48 @@ class PanelOmega(ttk.Frame):
         self._modo_inicializado = True
         self._ultimo_modo_enviado = self.modo_control.get()
 
+    def set_footer_parent(self, parent):
+        self._footer_parent = parent
+        sp_area2 = ttk.Frame(self._footer_parent, style="Omega.TFrame")
+        sp_area2.grid(row=0, column=0, sticky="nw")
+        sp_area2.configure(width=397, height=195)  # tamaño del área
+        sp_area2.grid_propagate(False)             # respeta el tamaño
+        # sin relieve
+        sp_area2.configure(borderwidth=0, relief="flat")
+        
+
+    def _configurar_estilos(self):
+        st = ttk.Style(self)
+        
+        try:
+            st.theme_use("clam")  # ya lo usas en otras vistas
+        except Exception:
+            pass
+
+        st.configure(
+            "BigRadio.TRadiobutton",
+            font=("Calibri", 13),    # <-- tamaño del texto
+            padding=(12, 8)          # <-- más área clicable alrededor
+        )
+        # Label grande
+        st.configure("Big.TLabel", font=("Calibri", 18))
+
+        # Entry grande (alto y ancho visual crecen con la fuente y el padding)
+        st.configure("Big.TEntry", font=("Calibri", 18), padding=(10, 8))
+        
+        RUN_COLOR = "#27ae60"
+        STOP_COLOR = "#db4231"
+        # boton de send/enviar_flujo
+        st.configure("SelBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("SelBtn.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+        st.configure("SelBtnOn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
+        st.map("SelBtnOn.TButton", background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+
+        #boton de run/stop
+        st.configure("RunBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("RunBtn.TButton", background=[("!disabled", RUN_COLOR), ("active", RUN_COLOR), ("pressed", RUN_COLOR)])
+        st.configure("StopBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("StopBtn.TButton", background=[("!disabled", STOP_COLOR), ("active", STOP_COLOR), ("pressed", STOP_COLOR)])
     # ======= cambio PID/Rampa por el usuario =======
     def _on_modo_cambiado(self):
         """
@@ -205,6 +291,7 @@ class PanelOmega(ttk.Frame):
         self.btn_toggle.configure(text=self._texto_toggle())
 
         accion = "1" if nuevo else "0"
+        self.btn_toggle.configure(style="StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton")
         mensaje = f"$;2;{self.id_omega};{accion};5;!"
         print("Mensaje toggle Omega:", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
@@ -251,7 +338,7 @@ class PanelOmega(ttk.Frame):
 
         # Limpiar colocaciones previas
         for w in (self.frame_pid, self.boton_rampa, self.frame_mem,
-                  self.frame_param, self.btn_enviar_param_rampa, self.btn_toggle):
+                  self.frame_param, self.btn_enviar_param_rampa):
             w.grid_forget()
 
         if modo == "PID":
@@ -266,8 +353,7 @@ class PanelOmega(ttk.Frame):
                 self.frame_param.grid(
                     row=4, column=0, columnspan=2, padx=5, pady=(2, 2), sticky="w")
             # Toggle al final
-            self.btn_toggle.grid(row=5, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+            #self.btn_toggle.grid(row=5, column=0, columnspan=2, padx=5, pady=(6, 10), sticky="w")
 
         else:
             # Rampa: boton de configuracion
@@ -283,8 +369,7 @@ class PanelOmega(ttk.Frame):
             self.btn_enviar_param_rampa.grid(
                 row=5, column=0, padx=5, pady=(6, 0), sticky="w")
             # Toggle
-            self.btn_toggle.grid(row=6, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+            #self.btn_toggle.grid(row=6, column=0, columnspan=2, padx=5, pady=(6, 10), sticky="w")
 
     # =================== Lectura de valores ==========================
 
