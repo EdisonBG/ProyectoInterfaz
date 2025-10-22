@@ -7,12 +7,26 @@ class TecladoNumerico(tk.Toplevel):
     def __init__(self, master, entry_destino, on_submit=None):
         super().__init__(master)
         self.title("Teclado Numerico")
-        self.geometry("243x350")
+        self.geometry("227x350")
         self.resizable(False, False)
 
-        base = tkfont.nametofont("TkDefaultFont")     # <- esta sí existe
-        base.configure(family="Calibri", size=14)     # <- aquí pides la familia Calibri
-        self.option_add("*Font", base)
+        self._font = tkfont.Font(family="Calibri", size=14)
+        self.option_add("*Font", self._font)   # aplica a todos los descendientes de esta ventana
+
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass          # opcional pero útil para respetar colores
+        
+        # 1) Lee el fondo que usa el tema para TFrame
+        bg_theme = st.lookup("TFrame", "background")
+        if not bg_theme:
+            # respaldo por si el tema no devuelve nada
+            bg_theme = self.cget("bg")
+
+        # 2) Pinta el Toplevel con ese mismo color
+        self.configure(bg=bg_theme)
 
         self.entry = entry_destino
         self.on_submit = on_submit
@@ -43,9 +57,10 @@ class TecladoNumerico(tk.Toplevel):
             (".", 3, 0), ("0", 3, 1), ("<-", 3, 2),
             ("Limpiar", 4, 0),
         ]
+        
         for (texto, fila, col) in botones:
             colspan = 3 if texto == "Limpiar" else 1
-            boton = ttk.Button(
+            boton = tk.Button(
                 self,
                 text=texto,
                 width=5 if texto != "Limpiar" else 16,
@@ -54,7 +69,7 @@ class TecladoNumerico(tk.Toplevel):
             boton.grid(row=fila, column=col,
                        columnspan=colspan, padx=10, pady=10)
 
-        ttk.Button(self, text="Enviar", width=16, command=self.enviar_valor)\
+        tk.Button(self, text="Enviar", width=16, command=self.enviar_valor)\
             .grid(row=5, column=0, columnspan=3, pady=10)
 
     def presionar(self, texto):

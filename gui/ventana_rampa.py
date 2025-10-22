@@ -36,10 +36,10 @@ class VentanaRampa(tk.Toplevel):
         self.geometry("500x495")
         self.resizable(False, False)
 
-        # --- 2) Fuente global y tema (antes de crear widgets) ---
-        base = tkfont.nametofont("TkDefaultFont")     # <- esta sí existe
-        base.configure(family="Calibri", size=14)     # <- aquí pides la familia Calibri
-        self.option_add("*Font", base)
+        # Fuente local 
+        # dentro de __init__ de VentanaRampa, ANTES de crear widgets, fuente local
+        self._font = tkfont.Font(family="Calibri", size=14)
+        self.option_add("*Font", self._font)   # aplica a todos los descendientes de esta ventana
 
         st = ttk.Style(self)
         try:
