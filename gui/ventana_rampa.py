@@ -47,6 +47,7 @@ class VentanaRampa(tk.Toplevel):
         except Exception:
             pass          # opcional pero útil para respetar colores
         
+        st.configure("enviarRampa.TButton", padding=(10, 8), font=("Calibri", 14))
         # 1) Lee el fondo que usa el tema para TFrame
         bg_theme = st.lookup("TFrame", "background")
         if not bg_theme:
@@ -128,8 +129,12 @@ class VentanaRampa(tk.Toplevel):
         # boton enviar
         botones = ttk.Frame(self, style="Omega.TFrame")
         botones.pack(pady=15)
-        ttk.Button(botones, text="Enviar", command=self.enviar_rampa).grid(
-            row=0, column=0, padx=8)
+        ttk.Button(
+            botones,
+            text="Enviar",
+            style="enviarRampa.TButton",
+            command=self.enviar_rampa
+        ).grid(row=0, column=0, padx=8)
 
         # atajos
         self.bind("<Return>", lambda e: self.enviar_rampa())
