@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+import tkinter.font as tkfont
 from .teclado_numerico import TecladoNumerico
 
 
@@ -32,8 +33,28 @@ class VentanaRampa(tk.Toplevel):
         self.arduino = arduino
         self.id_omega = id_omega
         self.title(f"Rampa - Omega {id_omega}")
-        self.geometry("400x560")
+        self.geometry("500x495")
         self.resizable(False, False)
+
+        # --- 2) Fuente global y tema (antes de crear widgets) ---
+        base = tkfont.nametofont("TkDefaultFont")     # <- esta sí existe
+        base.configure(family="Calibri", size=14)     # <- aquí pides la familia Calibri
+        self.option_add("*Font", base)
+
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass          # opcional pero útil para respetar colores
+        
+        # 1) Lee el fondo que usa el tema para TFrame
+        bg_theme = st.lookup("TFrame", "background")
+        if not bg_theme:
+            # respaldo por si el tema no devuelve nada
+            bg_theme = self.cget("bg")
+
+        # 2) Pinta el Toplevel con ese mismo color
+        self.configure(bg=bg_theme)
 
         # Referencia al controlador (Aplicacion) si existe, para:
         # - Envio centralizado
@@ -51,18 +72,18 @@ class VentanaRampa(tk.Toplevel):
         self.protocol("WM_DELETE_WINDOW",  self._on_close)
 
         ttk.Label(self, text=f"Configuracion de Rampa - Omega {id_omega}",
-                  font=("Arial", 14, "bold")).pack(pady=10)
+                  font=("Calibri", 18, "bold")).pack(pady=10)
 
         # Contenedor scrollable
-        cont = ttk.Frame(self)
-        cont.pack(pady=5)
+        cont = ttk.Frame(self, style="Omega.TFrame")
+        cont.pack(pady=6)
 
         self.campos = []  # Lista de (entry_sp, entry_tiempo) para pasos 0..7
 
         # pasos 0..7
         for i in range(8):
-            frame_paso = ttk.Frame(cont)
-            frame_paso.pack(pady=4, anchor="w")
+            frame_paso = ttk.Frame(cont, style="Omega.TFrame")
+            frame_paso.pack(pady=6, anchor="w")
 
             for c in (0, 1, 2, 3, 4):
                 frame_paso.grid_columnconfigure(c, weight=0)
@@ -70,7 +91,7 @@ class VentanaRampa(tk.Toplevel):
             ttk.Label(frame_paso, text=f"Paso {i}")\
                 .grid(row=0, column=0, padx=5, sticky="w")
 
-            ttk.Label(frame_paso, text="Setpoint:")\
+            ttk.Label(frame_paso, text="Setpoint (°C):")\
                 .grid(row=0, column=1, padx=5, sticky="e")
             entrada_sp = ttk.Entry(frame_paso, width=10)
             entrada_sp.grid(row=0, column=2)
@@ -93,7 +114,7 @@ class VentanaRampa(tk.Toplevel):
             self.campos.append((entrada_sp, entrada_tiempo))
 
         # paso limite (0..7)
-        frame_lim = ttk.Frame(self)
+        frame_lim = ttk.Frame(self, style="Omega.TFrame")
         frame_lim.pack(pady=10)
         ttk.Label(frame_lim, text="Paso limite (0-7):").grid(row=0,
                                                              column=0, padx=5, sticky="e")
@@ -105,7 +126,7 @@ class VentanaRampa(tk.Toplevel):
         )
 
         # boton enviar
-        botones = ttk.Frame(self)
+        botones = ttk.Frame(self, style="Omega.TFrame")
         botones.pack(pady=15)
         ttk.Button(botones, text="Enviar", command=self.enviar_rampa).grid(
             row=0, column=0, padx=8)

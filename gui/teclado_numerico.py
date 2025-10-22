@@ -1,13 +1,18 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import tkinter.font as tkfont
 
 
 class TecladoNumerico(tk.Toplevel):
     def __init__(self, master, entry_destino, on_submit=None):
         super().__init__(master)
         self.title("Teclado Numerico")
-        self.geometry("240x340")
+        self.geometry("243x350")
         self.resizable(False, False)
+
+        base = tkfont.nametofont("TkDefaultFont")     # <- esta sí existe
+        base.configure(family="Calibri", size=14)     # <- aquí pides la familia Calibri
+        self.option_add("*Font", base)
 
         self.entry = entry_destino
         self.on_submit = on_submit
@@ -47,7 +52,7 @@ class TecladoNumerico(tk.Toplevel):
                 command=lambda t=texto: self.presionar(t)
             )
             boton.grid(row=fila, column=col,
-                       columnspan=colspan, padx=5, pady=5)
+                       columnspan=colspan, padx=10, pady=10)
 
         ttk.Button(self, text="Enviar", width=16, command=self.enviar_valor)\
             .grid(row=5, column=0, columnspan=3, pady=10)
