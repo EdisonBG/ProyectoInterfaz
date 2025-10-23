@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import ttk , messagebox
 from .ventana_rampa import VentanaRampa
 from .teclado_numerico import TecladoNumerico
-from .ventana_autotuning import VentanaAutotuning
 from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
 # Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
@@ -496,11 +495,6 @@ class PanelOmega(ttk.Frame):
             self.controlador.enviar_a_arduino(mensaje)
 
     # =================== Ventanas hijas ==============================
-    def abrir_ventana_autotuning(self):
-        if getattr(self, "_auto_win", None) and self._auto_win.winfo_exists():
-            self._auto_win.lift()
-            return
-        self._auto_win = VentanaAutotuning(self, self.id_omega, self.arduino)
 
     def abrir_ventana_rampa(self):
         """

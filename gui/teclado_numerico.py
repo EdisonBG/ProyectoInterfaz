@@ -49,28 +49,33 @@ class TecladoNumerico(tk.Toplevel):
         # Cierre seguro
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
+
+
     def crear_teclas(self):
         botones = [
             ("1", 0, 0), ("2", 0, 1), ("3", 0, 2),
             ("4", 1, 0), ("5", 1, 1), ("6", 1, 2),
             ("7", 2, 0), ("8", 2, 1), ("9", 2, 2),
             (".", 3, 0), ("0", 3, 1), ("<-", 3, 2),
-            ("Limpiar", 4, 0),
+            ("Enviar", 4, 0),  # <-- antes "Limpiar"
         ]
         
         for (texto, fila, col) in botones:
-            colspan = 3 if texto == "Limpiar" else 1
+            colspan = 3 if texto in ("Limpiar", "Enviar") else 1   # <-- contempla "Enviar"
             boton = tk.Button(
                 self,
                 text=texto,
-                width=5 if texto != "Limpiar" else 16,
-                command=lambda t=texto: self.presionar(t)
+                width=5 if texto not in ("Limpiar", "Enviar") else 16,  # <-- igual ancho que Limpiar
+                command=self.enviar_valor if texto == "Enviar" else (lambda t=texto: self.presionar(t))  # <-- Enviar conserva su función
             )
             boton.grid(row=fila, column=col,
-                       columnspan=colspan, padx=10, pady=10)
+                    columnspan=colspan, padx=10, pady=10)
 
-        tk.Button(self, text="Enviar", width=16, command=self.enviar_valor)\
+        # Abajo va "Limpiar" (donde antes estaba Enviar)
+        tk.Button(self, text="Limpiar", width=16,
+                command=lambda: self.presionar("Limpiar"))\
             .grid(row=5, column=0, columnspan=3, pady=10)
+
 
     def presionar(self, texto):
         if texto == "<-":
