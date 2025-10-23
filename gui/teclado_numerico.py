@@ -1,13 +1,31 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import tkinter.font as tkfont
 
 
 class TecladoNumerico(tk.Toplevel):
     def __init__(self, master, entry_destino, on_submit=None):
         super().__init__(master)
         self.title("Teclado Numerico")
-        self.geometry("240x340")
+        self.geometry("300x320")
         self.resizable(False, False)
+
+        self._font = tkfont.Font(family="Calibri", size=14)
+
+        st = ttk.Style(self)
+        try:
+            st.theme_use("clam")
+        except Exception:
+            pass          # opcional pero útil para respetar colores
+
+        # 1) Lee el fondo que usa el tema para TFrame
+        bg_theme = st.lookup("TFrame", "background")
+        if not bg_theme:
+            # respaldo por si el tema no devuelve nada
+            bg_theme = self.cget("bg")
+
+        # 2) Pinta el Toplevel con ese mismo color
+        self.configure(bg=bg_theme)
 
         self.entry = entry_destino
         self.on_submit = on_submit
@@ -36,20 +54,26 @@ class TecladoNumerico(tk.Toplevel):
             ("4", 1, 0), ("5", 1, 1), ("6", 1, 2),
             ("7", 2, 0), ("8", 2, 1), ("9", 2, 2),
             (".", 3, 0), ("0", 3, 1), ("<-", 3, 2),
-            ("Limpiar", 4, 0),
+            ("Enviar", 4, 0),  # <-- antes "Limpiar"
         ]
+
         for (texto, fila, col) in botones:
-            colspan = 3 if texto == "Limpiar" else 1
-            boton = ttk.Button(
+            # <-- contempla "Enviar"
+            colspan = 3 if texto in ("Limpiar", "Enviar") else 1
+            boton = tk.Button(
                 self,
                 text=texto,
-                width=5 if texto != "Limpiar" else 16,
-                command=lambda t=texto: self.presionar(t)
+                font=self._font,
+                width=5 if texto not in ("Limpiar", "Enviar") else 16,
+                command=self.enviar_valor if texto == "Enviar" else (
+                    lambda t=texto: self.presionar(t))  # <-- Enviar conserva su función
             )
             boton.grid(row=fila, column=col,
-                       columnspan=colspan, padx=5, pady=5)
+                       columnspan=colspan, padx=10, pady=10)
 
-        ttk.Button(self, text="Enviar", width=16, command=self.enviar_valor)\
+        # Abajo va "Limpiar" (donde antes estaba Enviar)
+        tk.Button(self, text="Limpiar", font=self._font, width=16,
+                  command=lambda: self.presionar("Limpiar"))\
             .grid(row=5, column=0, columnspan=3, pady=10)
 
     def presionar(self, texto):

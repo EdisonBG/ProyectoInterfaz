@@ -1,18 +1,60 @@
 import tkinter as tk
-from tkinter import ttk , messagebox
+from tkinter import ttk, messagebox
 from .ventana_rampa import VentanaRampa
 from .teclado_numerico import TecladoNumerico
-from .ventana_autotuning import VentanaAutotuning
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
+
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 14)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
+
+
+# Coordenadas por MFC (horizontal, vertical) para cada control dentro de su LabelFrame.
+# Nota: "entry" posiciona el contenedor LabeledEntryNum completo (label+entry).
+POS = {
+    1: {
+        "campo_setpoint": (5, 1),
+        "btn_enviar_sp": (15, 60), "boton_rampa": (12, 60), "btn_toggle": (236, 60),
+        "memoria_lbl": (75, 126),   "combo":    (195, 126),
+        "btn_autotuning": (82, 172),
+        "campo_svn": (29, 1),
+        "campo_proporcional": (10, 47),
+        "campo_integral": (47, 93),
+        "campo_derivativo": (20, 137),
+        "btn_enviar_param": (85, 190),
+    },
+    2: {
+        "campo_setpoint": (5, 1),
+        "btn_enviar_sp": (15, 60), "boton_rampa": (12, 60), "btn_toggle": (236, 60),
+        "memoria_lbl": (75, 126),   "combo":    (195, 126),
+        "btn_autotuning": (82, 172),
+        "campo_svn": (29, 2),
+        "campo_proporcional": (10, 48),
+        "campo_integral": (47, 92),
+        "campo_derivativo": (20, 138),
+        "btn_enviar_param": (85, 191),
+    },
+}
 
 
 class PanelOmega(ttk.Frame):
+    MEMORIAS = ["M0", "M1", "M2", "M3", "Auto"]
+
     def __init__(self, master, id_omega, controlador, arduino, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
-
         # === Identificacion y referencias ===
         self.id_omega = id_omega                 # Numero de Omega (1,2,..)
         self.controlador = controlador           # App para envio centralizado
         self.arduino = arduino                   # Fallback serial directo
+        self._configurar_estilos()
+        self.refs = {}  # almacena referencias como en MFC
+        self.sp_area2 = None
 
         # === Estado interno ===
         self.modo_control = tk.StringVar(value="PID")  # 'PID' o 'Rampa'
@@ -30,128 +72,108 @@ class PanelOmega(ttk.Frame):
         self.grid_columnconfigure(1, weight=1)
 
         # === Titulo ===
-        ttk.Label(self, text=f"Omega {id_omega}", font=("Arial", 14, "bold"))\
+        ttk.Label(self, text=f"Controlador {id_omega}", font=("Calibri", 16, "bold"))\
             .grid(row=0, column=0, columnspan=2, pady=(6, 8))
 
         # selector PID/Rampa
         selector = ttk.Frame(self)
         selector.grid(row=1, column=0, columnspan=2, pady=(0, 6))
         ttk.Radiobutton(selector, text="PID", variable=self.modo_control,
-                        value="PID", command=self._on_modo_cambiado).pack(side="left", padx=6)
-        ttk.Radiobutton(selector, text="Rampa", variable=self.modo_control,
-                        value="Rampa", command=self._on_modo_cambiado).pack(side="left", padx=6)
+                        value="PID", command=self._on_modo_cambiado, style="BigRadio.TRadiobutton").pack(side="left", padx=6)
+        ttk.Radiobutton(selector, text="RAMPA", variable=self.modo_control,
+                        value="Rampa", command=self._on_modo_cambiado, style="BigRadio.TRadiobutton").pack(side="left", padx=6)
 
         # =================================================================
-        # =================== CONTENEDOR PID (solo setpoint + botones) =====
+        # ================== CONTENEDOR SUPERIOR (setpoint + botones) =====
         # =================================================================
         self.frame_pid = ttk.Frame(self)
         self.frame_pid.grid_columnconfigure(0, weight=0)
         self.frame_pid.grid_columnconfigure(1, weight=1)
 
-        # Setpoint (solo en PID)
-        ttk.Label(self.frame_pid, text="Setpoint:").grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
-        self.entry_setpoint = ttk.Entry(self.frame_pid, width=10)
-        self.entry_setpoint.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        self.entry_setpoint.bind(
-            "<Button-1>",
-            lambda e: TecladoNumerico(
-                self, self.entry_setpoint, on_submit=self._guardar_setpoint_int
-            )
-        )
+        # mismo fondo pero sin borde/relieve: contenedor para ubicar elementos en la parte superior
+        sp_area = ttk.Frame(self.frame_pid, style="Omega.TFrame")
+        sp_area.grid(row=0, column=0, columnspan=2, sticky="nw")
+        sp_area.configure(width=400, height=290)  # tamaño del área
+        sp_area.grid_propagate(False)             # respeta el tamaño
+        # sin relieve
+        sp_area.configure(borderwidth=0, relief="flat")
 
-        # Botones PID (Enviar SP, Enviar parametros, Iniciar autotuning)
+        # Setpoint
+        self.campo_setpoint = LabeledEntryNum(sp_area, "Setpoint temperatura (°C):",
+                                              width=16,  # más largo
+                                              # label más grande
+                                              label_font=getattr(
+                                                  C, "FONT_BASE", ("Calibri", 14)),
+                                              entry_ipady=7,
+                                              # entry_font opcional si quieres cambiar también la fuente del entry:
+                                              # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+                                              )
+
+        self.campo_setpoint.place(
+            x=POS[id_omega]["campo_setpoint"][0], y=POS[id_omega]["campo_setpoint"][1])
+        self.entry_setpoint = self.campo_setpoint.entry
+        self.campo_setpoint.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                                         on_submit=lambda v: self._guardar_setpoint_int(v),)
+        self.refs["campo_setpoint"] = self.campo_setpoint.entry
+
+        ###### Botones PID (Enviar SP, toggle RUN/STOP, Iniciar autotuning) ###############
         btns_pid = ttk.Frame(self.frame_pid)
         btns_pid.grid(row=1, column=0, columnspan=2,
                       padx=5, pady=(8, 4), sticky="w")
 
-        self.btn_enviar_sp = ttk.Button(
-            btns_pid, text="Enviar", command=self.enviar_pid_solo_sp)
-        self.btn_enviar_sp.grid(
-            row=0, column=0, padx=(0, 8), pady=0, sticky="w")
+        self.btn_enviar_sp = TouchButton(sp_area, text="Enviar setpoint", style="SelBtn.TButton",
+                                         command=self.enviar_pid_solo_sp)
+        self.btn_enviar_sp.place(
+            x=POS[id_omega]["btn_enviar_sp"][0], y=POS[id_omega]["btn_enviar_sp"][1])
+        self.refs["btn_enviar_sp"] = self.btn_enviar_sp
+        self.btn_enviar_sp._base_style = self.btn_enviar_sp.cget(
+            "style")  # <--- guardamos el estilo claro
 
-        self.btn_enviar_param = ttk.Button(
-            btns_pid, text="Enviar parametros", command=self.enviar_parametros)
-        self.btn_enviar_param.grid(
-            row=0, column=1, padx=(0, 8), pady=0, sticky="w")
+        initial_style = "StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton"
+        self.btn_toggle = TouchButton(sp_area, text=self._texto_toggle(), style=initial_style,
+                                      command=self._toggle_omega)
+        self.btn_toggle.place(
+            x=POS[id_omega]["btn_toggle"][0], y=POS[id_omega]["btn_toggle"][1])
+        self.refs["btn_toggle"] = self.btn_toggle
 
-        self.btn_autotuning = ttk.Button(
-            btns_pid, text="Iniciar autotuning", command=self.enviar_autotuning_directo)
-        self.btn_autotuning.grid(
-            row=0, column=2, padx=(0, 8), pady=0, sticky="w")
+        btn_autotuning = TouchButton(sp_area, text="Iniciar autotuning", style="SelBtn.TButton",
+                                     command=self.enviar_autotuning_directo)
+        btn_autotuning.place(
+            x=POS[id_omega]["btn_autotuning"][0], y=POS[id_omega]["btn_autotuning"][1])
+        self.refs["btn_enviar_sp"] = btn_autotuning
+        btn_autotuning._base_style = btn_autotuning.cget(
+            "style")  # <--- guardamos el estilo claro
 
-        # =================================================================
-        # =========== MEMORIA + PARAMETROS (compartidos PID/Rampa) =========
-        # =================================================================
-        # Nota: ahora son hijos de self (no de frame_pid) para poder
-        # colocarlos tanto en PID como en Rampa sin duplicacion.
+        ###### Memorias PID: Label + COMBO ################
+        memoria_lbl = ttk.Label(sp_area, text="Memoria:", font=getattr(
+            C, "FONT_BASE", ("Calibri", 14)))
+        memoria_lbl.place(x=POS[id_omega]["memoria_lbl"]
+                          [0], y=POS[id_omega]["memoria_lbl"][1])
 
-        # Memoria (M0..M4)
-        self.frame_mem = ttk.Frame(self)
-        self.frame_mem.grid_columnconfigure(0, weight=0)
-        self.frame_mem.grid_columnconfigure(1, weight=1)
-
-        ttk.Label(self.frame_mem, text="Memoria:").grid(
-            row=0, column=0, padx=5, pady=5, sticky="e")
-        self.combo_mem = ttk.Combobox(
-            self.frame_mem,
-            values=["M0", "M1", "M2", "M3", "M4"],
-            textvariable=self.memoria,
+        combo = ttk.Combobox(
+            sp_area,
+            values=self.MEMORIAS,
             state="readonly",
-            width=6
+            width=getattr(C, "COMBO_WIDTH", 10),
+            height=130,
+            font=getattr(C, "FONT_BASE", ("Calibri", 14)),
         )
+        family = getattr(C, "FONT_BASE", ("Calibri", 14))[0]
+        combo.option_add("*TCombobox*Listbox.font", (family, 14))
 
-        self.combo_mem.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        self.combo_mem.bind("<<ComboboxSelected>>", self._on_memoria_cambiada)
-
-        # Parametros PID (SVN, BP, TI, TD)
-        self.frame_param = ttk.Frame(self)
-        self.frame_param.grid_columnconfigure(0, weight=0)
-        self.frame_param.grid_columnconfigure(1, weight=1)
-
-        ttk.Label(self.frame_param, text="SVN:").grid(
-            row=0, column=0, padx=5, pady=3, sticky="e")
-        self.entry_svn = ttk.Entry(self.frame_param, width=10)
-        self.entry_svn.grid(row=0, column=1, padx=5, pady=3, sticky="w")
-        self.entry_svn.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_svn))
-
-        ttk.Label(self.frame_param, text="Banda P:").grid(
-            row=1, column=0, padx=5, pady=3, sticky="e")
-        self.entry_bp = ttk.Entry(self.frame_param, width=10)
-        self.entry_bp.grid(row=1, column=1, padx=5, pady=3, sticky="w")
-        self.entry_bp.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_bp))
-
-        ttk.Label(self.frame_param, text="Tiempo I:").grid(
-            row=2, column=0, padx=5, pady=3, sticky="e")
-        self.entry_ti = ttk.Entry(self.frame_param, width=10)
-        self.entry_ti.grid(row=2, column=1, padx=5, pady=3, sticky="w")
-        self.entry_ti.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_ti))
-
-        ttk.Label(self.frame_param, text="Tiempo D:").grid(
-            row=3, column=0, padx=5, pady=3, sticky="e")
-        self.entry_td = ttk.Entry(self.frame_param, width=10)
-        self.entry_td.grid(row=3, column=1, padx=5, pady=3, sticky="w")
-        self.entry_td.bind(
-            "<Button-1>", lambda e: TecladoNumerico(self, self.entry_td))
+        combo.place(x=POS[id_omega]["combo"][0], y=POS[id_omega]["combo"][1])
+        combo.bind("<<ComboboxSelected>>", self._on_memoria_cambiada)
+        self.refs["combo"] = combo
 
         # =================================================================
         # =================== MODO RAMPA ==================================
         # =================================================================
-        self.boton_rampa = ttk.Button(
-            self, text="Configurar Rampa", command=self.abrir_ventana_rampa)
 
-        # Enviar parametros tambien disponible en Rampa
-        self.btn_enviar_param_rampa = ttk.Button(
-            self, text="Enviar parametros", command=self.enviar_parametros)
-
-        # =================================================================
-        # =================== TOGGLE RUN/STOP =============================
-        # =================================================================
-        self.btn_toggle = ttk.Button(
-            self, text=self._texto_toggle(), command=self._toggle_omega)
+        self.boton_rampa = TouchButton(sp_area, text="Configurar Rampa", style="SelBtn.TButton",
+                                       command=self.abrir_ventana_rampa)
+        self.refs["boton_rampa"] = self.boton_rampa
+        self.boton_rampa._base_style = self.boton_rampa.cget(
+            "style")  # <--- guardamos el estilo claro
 
         # Mostrar UI inicial
         self.actualizar_vista()
@@ -160,6 +182,143 @@ class PanelOmega(ttk.Frame):
 
         self._modo_inicializado = True
         self._ultimo_modo_enviado = self.modo_control.get()
+
+    def set_contenedor_inferior(self, parent):
+
+        self._contenedor_inferior = parent
+        self.sp_area2 = ttk.Frame(
+            self._contenedor_inferior, style="Omega.TFrame")
+        self.sp_area2.grid(row=0, column=0, sticky="nw")
+        self.sp_area2.configure(width=397, height=242)  # tamaño del área
+        self.sp_area2.grid_propagate(False)             # respeta el tamaño
+        # sin relieve
+        self.sp_area2.configure(borderwidth=0, relief="flat")
+
+        # =================================================================
+        # ============== CONTENEDOR INFERIOR (constantes PID + boton) =====
+        # =================================================================
+        campo_svn = LabeledEntryNum(self.sp_area2, "Temperatura °C (Svn):",
+                                    width=16,  # más largo
+                                    # label más grande
+                                    label_font=getattr(
+                                        C, "FONT_BASE", ("Calibri", 14)),
+                                    entry_ipady=7,
+                                    # entry_font opcional si quieres cambiar también la fuente del entry:
+                                    # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+                                    )
+
+        campo_svn.place(x=POS[self.id_omega]["campo_svn"]
+                        [0], y=POS[self.id_omega]["campo_svn"][1])
+        self.entry_svn = campo_svn.entry
+        campo_svn.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                               on_submit=lambda v:  self.entry_svn,)
+        self.refs["campo_svn"] = campo_svn.entry
+
+        campo_proporcional = LabeledEntryNum(self.sp_area2, "Banda Proporcional (Pb):",
+                                             width=16,  # más largo
+                                             # label más grande
+                                             label_font=getattr(
+                                                 C, "FONT_BASE", ("Calibri", 14)),
+                                             entry_ipady=7,
+                                             # entry_font opcional si quieres cambiar también la fuente del entry:
+                                             # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+                                             )
+
+        campo_proporcional.place(
+            x=POS[self.id_omega]["campo_proporcional"][0], y=POS[self.id_omega]["campo_proporcional"][1])
+        self.entry_bp = campo_proporcional.entry
+        campo_proporcional.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                                        on_submit=lambda v:  self.entry_bp,)
+        self.refs["campo_proporcional"] = campo_proporcional.entry
+
+        campo_integral = LabeledEntryNum(self.sp_area2, "Tiempo Integral (Ti):",
+                                         width=16,  # más largo
+                                         # label más grande
+                                         label_font=getattr(
+                                             C, "FONT_BASE", ("Calibri", 14)),
+                                         entry_ipady=7,
+                                         # entry_font opcional si quieres cambiar también la fuente del entry:
+                                         # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+                                         )
+
+        campo_integral.place(x=POS[self.id_omega]["campo_integral"]
+                             [0], y=POS[self.id_omega]["campo_integral"][1])
+        self.entry_ti = campo_integral.entry
+        campo_integral.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                                    on_submit=lambda v:  self.entry_ti,)
+        self.refs["campo_integral"] = campo_integral.entry
+
+        campo_derivativo = LabeledEntryNum(self.sp_area2, "Tiempo Derivativo (Td):",
+                                           width=16,  # más largo
+                                           # label más grande
+                                           label_font=getattr(
+                                               C, "FONT_BASE", ("Calibri", 14)),
+                                           entry_ipady=7,
+                                           # entry_font opcional si quieres cambiar también la fuente del entry:
+                                           # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+                                           )
+
+        campo_derivativo.place(
+            x=POS[self.id_omega]["campo_derivativo"][0], y=POS[self.id_omega]["campo_derivativo"][1])
+        self.entry_td = campo_derivativo.entry
+        campo_derivativo.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                                      on_submit=lambda v:  self.entry_td,)
+        self.refs["campo_derivativo"] = campo_derivativo.entry
+
+        btn_enviar_param = TouchButton(self.sp_area2, text="Enviar parametros", style="SelBtn.TButton",
+                                       command=self.enviar_parametros)
+        btn_enviar_param.place(
+            x=POS[self.id_omega]["btn_enviar_param"][0], y=POS[self.id_omega]["btn_enviar_param"][1])
+        self.refs["btn_enviar_param"] = btn_enviar_param
+        btn_enviar_param._base_style = btn_enviar_param.cget(
+            "style")  # <--- guardamos el estilo claro
+
+    def _configurar_estilos(self):
+        st = ttk.Style(self)
+
+        try:
+            st.theme_use("clam")  # ya lo usas en otras vistas
+        except Exception:
+            pass
+
+        st.configure(
+            "BigRadio.TRadiobutton",
+            font=("Calibri", 13),    # <-- tamaño del texto
+            padding=(12, 8)          # <-- más área clicable alrededor
+        )
+        # Label grande
+        st.configure("Big.TLabel", font=("Calibri", 18))
+
+        # Entry grande (alto y ancho visual crecen con la fuente y el padding)
+        st.configure("Big.TEntry", font=("Calibri", 18), padding=(10, 8))
+
+        RUN_COLOR = "#27ae60"
+        STOP_COLOR = "#db4231"
+        # boton de send/enviar_flujo
+        st.configure("SelBtn.TButton", padding=(16, 8),
+                     font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("SelBtn.TButton", background=[
+               ("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+        st.configure("SelBtnOn.TButton", padding=(16, 8), font=getattr(
+            C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
+        st.map("SelBtnOn.TButton", background=[
+               ("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+
+        # boton de run/stop
+        st.configure("RunBtn.TButton", padding=(16, 8),
+                     font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("RunBtn.TButton", background=[
+               ("!disabled", RUN_COLOR), ("active", RUN_COLOR), ("pressed", RUN_COLOR)])
+        st.configure("StopBtn.TButton", padding=(16, 8),
+                     font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        st.map("StopBtn.TButton", background=[
+               ("!disabled", STOP_COLOR), ("active", STOP_COLOR), ("pressed", STOP_COLOR)])
+
+        # Estilo para Entry deshabilitado
+        # gris del fondo
+        st.configure("Disabled.TEntry", fieldbackground="#d0d0d0")
+        st.map("Disabled.TEntry", fieldbackground=[("disabled", "#d0d0d0")],
+               foreground=[("disabled", "#555")])
 
     # ======= cambio PID/Rampa por el usuario =======
     def _on_modo_cambiado(self):
@@ -187,7 +346,14 @@ class PanelOmega(ttk.Frame):
 
     # ====================== Toggle Run/Stop ==========================
     def _texto_toggle(self) -> str:
-        return "Run" if not self.estado_omega.get() else "Stop"
+        txt = "Run" if not self.estado_omega.get() else "Stop"
+        # Estilo según el texto (se aplica al final del ciclo actual)
+        try:
+            style = "RunBtn.TButton" if txt == "Run" else "StopBtn.TButton"
+            self.after(0, lambda: self.btn_toggle.configure(style=style))
+        except Exception:
+            pass
+        return txt
 
     def _toggle_omega(self):
         nuevo = not self.estado_omega.get()
@@ -195,6 +361,7 @@ class PanelOmega(ttk.Frame):
         self.btn_toggle.configure(text=self._texto_toggle())
 
         accion = "1" if nuevo else "0"
+        # self.btn_toggle.configure(style="StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton")
         mensaje = f"$;2;{self.id_omega};{accion};5;!"
         print("Mensaje toggle Omega:", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
@@ -225,62 +392,75 @@ class PanelOmega(ttk.Frame):
 
     def _aplicar_visibilidad_parametros(self):
         """
-        Oculta los parametros si memoria=M4; los muestra en M0-M3.
-
+        Oculta el contenedor inferior (sp_area2) si memoria=M4; lo muestra en M0–M3.
+        Requiere que set_contenedor_inferior(...) haya creado y grideado self.sp_area2.
         """
-        if self.memoria.get().upper().strip() == "M4":
-            self.frame_param.grid_remove()
-        else:
+        area = getattr(self, "sp_area2", None)
+        if area is None:
+            return  # aún no se llamó set_contenedor_inferior
 
-            if not self.frame_param.winfo_ismapped():
-                self.frame_param.grid()  # sera recolocado por actualizar_vista
+        mem = self.refs["combo"].get()
+        # print("Memoria seleccionada:", mem)
+        if mem == "Auto":
+            area.grid_remove()
+        else:
+            if not area.winfo_ismapped():
+                area.grid()  # vuelve a mostrar con su grid original
 
     # =================== Cambio de modo (PID/Rampa) ==================
     def actualizar_vista(self):
         modo = self.modo_control.get()
 
-        # Limpiar colocaciones previas
-        for w in (self.frame_pid, self.boton_rampa, self.frame_mem,
-                  self.frame_param, self.btn_enviar_param_rampa, self.btn_toggle):
-            w.grid_forget()
+        # Oculta ambos botones primero
+        self.btn_enviar_sp.place_forget()
+        self.boton_rampa.place_forget()
 
         if modo == "PID":
-            # PID: setpoint + botones propios
-            self.frame_pid.grid(row=2, column=0, columnspan=2,
-                                pady=(4, 0), sticky="n")
-            # Memoria y parametros debajo del bloque PID
-            self.frame_mem.grid(row=3, column=0, columnspan=2,
-                                padx=5, pady=(6, 2), sticky="w")
+            # Dibuja todos los elementos de sp_area = contenedor superior
+            self.frame_pid.grid()
+            # Dibuja el botón enviar setpoint. Es el único que se modifica en modo rampa
+            self.btn_enviar_sp.place(
+                x=POS[self.id_omega]["btn_enviar_sp"][0], y=POS[self.id_omega]["btn_enviar_sp"][1])
             # Parametros (si memoria != M4)
-            if self.memoria.get().upper().strip() != "M4":
-                self.frame_param.grid(
-                    row=4, column=0, columnspan=2, padx=5, pady=(2, 2), sticky="w")
-            # Toggle al final
-            self.btn_toggle.grid(row=5, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+            if self.refs["combo"].get() != "Auto" and self.sp_area2 is not None:
+                self.sp_area2.grid()
+            # habilita el entry del setpint
+            e = self.entry_setpoint
+            e.state(["!disabled"])             # reactivar
+            e.configure(style="TEntry")        # estilo normal por defecto
+
+            # Re-vincula el teclado numérico (se pierde con el unbind)
+            self.campo_setpoint.bind_numeric(lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                                             on_submit=lambda v: self._guardar_setpoint_int(v),)
+            # vuelve el color normal al label
+            self.campo_setpoint.label.configure(foreground="")
 
         else:
             # Rampa: boton de configuracion
-            self.boton_rampa.grid(row=2, column=0, padx=5,
-                                  pady=(8, 0), sticky="w")
+            self.boton_rampa.place(
+                x=POS[self.id_omega]["boton_rampa"][0], y=POS[self.id_omega]["boton_rampa"][1])
             # Memoria y parametros (mismos widgets, misma logica)
-            self.frame_mem.grid(row=3, column=0, columnspan=2,
-                                padx=5, pady=(6, 2), sticky="w")
-            if self.memoria.get().upper().strip() != "M4":
-                self.frame_param.grid(
-                    row=4, column=0, columnspan=2, padx=5, pady=(2, 2), sticky="w")
-            # Enviar parametros (rampa)
-            self.btn_enviar_param_rampa.grid(
-                row=5, column=0, padx=5, pady=(6, 0), sticky="w")
-            # Toggle
-            self.btn_toggle.grid(row=6, column=0, columnspan=2,
-                                 padx=5, pady=(6, 10), sticky="w")
+            # self.frame_mem.grid(row=3, column=0, columnspan=2, padx=5, pady=(6, 2), sticky="w")
+            if self.refs["combo"].get() != "Auto" and self.sp_area2 is not None:
+                self.sp_area2.grid()
+            # Deshabilita el ingresar el setpoint:entry
+            e = self.entry_setpoint
+            e.state(["disabled"])
+            e.configure(style="Disabled.TEntry")
+            # Evita que se abra el teclado numérico (por si el bind sigue activo)
+            e.unbind("<Button-1>")
+
+            #  apaga visual del label
+            self.campo_setpoint.label.configure(foreground="#777")
 
     # =================== Lectura de valores ==========================
 
     def _indice_memoria(self) -> int:
+        val = self.refs["combo"].get()
+        if val == "Auto":
+            return 4
+
         try:
-            val = self.combo_mem.get().strip().upper()
             return int(val.replace("M", ""))
         except Exception:
             return 0
@@ -350,11 +530,6 @@ class PanelOmega(ttk.Frame):
             self.controlador.enviar_a_arduino(mensaje)
 
     # =================== Ventanas hijas ==============================
-    def abrir_ventana_autotuning(self):
-        if getattr(self, "_auto_win", None) and self._auto_win.winfo_exists():
-            self._auto_win.lift()
-            return
-        self._auto_win = VentanaAutotuning(self, self.id_omega, self.arduino)
 
     def abrir_ventana_rampa(self):
         """
@@ -386,7 +561,8 @@ class PanelOmega(ttk.Frame):
         sp = self._sp_trunc_capped(sp_txt if sp_txt else "0")
 
         if sp == 0:
-            messagebox.showwarning("Sepoint faltante","Debe ingresar un valor de Setpoint para iniciar el autotuning")
+            messagebox.showwarning(
+                "Sepoint faltante", "Debe ingresar un valor de Setpoint para iniciar el autotuning")
             return
 
         mensaje = f"$;2;{self.id_omega};2;2;{mem_idx};{sp};!"
