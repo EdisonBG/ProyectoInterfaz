@@ -11,7 +11,7 @@ class TecladoNumerico(tk.Toplevel):
         self.resizable(False, False)
 
         self._font = tkfont.Font(family="Calibri", size=14)
-        self.option_add("*Font", self._font)   # aplica a todos los descendientes de esta ventana
+        
 
         st = ttk.Style(self)
         try:
@@ -65,6 +65,7 @@ class TecladoNumerico(tk.Toplevel):
             boton = tk.Button(
                 self,
                 text=texto,
+                font=self._font,
                 width=5 if texto not in ("Limpiar", "Enviar") else 16,  # <-- igual ancho que Limpiar
                 command=self.enviar_valor if texto == "Enviar" else (lambda t=texto: self.presionar(t))  # <-- Enviar conserva su función
             )
@@ -72,7 +73,7 @@ class TecladoNumerico(tk.Toplevel):
                     columnspan=colspan, padx=10, pady=10)
 
         # Abajo va "Limpiar" (donde antes estaba Enviar)
-        tk.Button(self, text="Limpiar", width=16,
+        tk.Button(self, text="Limpiar", font=self._font, width=16,
                 command=lambda: self.presionar("Limpiar"))\
             .grid(row=5, column=0, columnspan=3, pady=10)
 
