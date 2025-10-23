@@ -311,8 +311,16 @@ class PanelOmega(ttk.Frame):
         self._ultimo_modo_enviado = modo_actual
 
     # ====================== Toggle Run/Stop ==========================
-    def _texto_toggle(self) -> str:
-        return "Run" if not self.estado_omega.get() else "Stop"
+    def _texto_toggle(self) -> str: 
+        txt = "Run" if not self.estado_omega.get() else "Stop"
+        # Estilo según el texto (se aplica al final del ciclo actual)
+        try:
+            style = "RunBtn.TButton" if txt == "Run" else "StopBtn.TButton"
+            self.after(0, lambda: self.btn_toggle.configure(style=style))
+        except Exception:
+            pass
+        return txt
+
 
     def _toggle_omega(self):
         nuevo = not self.estado_omega.get()
@@ -320,7 +328,7 @@ class PanelOmega(ttk.Frame):
         self.btn_toggle.configure(text=self._texto_toggle())
 
         accion = "1" if nuevo else "0"
-        self.btn_toggle.configure(style="StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton")
+        #self.btn_toggle.configure(style="StopBtn.TButton" if self.estado_omega.get() else "RunBtn.TButton")
         mensaje = f"$;2;{self.id_omega};{accion};5;!"
         print("Mensaje toggle Omega:", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
