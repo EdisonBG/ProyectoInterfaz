@@ -469,6 +469,7 @@ class PanelOmega(ttk.Frame):
             txt = self.entry_setpoint.get().strip()
             if not txt:
                 print("Setpoint no definido")
+                messagebox.showerror("Dato faltante", "Setpoint no definido")        
                 return
             self.setpoint_valor = self._sp_trunc_capped(txt)
         else:

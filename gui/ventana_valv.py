@@ -1,7 +1,7 @@
 import os
 import csv
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk , messagebox
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
@@ -226,6 +226,12 @@ class VentanaValv(tk.Frame):
 
             self.btn_info_con = TouchButton(frame, text="?")
             self.btn_info_con.place(x=POS[sec_id]["btn_info_con"][0], y=POS[sec_id]["btn_info_con"][1])
+            self.btn_info_con.configure(
+                command=lambda: messagebox.showinfo(
+                "Información de conexión",
+                "Cómo funcionan las válvulas, cable de conexion al equipo, \nprocedimiento de conexion/desconexion."
+                )
+            )
 
         elif sec_id == "bp":
             # --- Tarjeta: Bypass ---
@@ -234,6 +240,12 @@ class VentanaValv(tk.Frame):
 
             self.btn_info_byp = TouchButton(frame, text="?")
             self.btn_info_byp.place(x=POS[sec_id]["btn_info_byp"][0], y=POS[sec_id]["btn_info_byp"][1])
+            self.btn_info_byp.configure(
+                command=lambda: messagebox.showinfo(
+                "Información del proceso",
+                "Cómo es la mezcla de gases en ON y en OFF. Si esta en bypass 1 el gas del MFC1 y el MFC3 es el mismo, \n entonces si se cambia uno en la ventana MFCS, el otro también cambia."
+                )
+            )
 
 
         elif sec_id == "sol":
