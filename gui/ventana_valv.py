@@ -204,8 +204,6 @@ class VentanaValv(tk.Frame):
 
     def _crear_seccion_valv(self, parent, sec_id: str, titulo: str) -> ttk.LabelFrame:
         """Crea una sección (tarjeta) según el identificador sec_id."""
-        # Padding interno coherente con tu versión original
-        in_padx, in_pady = 6, 8
 
         frame = ttk.Frame(parent, borderwidth=2, relief="groove")
         title_lbl = ttk.Label(frame, text=titulo, font=TITLE_FONT.get(

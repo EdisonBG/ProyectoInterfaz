@@ -6,9 +6,45 @@ from tkinter import ttk, messagebox, filedialog
 
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+
+
+class _C_:
+    FONT_BASE = ("Calibri", 13)
+    ENTRY_WIDTH = 12
+    COMBO_WIDTH = 12
+
+
+C = _C_()
+
+# --- Título movible por píxeles y con fuente configurable (solo en modo absoluto) ---
+# Posición del "título" dibujado manualmente dentro de cada sección (x, y).
+TITLE_POS = {
+    1: (8, 2),
+}
+# Fuente (familia, tamaño, estilo) por sección para el título.
+TITLE_FONT = {
+    1: ("Calibri", 13, "bold"),
+}
+
+# Coordenadas por MFC (horizontal, vertical) para cada control dentro de su LabelFrame.
+# Nota: "entry" posiciona el contenedor LabeledEntryNum completo (label+entry).
+POS = {
+    1: {
+        "btn_validar":   (0, 0),
+        "btn_iniciar": (100,  0),
+        "btn_pausar":   (200,  0),
+        "btn_reanudar":     (300, 0),
+        "btn_detener":  (418,  0),
+        "btn_guardar_pre":  (518,  0),
+        "btn_cargar_pre": (672, 0),
+    },
+}
 
 # ========================== Utilidades comunes ==========================
+
 
 def clamp(v, a, b):
     """Recorta v al rango [a, b]."""
@@ -87,28 +123,28 @@ class VentanaAuto(tk.Frame):
 
     # ------------- filas (categorías) del grid -------------
     ROWS = [
-        ("Etapa", "label"),
-        ("Tiempo de etapa (min)", "int"),
+        ("StNu", "label"),
+        ("TiSp (min)", "int"),
         ("", "spacer"),
-        ("Válvulas - Posición inicial", "combo_pos"),
-        ("Válvulas - Tiempo en A (min)", "int"),
-        ("Válvulas - Tiempo en B (min)", "int"),
-        ("Presión de proceso (bar)", "decimal1"),
+        ("VaPo", "combo_pos"),
+        ("TiPo-A (min)", "int"),
+        ("TiPo-B (min)", "int"),
+        ("WoPr (bar)", "decimal1"),
         ("", "spacer"),
-        ("Peristáltica 1", "combo_onoff"),
-        ("Peristáltica 2", "combo_onoff"),
+        ("CoPu", "combo_onoff"),
+        ("ByPa", "combo_onoff"),
         ("", "spacer"),
-        ("MFC1 - Gas", "combo_gas"),
-        ("MFC1 - Flujo (mL/min)", "flow_mfc1"),
-        ("MFC2 - Gas", "combo_gas"),
-        ("MFC2 - Flujo (mL/min)", "flow_mfc2"),
-        ("MFC3 - Gas", "combo_gas"),
-        ("MFC3 - Flujo (mL/min)", "flow_mfc3"),
-        ("MFC4 - Gas", "combo_gas"),
-        ("MFC4 - Flujo (mL/min)", "flow_mfc4"),
+        ("GS-O₂", "combo_gas"),
+        ("FW-O₂ (mL/min)", "flow_mfc1"),
+        ("GS-CO₂", "combo_gas"),
+        ("FW-CO₂ (mL/min)", "flow_mfc2"),
+        ("GS-N₂", "combo_gas"),
+        ("FW-N₂ (mL/min)", "flow_mfc3"),
+        ("GS-H₂", "combo_gas"),
+        ("FW-H₂ (mL/min)", "flow_mfc4"),
         ("", "spacer"),
-        ("Setpoint Horno 1 (°C)", "sp_temp"),
-        ("Setpoint Horno 2 (°C)", "sp_temp"),
+        ("WoTe 1 (°C)", "sp_temp"),
+        ("WoTe 2 (°C)", "sp_temp"),
     ]
 
     def __init__(self, master, controlador, arduino):
@@ -116,13 +152,16 @@ class VentanaAuto(tk.Frame):
         self.controlador = controlador
         self.arduino = arduino
 
+        self._configurar_estilos()
+
         # ----------- estado de ejecución -----------
         self._run_active = False
         self._paused = False
         self._tick_id = None
 
         # punteros y contadores
-        self._active_cols = []        # columnas (1..8) activas por tiempo de etapa > 0
+        # columnas (1..8) activas por tiempo de etapa > 0
+        self._active_cols = []
         self._col_ptr = -1            # índice dentro de _active_cols
         self._stage_remaining = 0     # seg restantes de la etapa actual
         self._seg_remaining = 0       # seg restantes del segmento (A o B)
@@ -139,6 +178,23 @@ class VentanaAuto(tk.Frame):
         self._build_ui()
 
     # ============================ UI base ============================
+        # ------------- Estilos -------------
+    def _configurar_estilos(self):
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure("B.TButton", padding=(16, 8),
+                        font=getattr(C, "FONT_BASE", ("Calibri", 13)))
+        style.map("B.TButton", background=[
+                  ("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+
+        style.configure("BSelected.TButton", padding=(16, 8), font=getattr(
+            C, "FONT_BASE", ("Calibri", 13)), background="#bdbdbd")
+        style.map("BSelected.TButton", background=[
+                  ("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
 
     def _build_ui(self):
         # columnas: 0 barra, 1 contenido
@@ -147,13 +203,11 @@ class VentanaAuto(tk.Frame):
 
         # Barra navegación (sin márgenes para aprovechar 1024x600)
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=120)
         barra.grid(row=0, column=0, sticky="ns")
-        barra.grid_propagate(False)
 
         # Contenedor principal
         main = ttk.Frame(self)
-        main.grid(row=0, column=1, sticky="nsew", padx=6, pady=6)
+        main.grid(row=0, column=1, sticky="nsew")
         main.grid_rowconfigure(3, weight=1)  # fila del canvas scrolleable
         main.grid_columnconfigure(0, weight=1)
 
@@ -167,53 +221,120 @@ class VentanaAuto(tk.Frame):
         self._build_grid(main)
 
     def _build_controls(self, parent):
-        wrap = ttk.Frame(parent)
-        wrap.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        # expandir al centro para que “quepa” cómodamente en 1024x600
-        for i in range(0, 7):
-            wrap.grid_columnconfigure(i, weight=0)
-        wrap.grid_columnconfigure(7, weight=1)  # separador elástico
+        # 1) Frame con tamaño fijo
+        wrap = ttk.Frame(parent, borderwidth=2)
+        wrap.configure(width=300, height=60)       # <- tamaño visible
+        wrap.grid(row=0, column=0, padx=2, pady=4, sticky="nsew")
+        wrap.grid_propagate(False)                  # <- que no se encoja
 
-        ttk.Button(wrap, text="Validar", command=self._cmd_validar).grid(row=0, column=0, padx=4, pady=2)
-        ttk.Button(wrap, text="Iniciar", command=self._cmd_iniciar).grid(row=0, column=1, padx=4, pady=2)
+        # El parent: la FILA no debe estirarse; la COLUMNA sí.
+        parent.grid_rowconfigure(0, weight=0)     # <- no crecer en alto
+        parent.grid_columnconfigure(0, weight=1)  # <- sí crecer a lo ancho
 
-        self.btn_pausar = ttk.Button(wrap, text="Pausar", command=self._cmd_pausar, state="disabled")
-        self.btn_pausar.grid(row=0, column=2, padx=4, pady=2)
+        self.btn_validar = TouchButton(
+            wrap, text="Validar", width=6, style="B.TButton", command=self._cmd_validar)
+        self.btn_validar.place(
+            x=POS[1]["btn_validar"][0], y=POS[1]["btn_validar"][1])
 
-        self.btn_reanudar = ttk.Button(wrap, text="Reanudar", command=self._cmd_reanudar, state="disabled")
-        self.btn_reanudar.grid(row=0, column=3, padx=4, pady=2)
+        self.btn_iniciar = TouchButton(
+            wrap, text="Iniciar", width=6, style="B.TButton", command=self._cmd_iniciar)
+        self.btn_iniciar.place(
+            x=POS[1]["btn_iniciar"][0], y=POS[1]["btn_iniciar"][1])
 
-        ttk.Button(wrap, text="Detener", command=self._cmd_detener).grid(row=0, column=4, padx=4, pady=2)
+        self.btn_pausar = TouchButton(
+            wrap, text="Pausar", width=6, style="B.TButton", command=self._cmd_pausar, state="disabled")
+        self.btn_pausar.place(x=POS[1]["btn_pausar"]
+                              [0], y=POS[1]["btn_pausar"][1])
 
-        ttk.Button(wrap, text="Guardar preset", command=self._cmd_guardar_preset).grid(row=0, column=5, padx=8, pady=2)
-        ttk.Button(wrap, text="Cargar preset", command=self._cmd_cargar_preset).grid(row=0, column=6, padx=4, pady=2)
+        self.btn_reanudar = TouchButton(
+            wrap, text="Reanudar", width=8, style="B.TButton", command=self._cmd_reanudar, state="disabled")
+        self.btn_reanudar.place(
+            x=POS[1]["btn_reanudar"][0], y=POS[1]["btn_reanudar"][1])
+
+        self.btn_detener = TouchButton(
+            wrap, text="Detener", width=6, style="B.TButton", command=self._cmd_detener)
+        self.btn_detener.place(
+            x=POS[1]["btn_detener"][0], y=POS[1]["btn_detener"][1])
+
+        self.btn_guardar_pre = TouchButton(
+            wrap, text="Guardar preset", width=12, style="B.TButton", command=self._cmd_guardar_preset)
+        self.btn_guardar_pre.place(
+            x=POS[1]["btn_guardar_pre"][0], y=POS[1]["btn_guardar_pre"][1])
+
+        self.btn_cargar_pre = TouchButton(
+            wrap, text="Cargar preset", width=12, style="B.TButton", command=self._cmd_cargar_preset)
+        self.btn_cargar_pre.place(
+            x=POS[1]["btn_cargar_pre"][0], y=POS[1]["btn_cargar_pre"][1])
 
     def _build_monitor(self, parent):
-        box = ttk.LabelFrame(parent, text="Monitor")
-        box.grid(row=2, column=0, sticky="ew", pady=(2, 6))
-        for i in range(0, 10):
-            box.grid_columnconfigure(i, weight=0)
+        # Fuentes
+        FONT = ("Calibri", 13)
+        FONT_B = ("Calibri", 13, "bold")  # título y tiempos en bold
 
+        # --- Frame con borde (NO LabelFrame) ---
+        box = ttk.Frame(parent, borderwidth=2, relief="groove", padding=(6, 2))
+        box.grid(row=2, column=0, sticky="ew", pady=(2, 4))
+        parent.grid_columnconfigure(0, weight=1)          # crece a lo ancho
+        try:
+            parent.grid_rowconfigure(2, weight=0)
+        except Exception:
+            pass
+
+        # --- UNA SOLA FILA ---
+        # Col 0: título dentro del frame
+        title = ttk.Label(box, text="Monitor", font=FONT_B)
+        title.grid(row=0, column=0, padx=(6, 10), pady=1, sticky="w")
+
+        # Variables
         self.var_mon_etapa = tk.StringVar(value="-")
         self.var_mon_pos = tk.StringVar(value="-")
-        self.var_mon_rest_etapa = tk.StringVar(value="-")
-        self.var_mon_rest_seg = tk.StringVar(value="-")
+        self.var_mon_rest_etapa = tk.StringVar(value="-")  # bold
+        self.var_mon_rest_seg = tk.StringVar(value="-")  # bold
         self.var_mon_pres = tk.StringVar(value="-")
 
-        ttk.Label(box, text="Etapa:").grid(row=0, column=0, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_etapa).grid(row=0, column=1, padx=2, pady=4, sticky="w")
+        # Pares etiqueta/valor en la MISMA fila
+        ttk.Label(box, text="Etapa:", font=FONT).grid(
+            row=0, column=1, padx=(0, 4),  pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_etapa, font=FONT).grid(
+            row=0, column=2, padx=(0, 10), pady=1, sticky="w")
 
-        ttk.Label(box, text="Posición válvulas:").grid(row=0, column=2, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pos).grid(row=0, column=3, padx=2, pady=4, sticky="w")
+        ttk.Label(box, text="Posición válvulas:", font=FONT).grid(
+            row=0, column=3, padx=(0, 4),  pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_pos, font=FONT).grid(
+            row=0, column=4, padx=(0, 10), pady=1, sticky="w")
 
-        ttk.Label(box, text="Restante etapa:").grid(row=0, column=4, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_etapa).grid(row=0, column=5, padx=2, pady=4, sticky="w")
+        ttk.Label(box, text="Restante etapa:", font=FONT).grid(
+            row=0, column=5, padx=(0, 4),  pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_etapa, font=FONT_B).grid(
+            row=0, column=6, padx=(0, 10), pady=1, sticky="w")
 
-        ttk.Label(box, text="Cambio válvulas en:").grid(row=0, column=6, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_seg).grid(row=0, column=7, padx=2, pady=4, sticky="w")
+        ttk.Label(box, text="Cambio válvulas en:", font=FONT).grid(
+            row=0, column=7, padx=(0, 4),  pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_seg, font=FONT_B).grid(
+            row=0, column=8, padx=(0, 10), pady=1, sticky="w")
 
-        ttk.Label(box, text="Presión etapa (bar):").grid(row=0, column=8, padx=6, pady=4, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pres).grid(row=0, column=9, padx=2, pady=4, sticky="w")
+        ttk.Label(box, text="Presión etapa (bar):", font=FONT).grid(
+            row=0, column=9, padx=(0, 4),  pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_pres, font=FONT).grid(
+            row=0, column=10, padx=(0, 10), pady=1, sticky="w")
+
+        # Botón "?"
+        self.btn_info_con = TouchButton(box, text="?", width=4)
+        self.btn_info_con.grid(
+            row=0, column=11, padx=(0, 6), pady=1, sticky="e")
+        self.btn_info_con.configure(
+            command=lambda: messagebox.showinfo(
+                "Información de conexión",
+                "Cómo funcionan las válvulas, cable de conexión al equipo,\n"
+                "y procedimiento de conexión/desconexión."
+            )
+        )
+
+        # Reparto de ancho: que los "valores" (2,4,6,8,10) se estiren; el resto, no.
+        for c in (2, 4, 6, 8, 10):
+            box.grid_columnconfigure(c, weight=1)
+        for c in (0, 1, 3, 5, 7, 9, 11):
+            box.grid_columnconfigure(c, weight=0)
 
     def _build_grid(self, parent):
         # Canvas con scroll H+V
@@ -223,8 +344,10 @@ class VentanaAuto(tk.Frame):
         holder.grid_columnconfigure(0, weight=1)
 
         self.canvas = tk.Canvas(holder, highlightthickness=0)
-        vsb = ttk.Scrollbar(holder, orient="vertical", command=self.canvas.yview)
-        hsb = ttk.Scrollbar(holder, orient="horizontal", command=self.canvas.xview)
+        vsb = ttk.Scrollbar(holder, orient="vertical",
+                            command=self.canvas.yview)
+        hsb = ttk.Scrollbar(holder, orient="horizontal",
+                            command=self.canvas.xview)
         self.canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
         self.canvas.grid(row=0, column=0, sticky="nsew")
@@ -235,7 +358,8 @@ class VentanaAuto(tk.Frame):
         self.canvas.create_window((0, 0), window=self.grid_frame, anchor="nw")
 
         # ajustar región scrolleable al modificar el tamaño interior
-        self.grid_frame.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.grid_frame.bind("<Configure>", lambda _e: self.canvas.configure(
+            scrollregion=self.canvas.bbox("all")))
 
         # fuente/anchos para táctil 1024x600 (sin exagerar)
         label_padx = (6, 4)
@@ -244,8 +368,10 @@ class VentanaAuto(tk.Frame):
 
         # Columna 0: etiquetas (categorías)
         for r, (text, kind) in enumerate(self.ROWS):
-            lbl = ttk.Label(self.grid_frame, text=text, anchor="e", justify="right")
-            lbl.grid(row=r, column=0, sticky="e", padx=label_padx, pady=label_pady)
+            lbl = ttk.Label(self.grid_frame, text=text,
+                            anchor="e", justify="right")
+            lbl.grid(row=r, column=0, sticky="e",
+                     padx=label_padx, pady=label_pady)
 
         # Columnas 1..8: etapas
         for c in range(1, 9):
@@ -260,7 +386,8 @@ class VentanaAuto(tk.Frame):
             # Fila 2: (espacio) -> nada
 
             # Válvulas
-            cmb_pos = ttk.Combobox(self.grid_frame, values=("A", "B"), state="readonly", width=5)
+            cmb_pos = ttk.Combobox(self.grid_frame, values=(
+                "A", "B"), state="readonly", width=5)
             cmb_pos.set("A")
             cmb_pos.grid(row=3, column=c, sticky="w", **cell_pad)
 
@@ -270,16 +397,19 @@ class VentanaAuto(tk.Frame):
             ent_tb = self._make_entry_int(self.grid_frame, default="0")
             ent_tb.grid(row=5, column=c, sticky="w", **cell_pad)
 
-            ent_pres = self._make_entry_dec(self.grid_frame, default="0.0", max_dec=1)
+            ent_pres = self._make_entry_dec(
+                self.grid_frame, default="0.0", max_dec=1)
             ent_pres.grid(row=6, column=c, sticky="w", **cell_pad)
 
             # (espacio)
 
-            cmb_p1 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=6)
+            cmb_p1 = ttk.Combobox(self.grid_frame, values=(
+                "OFF", "ON"), state="readonly", width=6)
             cmb_p1.set("OFF")
             cmb_p1.grid(row=8, column=c, sticky="w", **cell_pad)
 
-            cmb_p2 = ttk.Combobox(self.grid_frame, values=("OFF", "ON"), state="readonly", width=6)
+            cmb_p2 = ttk.Combobox(self.grid_frame, values=(
+                "OFF", "ON"), state="readonly", width=6)
             cmb_p2.set("OFF")
             cmb_p2.grid(row=9, column=c, sticky="w", **cell_pad)
 
@@ -288,7 +418,8 @@ class VentanaAuto(tk.Frame):
             # MFC1..4: gas + flujo con límites
             def make_gas_flow(row_gas, row_flow, mfc_id):
                 gas_default = MFC_DEFAULTS[mfc_id][0]
-                cmb = ttk.Combobox(self.grid_frame, values=GASES, state="readonly", width=8)
+                cmb = ttk.Combobox(
+                    self.grid_frame, values=GASES, state="readonly", width=8)
                 cmb.set(gas_default)
                 cmb.grid(row=row_gas, column=c, sticky="w", **cell_pad)
 
@@ -307,10 +438,12 @@ class VentanaAuto(tk.Frame):
 
             # (espacio)
 
-            ent_t1 = self._make_entry_int(self.grid_frame, default="0", cap_max=MAX_SP)
+            ent_t1 = self._make_entry_int(
+                self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t1.grid(row=20, column=c, sticky="w", **cell_pad)
 
-            ent_t2 = self._make_entry_int(self.grid_frame, default="0", cap_max=MAX_SP)
+            ent_t2 = self._make_entry_int(
+                self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t2.grid(row=21, column=c, sticky="w", **cell_pad)
 
             # Guardar referencias por columna
@@ -349,10 +482,12 @@ class VentanaAuto(tk.Frame):
             e.insert(0, str(v))
 
         # teclado y normalización
-        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e,
+               on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
         e.bind("<FocusOut>", lambda _e: _norm())
         # validación en escritura
-        vcmd = (self.register(self._validate_numeric), "%P", "%d", 1, 0)  # entero
+        vcmd = (self.register(self._validate_numeric),
+                "%P", "%d", 1, 0)  # entero
         e.configure(validate="key", validatecommand=vcmd)
         return e
 
@@ -370,16 +505,19 @@ class VentanaAuto(tk.Frame):
             e.delete(0, tk.END)
             e.insert(0, f"{v:.{max_dec}f}")
 
-        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e,
+               on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
         e.bind("<FocusOut>", lambda _e: _norm())
-        vcmd = (self.register(self._validate_numeric), "%P", "%d", 0, max_dec)  # decimal
+        vcmd = (self.register(self._validate_numeric),
+                "%P", "%d", 0, max_dec)  # decimal
         e.configure(validate="key", validatecommand=vcmd)
         return e
 
     def _attach_flow_logic(self, entry: ttk.Entry, mfc_id: int, cmb_gas: ttk.Combobox):
         """Capar flujo por gas (enviar con teclado o al perder foco)."""
         def _norm_flow():
-            gas = cmb_gas.get() if cmb_gas.get() in GASES else MFC_DEFAULTS[mfc_id][0]
+            gas = cmb_gas.get() if cmb_gas.get(
+            ) in GASES else MFC_DEFAULTS[mfc_id][0]
             lim = MFC_DEFAULTS[mfc_id][1][gas]
             txt = (entry.get() or "").strip()
             try:
@@ -390,7 +528,8 @@ class VentanaAuto(tk.Frame):
             entry.delete(0, tk.END)
             entry.insert(0, str(n))
 
-        entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry, on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
+        entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry,
+                   on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
         entry.bind("<FocusOut>", lambda _e: _norm_flow())
         cmb_gas.bind("<<ComboboxSelected>>", lambda _e: _norm_flow())
 
@@ -445,18 +584,22 @@ class VentanaAuto(tk.Frame):
                 + ", ".join(incompletas)
             )
         elif len(incompletas) == 8:
-            messagebox.showerror("Validación", "No hay ninguna etapa completa.")
+            messagebox.showerror(
+                "Validación", "No hay ninguna etapa completa.")
         else:
-            messagebox.showinfo("Validación", "Todas las etapas están completas.")
+            messagebox.showinfo(
+                "Validación", "Todas las etapas están completas.")
 
     def _cmd_iniciar(self):
         if self._run_active:
             messagebox.showinfo("Auto", "El proceso ya está en ejecución.")
             return
 
-        self._active_cols = [c for c in range(1, 9) if self._col_is_complete(c)]
+        self._active_cols = [c for c in range(
+            1, 9) if self._col_is_complete(c)]
         if not self._active_cols:
-            messagebox.showerror("Auto", "No hay etapas completas para ejecutar.")
+            messagebox.showerror(
+                "Auto", "No hay etapas completas para ejecutar.")
             return
 
         self._run_active = True
@@ -588,7 +731,8 @@ class VentanaAuto(tk.Frame):
             str(d["pos_ini"]), str(d["ps10"]),
             str(d["p1_on"]), str(d["p2_on"]),
             str(d["bypass"]),
-            str(d["m1_pwm"]), str(d["m2_pwm"]), str(d["m3_pwm"]), str(d["m4_pwm"]),
+            str(d["m1_pwm"]), str(d["m2_pwm"]), str(
+                d["m3_pwm"]), str(d["m4_pwm"]),
             str(d["t1_sp"]), str(d["t2_sp"]),
         ]
         self._tx(";".join(partes) + ";!")
@@ -629,10 +773,12 @@ class VentanaAuto(tk.Frame):
         t_b = max(0, self._get_int(self.cells[c]["t_b"]))
 
         # válvulas
-        pos_ini = 1 if (self.cells[c]["pos_ini"].get() or "A").upper() == "A" else 2
+        pos_ini = 1 if (self.cells[c]["pos_ini"].get()
+                        or "A").upper() == "A" else 2
 
         # presión
-        pres_bar = clamp(round(self._get_float(self.cells[c]["pres"]), 1), 0.0, MAX_PRES)
+        pres_bar = clamp(round(self._get_float(
+            self.cells[c]["pres"]), 1), 0.0, MAX_PRES)
         ps10 = int(round(pres_bar * 10))
 
         # peristálticas
@@ -713,7 +859,8 @@ class VentanaAuto(tk.Frame):
                     w.writerow(row)
             messagebox.showinfo("Preset", "Preset guardado correctamente.")
         except Exception as ex:
-            messagebox.showerror("Preset", f"No se pudo guardar el preset:\n{ex}")
+            messagebox.showerror(
+                "Preset", f"No se pudo guardar el preset:\n{ex}")
 
     def _row_from_col(self, c: int):
         # helpers para string
@@ -768,7 +915,8 @@ class VentanaAuto(tk.Frame):
                         self._apply_csv_row_to_col(col, row)
             messagebox.showinfo("Preset", "Preset cargado.")
         except Exception as ex:
-            messagebox.showerror("Preset", f"No se pudo cargar el preset:\n{ex}")
+            messagebox.showerror(
+                "Preset", f"No se pudo cargar el preset:\n{ex}")
 
     def _apply_csv_row_to_col(self, c: int, row: dict):
         def set_e(e: ttk.Entry, val: str):
@@ -777,7 +925,8 @@ class VentanaAuto(tk.Frame):
 
         # tiempos y posición
         set_e(self.cells[c]["t_etapa"], row.get("t_etapa", "0"))
-        self.cells[c]["pos_ini"].set("A" if row.get("pos_ini", "1") == "1" else "B")
+        self.cells[c]["pos_ini"].set(
+            "A" if row.get("pos_ini", "1") == "1" else "B")
         set_e(self.cells[c]["t_a"], row.get("t_a", "0"))
         set_e(self.cells[c]["t_b"], row.get("t_b", "0"))
 
@@ -790,8 +939,10 @@ class VentanaAuto(tk.Frame):
             set_e(self.cells[c]["pres"], "0.0")
 
         # peristálticas
-        self.cells[c]["p1"].set("ON" if row.get("p1_on", "2") == "1" else "OFF")
-        self.cells[c]["p2"].set("ON" if row.get("p2_on", "2") == "1" else "OFF")
+        self.cells[c]["p1"].set("ON" if row.get(
+            "p1_on", "2") == "1" else "OFF")
+        self.cells[c]["p2"].set("ON" if row.get(
+            "p2_on", "2") == "1" else "OFF")
 
         # MFCs
         for mid in (1, 2, 3, 4):
