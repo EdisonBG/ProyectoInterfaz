@@ -116,7 +116,7 @@ class VentanaAuto(tk.Frame):
     Ejecución:
       - Se consideran “activas” las columnas cuyo “Tiempo de etapa” > 0.
       - Al iniciar una etapa envía:
-        $;4;POS_INI;PS*10;P1_ON;P2_ON;BYPASS;MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;T1_SP;T2_SP;!
+        $;4;POS_INI;PS*10;P1_ON;BYPASS(1-OFF-Normal/2-ON-Secundaria);MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;T1_SP;T2_SP;!
       - Alterna A↔B según “Tiempo en A/B (min)”, y en cada cambio de posición envía:
         $;3;1;0;{1|2};!   (1=A, 2=B)
     """
@@ -124,7 +124,7 @@ class VentanaAuto(tk.Frame):
     # ------------- filas (categorías) del grid -------------
     ROWS = [
         ("StNu", "label"),
-        ("TiSp (min)", "int"),
+        ("TiSt (min)", "int"),
         ("", "spacer"),
         ("VaPo", "combo_pos"),
         ("TiPo-A (min)", "int"),
@@ -169,8 +169,8 @@ class VentanaAuto(tk.Frame):
         self._seg_tA = 0              # seg duración A
         self._seg_tB = 0              # seg duración B
 
-        # bypass persistido (BYP en valv_pos.csv)
-        self._bypass = self._leer_bypass()
+        self._pos_file = os.path.join(
+            os.path.dirname(__file__), "valv_pos.csv")
 
         # refs de celdas: dict[col][rowkey] -> widget
         self.cells = {c: {} for c in range(1, 9)}
@@ -223,8 +223,8 @@ class VentanaAuto(tk.Frame):
     def _build_controls(self, parent):
         # 1) Frame con tamaño fijo
         wrap = ttk.Frame(parent, borderwidth=2)
-        wrap.configure(width=300, height=60)       # <- tamaño visible
-        wrap.grid(row=0, column=0, padx=2, pady=4, sticky="nsew")
+        wrap.configure(width=300, height=50)       # <- tamaño visible
+        wrap.grid(row=0, column=0, padx=0, pady=2, sticky="nsew")
         wrap.grid_propagate(False)                  # <- que no se encoja
 
         # El parent: la FILA no debe estirarse; la COLUMNA sí.
@@ -267,74 +267,72 @@ class VentanaAuto(tk.Frame):
             x=POS[1]["btn_cargar_pre"][0], y=POS[1]["btn_cargar_pre"][1])
 
     def _build_monitor(self, parent):
-        # Fuentes
         FONT = ("Calibri", 13)
         FONT_B = ("Calibri", 13, "bold")  # título y tiempos en bold
 
-        # --- Frame con borde (NO LabelFrame) ---
         box = ttk.Frame(parent, borderwidth=2, relief="groove", padding=(6, 2))
         box.grid(row=2, column=0, sticky="ew", pady=(2, 4))
-        parent.grid_columnconfigure(0, weight=1)          # crece a lo ancho
-        try:
-            parent.grid_rowconfigure(2, weight=0)
-        except Exception:
-            pass
+        # solo el contenedor crece a lo ancho
+        parent.grid_columnconfigure(0, weight=1)
 
         # --- UNA SOLA FILA ---
         # Col 0: título dentro del frame
-        title = ttk.Label(box, text="Monitor", font=FONT_B)
-        title.grid(row=0, column=0, padx=(6, 10), pady=1, sticky="w")
+        # ttk.Label(box, text="Monitor", font=FONT_B).grid(row=0, column=0, padx=(6, 8), pady=1, sticky="w")
 
-        # Variables
-        self.var_mon_etapa = tk.StringVar(value="-")
-        self.var_mon_pos = tk.StringVar(value="-")
-        self.var_mon_rest_etapa = tk.StringVar(value="-")  # bold
-        self.var_mon_rest_seg = tk.StringVar(value="-")  # bold
-        self.var_mon_pres = tk.StringVar(value="-")
+        # Vars (valores que tú actualizas luego)
+        self.var_mon_etapa = tk.StringVar(value="8")  # "1/8"
+        self.var_mon_pos = tk.StringVar(value="B")  # "A"/"B"
+        self.var_mon_rest_etapa = tk.StringVar(value="99:99")  # "mm:ss"
+        self.var_mon_rest_seg = tk.StringVar(value="99:99")  # "mm:ss"
+        self.var_mon_pres = tk.StringVar(value="24.9")  # "25.0"
 
-        # Pares etiqueta/valor en la MISMA fila
+        # Pares etiqueta/valor (tamaño fijo por width, nada de expansión)
         ttk.Label(box, text="Etapa:", font=FONT).grid(
-            row=0, column=1, padx=(0, 4),  pady=1, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_etapa, font=FONT).grid(
-            row=0, column=2, padx=(0, 10), pady=1, sticky="w")
+            row=0, column=0, padx=(0, 4), pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_etapa, font=FONT_B, width=1, anchor="e").grid(
+            row=0, column=1, padx=(0, 8), pady=1, sticky="w")   # "1/8" => 3 chars
 
         ttk.Label(box, text="Posición válvulas:", font=FONT).grid(
-            row=0, column=3, padx=(0, 4),  pady=1, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pos, font=FONT).grid(
-            row=0, column=4, padx=(0, 10), pady=1, sticky="w")
+            row=0, column=2, padx=(0, 4), pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_pos, font=FONT_B, width=1, anchor="w").grid(
+            row=0, column=3, padx=(0, 8), pady=1, sticky="w")   # "A"/"B" => 1 char
 
         ttk.Label(box, text="Restante etapa:", font=FONT).grid(
-            row=0, column=5, padx=(0, 4),  pady=1, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_etapa, font=FONT_B).grid(
-            row=0, column=6, padx=(0, 10), pady=1, sticky="w")
+            row=0, column=4, padx=(0, 4), pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_etapa, font=FONT_B, width=5, anchor="e").grid(
+            row=0, column=5, padx=(0, 8), pady=1, sticky="w")   # "mm:ss" => 5 chars
 
         ttk.Label(box, text="Cambio válvulas en:", font=FONT).grid(
-            row=0, column=7, padx=(0, 4),  pady=1, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_rest_seg, font=FONT_B).grid(
-            row=0, column=8, padx=(0, 10), pady=1, sticky="w")
+            row=0, column=6, padx=(0, 4), pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_rest_seg, font=FONT_B, width=5, anchor="e").grid(
+            row=0, column=7, padx=(0, 8), pady=1, sticky="w")   # "mm:ss" => 5 chars
 
         ttk.Label(box, text="Presión etapa (bar):", font=FONT).grid(
-            row=0, column=9, padx=(0, 4),  pady=1, sticky="e")
-        ttk.Label(box, textvariable=self.var_mon_pres, font=FONT).grid(
-            row=0, column=10, padx=(0, 10), pady=1, sticky="w")
+            row=0, column=8, padx=(0, 4), pady=1, sticky="e")
+        ttk.Label(box, textvariable=self.var_mon_pres, font=FONT_B, width=4, anchor="e").grid(
+            row=0, column=9, padx=(0, 8), pady=1, sticky="w")  # "25.0" => 4 chars
 
-        # Botón "?"
-        self.btn_info_con = TouchButton(box, text="?", width=4)
+        # --- Configurar columnas: todas sin expansión ---
+        for c in range(0, 11):
+            box.grid_columnconfigure(c, weight=0)
+
+        # Una sola columna elástica (espaciador) antes del botón "?"
+        box.grid_columnconfigure(10, weight=1)
+
+        # Botón "?" a la derecha
+        self.btn_info_con = TouchButton(box, text="?", width=6)
         self.btn_info_con.grid(
-            row=0, column=11, padx=(0, 6), pady=1, sticky="e")
+            row=0, column=11, padx=(0, 4), pady=1, sticky="e")
         self.btn_info_con.configure(
             command=lambda: messagebox.showinfo(
-                "Información de conexión",
-                "Cómo funcionan las válvulas, cable de conexión al equipo,\n"
-                "y procedimiento de conexión/desconexión."
+                "Información de variables",
+                " StNu: Número de etapa\n TiSt: Tiempo de la etapa\n VaPo: Posición válvulas 4 vías\n TiPo-A: Tiempo en posición A\n"
+                " TiPo-B: Tiempo en posición B\n WoPr: Presión de trabajo\n CoPu: Bomba peristáltica\n ByPa: Bypass\n"
+                " GS-O₂: Gas para MFC de O₂\n FW-O₂: Flujo MFC de O₂\n GS-CO₂: Gas para MFC de CO₂\n FW-CO₂: Flujo MFC de CO₂\n"
+                " GS-N₂: Gas para MFC de N₂\n FW-N₂: Flujo MFC de N₂\n GS-H₂: Gas para MFC de H₂\n FW-H₂: Flujo MFC de H₂\n"
+                " WoTe 1: Temperatura de trabajo horno 1\n WoTe 2: Temperatura de trabajo horno 2\n"
             )
         )
-
-        # Reparto de ancho: que los "valores" (2,4,6,8,10) se estiren; el resto, no.
-        for c in (2, 4, 6, 8, 10):
-            box.grid_columnconfigure(c, weight=1)
-        for c in (0, 1, 3, 5, 7, 9, 11):
-            box.grid_columnconfigure(c, weight=0)
 
     def _build_grid(self, parent):
         # Canvas con scroll H+V
@@ -361,15 +359,27 @@ class VentanaAuto(tk.Frame):
         self.grid_frame.bind("<Configure>", lambda _e: self.canvas.configure(
             scrollregion=self.canvas.bbox("all")))
 
+        # ======= FUENTE SOLO PARA ESTE FRAME =======
+        GRID_FONT_SIZE = 13  # <-- ajusta entre 10 y 13 según necesites
+        FONT = ("Calibri", GRID_FONT_SIZE)
+        FONT_B = ("Calibri", GRID_FONT_SIZE, "bold")
+
         # fuente/anchos para táctil 1024x600 (sin exagerar)
         label_padx = (6, 4)
         label_pady = (4, 2)
         cell_pad = dict(padx=3, pady=2)
 
+        # *** Repartir ancho: columnas 1..8 iguales y elásticas ***
+        # etiquetas (categorías) no se estiran
+        self.grid_frame.grid_columnconfigure(0, weight=0)
+        for c in range(1, 9):
+            self.grid_frame.grid_columnconfigure(c, weight=1, uniform="cols")
+
         # Columna 0: etiquetas (categorías)
         for r, (text, kind) in enumerate(self.ROWS):
             lbl = ttk.Label(self.grid_frame, text=text,
                             anchor="e", justify="right")
+            lbl.configure(font=FONT)
             lbl.grid(row=r, column=0, sticky="e",
                      padx=label_padx, pady=label_pady)
 
@@ -377,41 +387,51 @@ class VentanaAuto(tk.Frame):
         for c in range(1, 9):
             # Cabecera fija con número de etapa
             head = ttk.Label(self.grid_frame, text=str(c), anchor="center")
+            head.configure(font=FONT_B)
             head.grid(row=0, column=c, sticky="nsew", **cell_pad)
 
             # Fila 1: Tiempo de etapa (entry entero, default 0)
             ent_t_etapa = self._make_entry_int(self.grid_frame, default="0")
-            ent_t_etapa.grid(row=1, column=c, sticky="w", **cell_pad)
+            ent_t_etapa.configure(font=FONT)
+            ent_t_etapa.grid(row=1, column=c, sticky="ew", **cell_pad)
 
             # Fila 2: (espacio) -> nada
 
             # Válvulas
             cmb_pos = ttk.Combobox(self.grid_frame, values=(
                 "A", "B"), state="readonly", width=5)
+            cmb_pos.configure(font=FONT)
             cmb_pos.set("A")
-            cmb_pos.grid(row=3, column=c, sticky="w", **cell_pad)
+            cmb_pos.grid(row=3, column=c, sticky="ew", **cell_pad)
 
             ent_ta = self._make_entry_int(self.grid_frame, default="0")
-            ent_ta.grid(row=4, column=c, sticky="w", **cell_pad)
+            ent_ta.configure(font=FONT)
+            ent_ta.grid(row=4, column=c, sticky="ew", **cell_pad)
 
             ent_tb = self._make_entry_int(self.grid_frame, default="0")
-            ent_tb.grid(row=5, column=c, sticky="w", **cell_pad)
+            ent_tb.configure(font=FONT)
+            ent_tb.grid(row=5, column=c, sticky="ew", **cell_pad)
 
             ent_pres = self._make_entry_dec(
                 self.grid_frame, default="0.0", max_dec=1)
-            ent_pres.grid(row=6, column=c, sticky="w", **cell_pad)
+            ent_pres.configure(font=FONT)
+            ent_pres.grid(row=6, column=c, sticky="ew", **cell_pad)
 
             # (espacio)
 
+            # Bomba peristáltica
             cmb_p1 = ttk.Combobox(self.grid_frame, values=(
                 "OFF", "ON"), state="readonly", width=6)
+            cmb_p1.configure(font=FONT)
             cmb_p1.set("OFF")
-            cmb_p1.grid(row=8, column=c, sticky="w", **cell_pad)
+            cmb_p1.grid(row=8, column=c, sticky="ew", **cell_pad)
 
-            cmb_p2 = ttk.Combobox(self.grid_frame, values=(
-                "OFF", "ON"), state="readonly", width=6)
-            cmb_p2.set("OFF")
-            cmb_p2.grid(row=9, column=c, sticky="w", **cell_pad)
+            # Bypass
+            cmb_bypass = ttk.Combobox(self.grid_frame, values=(
+                "1", "2"), state="readonly", width=6)
+            cmb_bypass.configure(font=FONT)
+            cmb_bypass.set("1")
+            cmb_bypass.grid(row=9, column=c, sticky="ew", **cell_pad)
 
             # (espacio)
 
@@ -420,11 +440,13 @@ class VentanaAuto(tk.Frame):
                 gas_default = MFC_DEFAULTS[mfc_id][0]
                 cmb = ttk.Combobox(
                     self.grid_frame, values=GASES, state="readonly", width=8)
+                cmb.configure(font=FONT)
                 cmb.set(gas_default)
-                cmb.grid(row=row_gas, column=c, sticky="w", **cell_pad)
+                cmb.grid(row=row_gas, column=c, sticky="ew", **cell_pad)
 
                 ent = self._make_entry_int(self.grid_frame, default="0")
-                ent.grid(row=row_flow, column=c, sticky="w", **cell_pad)
+                ent.configure(font=FONT)
+                ent.grid(row=row_flow, column=c, sticky="ew", **cell_pad)
 
                 # al abrir teclado y al salir, normaliza con límite del gas actual
                 self._attach_flow_logic(ent, mfc_id, cmb)
@@ -440,11 +462,13 @@ class VentanaAuto(tk.Frame):
 
             ent_t1 = self._make_entry_int(
                 self.grid_frame, default="0", cap_max=MAX_SP)
-            ent_t1.grid(row=20, column=c, sticky="w", **cell_pad)
+            ent_t1.configure(font=FONT)
+            ent_t1.grid(row=20, column=c, sticky="ew", **cell_pad)
 
             ent_t2 = self._make_entry_int(
                 self.grid_frame, default="0", cap_max=MAX_SP)
-            ent_t2.grid(row=21, column=c, sticky="w", **cell_pad)
+            ent_t2.configure(font=FONT)
+            ent_t2.grid(row=21, column=c, sticky="ew", **cell_pad)
 
             # Guardar referencias por columna
             self.cells[c] = {
@@ -454,7 +478,7 @@ class VentanaAuto(tk.Frame):
                 "t_b": ent_tb,
                 "pres": ent_pres,
                 "p1": cmb_p1,
-                "p2": cmb_p2,
+                "bypass": cmb_bypass,
                 "m1_gas": cmb_m1, "m1_f": ent_m1,
                 "m2_gas": cmb_m2, "m2_f": ent_m2,
                 "m3_gas": cmb_m3, "m3_f": ent_m3,
@@ -553,22 +577,6 @@ class VentanaAuto(tk.Frame):
         except Exception:
             return False
         return True
-
-    # ====================== Bypass persistido ======================
-
-    def _leer_bypass(self) -> int:
-        """Lee BYP de valv_pos.csv (1/2). Default 1 si no existe."""
-        pos_file = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
-        try:
-            if os.path.exists(pos_file):
-                with open(pos_file, newline="", encoding="utf-8") as f:
-                    for nombre, pos in csv.reader(f):
-                        if (nombre or "").strip().upper() == "BYP":
-                            v = (pos or "").strip()
-                            return 2 if v == "2" else 1
-        except Exception:
-            pass
-        return 1
 
     # ====================== Acciones de botones ======================
 
@@ -715,32 +723,112 @@ class VentanaAuto(tk.Frame):
 
         self._tick_id = self.after(1000, self._tick)
 
+    # ====================== Actualización archivo CSV: BYP, V1 = V2 ======================
+    def _write_valv_pos(self, v_pos: str | None = None, bypass_on: int | None = None):
+        """
+        Escribe valv_pos.csv con estructura fija y orden:
+            V1,<A|B>
+            V2,<A|B>
+            BYP,<1|2>
+
+        - Si v_pos es None, conserva el valor previo (por defecto "A").
+        - Si bypass_on es None, conserva el valor previo (por defecto 1).
+        """
+        # Valores actuales por defecto
+        cur_v = "A"
+        cur_byp = 1
+
+        # Cargar existentes (si hay)
+        try:
+            if os.path.exists(self._pos_file):
+                with open(self._pos_file, newline="", encoding="utf-8") as f:
+                    for nombre, pos in csv.reader(f):
+                        key = (nombre or "").strip().upper()
+                        val = (pos or "").strip().upper()
+                        if key in ("V1", "V2") and val in ("A", "B"):
+                            # Si V1 y V2 difieren, priorizamos V1; modo auto igualará ambos.
+                            cur_v = val
+                        elif key == "BYP" and val in ("1", "2"):
+                            try:
+                                cur_byp = int(val)
+                            except Exception:
+                                cur_byp = 1
+        except Exception as e:
+            print(f"[WARN] No se pudo leer {self._pos_file}: {e}")
+
+        # Aplicar overrides
+        if v_pos is not None:
+            vv = (v_pos or "").strip().upper()
+            if vv in ("A", "B"):
+                cur_v = vv
+            else:
+                print("[WARN] _write_valv_pos: v_pos inválido, se conserva:", cur_v)
+
+        if bypass_on is not None:
+            try:
+                cur_byp = int(bypass_on)
+                if cur_byp not in (1, 2):
+                    raise ValueError
+            except Exception:
+                print(
+                    "[WARN] _write_valv_pos: bypass_on inválido, se conserva:", cur_byp)
+
+        # Reescribir exactamente 3 filas en el mismo orden que la otra ventana
+        try:
+            with open(self._pos_file, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["V1", cur_v])
+                w.writerow(["V2", cur_v])
+                w.writerow(["BYP", str(cur_byp)])
+        except Exception as e:
+            print(f"[WARN] No se pudo escribir {self._pos_file}: {e}")
+
     # ----------------------- TX helpers -----------------------
 
-    def _tx(self, mensaje: str):
+    def _tx(self, mensaje: str) -> bool:
         print("[TX]", mensaje)
-        if self.controlador and hasattr(self.controlador, "enviar_a_arduino"):
-            self.controlador.enviar_a_arduino(mensaje)
+        try:
+            if self.controlador and hasattr(self.controlador, "enviar_a_arduino"):
+                self.controlador.enviar_a_arduino(mensaje)
+                return True   # OK: enviado sin excepciones
+            else:
+                print("[WARN][TX] No hay controlador/enviar_a_arduino; no se envió.")
+                return False
+        except Exception as e:
+            print("[WARN][TX] Falla enviando a Arduino:", e)
+            return False
 
     def _tx_etapa(self, d: dict):
         """
-        $;4;POS_INI;PS*10;P1_ON;P2_ON;BYPASS;M1_PWM;M2_PWM;M3_PWM;M4_PWM;T1_SP;T2_SP;!
+        $;4;POS_INI;PS*10;P1_ON;BYPASS;M1_PWM;M2_PWM;M3_PWM;M4_PWM;T1_SP;T2_SP;!
         """
         partes = [
             "$;4",
             str(d["pos_ini"]), str(d["ps10"]),
-            str(d["p1_on"]), str(d["p2_on"]),
-            str(d["bypass"]),
+            str(d["p1_on"]),
+            str(d["bypass_on"]),
             str(d["m1_pwm"]), str(d["m2_pwm"]), str(
                 d["m3_pwm"]), str(d["m4_pwm"]),
             str(d["t1_sp"]), str(d["t2_sp"]),
         ]
-        self._tx(";".join(partes) + ";!")
+
+        # se envía el mensaje al arduino
+        estado_mensaje = self._tx(";".join(partes) + ";!")
+
+        # 2) Persistencia (modo auto): V1 = V2 = pos_ini; BYP de la etapa
+        pos_ini_char = "A" if int(d.get("pos_ini", 1)) == 1 else "B"
+        if estado_mensaje:
+            self._write_valv_pos(v_pos=pos_ini_char,
+                                 bypass_on=int(d.get("bypass_on", 1)))
 
     def _send_valve_position(self, pos: str):
         """Cambio de posición automático durante la etapa."""
         code = "1" if pos.upper() == "A" else "2"
-        self._tx(f"$;3;1;0;{code};!")
+        estado_mensaje_v = self._tx(f"$;3;1;0;{code};!")
+
+        # Persistencia (modo auto): V1 = V2 = pos; BYP se conserva
+        if estado_mensaje_v:
+            self._write_valv_pos(v_pos=pos.upper(), bypass_on=None)
 
     # ======================== Helpers lectura ========================
 
@@ -783,12 +871,12 @@ class VentanaAuto(tk.Frame):
 
         # peristálticas
         p1_on = 1 if (self.cells[c]["p1"].get() == "ON") else 2
-        p2_on = 1 if (self.cells[c]["p2"].get() == "ON") else 2
 
-        # bypass persistido (1/2)
-        bypass = self._bypass
+        # Bypass: 1 - OFF, 2 - ON
+        bypass_on = 1 if (self.cells[c]["bypass"].get() == "1") else 2
 
         # MFCs -> PWM
+
         def mfc_pwm(mid_key_g, mid_key_f, mfc_id):
             gas = self.cells[c][mid_key_g].get()
             if gas not in GASES:
@@ -815,8 +903,7 @@ class VentanaAuto(tk.Frame):
             "pres_bar": pres_bar,
             "ps10": ps10,
             "p1_on": p1_on,
-            "p2_on": p2_on,
-            "bypass": bypass,
+            "bypass_on": bypass_on,
             "m1_pwm": m1_pwm,
             "m2_pwm": m2_pwm,
             "m3_pwm": m3_pwm,
@@ -846,7 +933,7 @@ class VentanaAuto(tk.Frame):
         # cabecera
         headers = ["col",
                    "t_etapa", "pos_ini", "t_a", "t_b", "ps10",
-                   "p1_on", "p2_on",
+                   "p1_on", "bypass_on",
                    "m1_gas", "m1_f", "m2_gas", "m2_f", "m3_gas", "m3_f", "m4_gas", "m4_f",
                    "t1_sp", "t2_sp"]
 
@@ -886,7 +973,7 @@ class VentanaAuto(tk.Frame):
             ent_str(self.cells[c]["t_b"], "0"),
             ps10,
             "1" if self.cells[c]["p1"].get() == "ON" else "2",
-            "1" if self.cells[c]["p2"].get() == "ON" else "2",
+            "1" if self.cells[c]["bypass"].get() == "1" else "2",
             self.cells[c]["m1_gas"].get(), ent_str(self.cells[c]["m1_f"], "0"),
             self.cells[c]["m2_gas"].get(), ent_str(self.cells[c]["m2_f"], "0"),
             self.cells[c]["m3_gas"].get(), ent_str(self.cells[c]["m3_f"], "0"),
@@ -941,8 +1028,8 @@ class VentanaAuto(tk.Frame):
         # peristálticas
         self.cells[c]["p1"].set("ON" if row.get(
             "p1_on", "2") == "1" else "OFF")
-        self.cells[c]["p2"].set("ON" if row.get(
-            "p2_on", "2") == "1" else "OFF")
+        self.cells[c]["bypass"].set(
+            "2" if row.get("bypass_on", "2") == "1" else "1")
 
         # MFCs
         for mid in (1, 2, 3, 4):
