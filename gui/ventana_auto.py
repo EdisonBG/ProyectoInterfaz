@@ -439,6 +439,7 @@ class VentanaAuto(tk.Frame):
             cmb_pos.configure(font=FONT)
             cmb_pos.set("A")
             cmb_pos.grid(row=3, column=c, sticky="ew", **cell_pad)
+            cmb_pos.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
             ent_ta = self._make_entry_int(self.grid_frame, default="0")
             ent_ta.configure(font=FONT)
@@ -461,6 +462,7 @@ class VentanaAuto(tk.Frame):
             cmb_p1.configure(font=FONT)
             cmb_p1.set("OFF")
             cmb_p1.grid(row=8, column=c, sticky="ew", **cell_pad)
+            cmb_p1.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
             # Bypass
             cmb_bypass = ttk.Combobox(self.grid_frame, values=(
@@ -468,6 +470,7 @@ class VentanaAuto(tk.Frame):
             cmb_bypass.configure(font=FONT)
             cmb_bypass.set("1")
             cmb_bypass.grid(row=9, column=c, sticky="ew", **cell_pad)
+            cmb_bypass.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
             # (espacio)
 
@@ -479,6 +482,7 @@ class VentanaAuto(tk.Frame):
                 cmb.configure(font=FONT)
                 cmb.set(gas_default)
                 cmb.grid(row=row_gas, column=c, sticky="ew", **cell_pad)
+                cmb.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
                 ent = self._make_entry_int(self.grid_frame, default="0")
                 ent.configure(font=FONT)
@@ -598,6 +602,7 @@ class VentanaAuto(tk.Frame):
                    w=entry: self._open_kbd_if_enabled(w, _norm_flow))
         entry.bind("<FocusOut>", lambda _e: _norm_flow())
         cmb_gas.bind("<<ComboboxSelected>>", lambda _e: _norm_flow())
+        cmb_gas.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
     @staticmethod
     def _validate_numeric(new_text: str, action: str, es_entero: int, max_dec: int):

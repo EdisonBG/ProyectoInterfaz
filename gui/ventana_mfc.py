@@ -278,6 +278,7 @@ class VentanaMfc(tk.Frame):
         combo.place(x=POS[mfc_id]["combo"][0], y=POS[mfc_id]["combo"][1])
         combo.bind("<<ComboboxSelected>>", lambda _e,
                    m=mfc_id: self._on_cambio_gas(m))
+        combo.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
         self.refs[mfc_id]["combo"] = combo
 
         # Flujo (LabeledEntryNum completo por posición)
