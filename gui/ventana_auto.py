@@ -34,12 +34,12 @@ TITLE_FONT = {
 POS = {
     1: {
         "btn_validar":   (0, 0),
-        "btn_iniciar": (100,  0),
-        "btn_pausar":   (200,  0),
-        "btn_reanudar":     (300, 0),
-        "btn_detener":  (418,  0),
-        "btn_guardar_pre":  (518,  0),
-        "btn_cargar_pre": (672, 0),
+        "btn_iniciar": (103,  0),
+        "btn_pausar":   (206,  0),
+        "btn_reanudar":     (309, 0),
+        "btn_detener":  (433,  0),
+        "btn_guardar_pre":  (546,  0),
+        "btn_cargar_pre": (710, 0),
     },
 }
 
@@ -172,6 +172,13 @@ class VentanaAuto(tk.Frame):
         self._pos_file = os.path.join(
             os.path.dirname(__file__), "valv_pos.csv")
 
+        self._max_stage = 0                 # 0 = todo deshabilitado al inicio
+        self._stage_chk_vars = {}           # {c: tk.IntVar} por etapa 1..8
+
+        self._pan_active = False
+        self._pan_start = None
+        self._pan_threshold = 5  # píxeles para diferenciar tap vs drag
+
         # refs de celdas: dict[col][rowkey] -> widget
         self.cells = {c: {} for c in range(1, 9)}
 
@@ -195,6 +202,9 @@ class VentanaAuto(tk.Frame):
             C, "FONT_BASE", ("Calibri", 13)), background="#bdbdbd")
         style.map("BSelected.TButton", background=[
                   ("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+
+        style.configure("StageChk.TCheckbutton",
+                        padding=(8, 2))  # área clic mayor
 
     def _build_ui(self):
         # columnas: 0 barra, 1 contenido
@@ -252,7 +262,7 @@ class VentanaAuto(tk.Frame):
             x=POS[1]["btn_reanudar"][0], y=POS[1]["btn_reanudar"][1])
 
         self.btn_detener = TouchButton(
-            wrap, text="Detener", width=6, style="B.TButton", command=self._cmd_detener)
+            wrap, text="Detener", width=7, style="B.TButton", command=self._cmd_detener)
         self.btn_detener.place(
             x=POS[1]["btn_detener"][0], y=POS[1]["btn_detener"][1])
 
@@ -267,8 +277,8 @@ class VentanaAuto(tk.Frame):
             x=POS[1]["btn_cargar_pre"][0], y=POS[1]["btn_cargar_pre"][1])
 
     def _build_monitor(self, parent):
-        FONT = ("Calibri", 13)
-        FONT_B = ("Calibri", 13, "bold")  # título y tiempos en bold
+        FONT = ("Calibri", 11)
+        FONT_B = ("Calibri", 11, "bold")  # título y tiempos en bold
 
         box = ttk.Frame(parent, borderwidth=2, relief="groove", padding=(6, 2))
         box.grid(row=2, column=0, sticky="ew", pady=(2, 4))
@@ -313,14 +323,14 @@ class VentanaAuto(tk.Frame):
             row=0, column=9, padx=(0, 8), pady=1, sticky="w")  # "25.0" => 4 chars
 
         # --- Configurar columnas: todas sin expansión ---
-        for c in range(0, 11):
+        for c in range(0, 10):
             box.grid_columnconfigure(c, weight=0)
 
         # Una sola columna elástica (espaciador) antes del botón "?"
-        box.grid_columnconfigure(10, weight=1)
+        # box.grid_columnconfigure(10, weight=0)
 
         # Botón "?" a la derecha
-        self.btn_info_con = TouchButton(box, text="?", width=6)
+        self.btn_info_con = TouchButton(box, text="?", width=10)
         self.btn_info_con.grid(
             row=0, column=11, padx=(0, 4), pady=1, sticky="e")
         self.btn_info_con.configure(
@@ -342,10 +352,10 @@ class VentanaAuto(tk.Frame):
         holder.grid_columnconfigure(0, weight=1)
 
         self.canvas = tk.Canvas(holder, highlightthickness=0)
-        vsb = ttk.Scrollbar(holder, orient="vertical",
-                            command=self.canvas.yview)
-        hsb = ttk.Scrollbar(holder, orient="horizontal",
-                            command=self.canvas.xview)
+        vsb = tk.Scrollbar(holder, orient="vertical",
+                           command=self.canvas.yview, width=24)
+        hsb = tk.Scrollbar(holder, orient="horizontal",
+                           command=self.canvas.xview, width=24)
         self.canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
         self.canvas.grid(row=0, column=0, sticky="nsew")
@@ -385,10 +395,24 @@ class VentanaAuto(tk.Frame):
 
         # Columnas 1..8: etapas
         for c in range(1, 9):
-            # Cabecera fija con número de etapa
-            head = ttk.Label(self.grid_frame, text=str(c), anchor="center")
-            head.configure(font=FONT_B)
-            head.grid(row=0, column=c, sticky="nsew", **cell_pad)
+            # Cabecera: checkbox (izq) + número (der) sin halo
+            head_wrap = ttk.Frame(self.grid_frame)
+            head_wrap.grid(row=0, column=c, sticky="nsew", **cell_pad)
+
+            var_chk = tk.IntVar(value=0)
+            self._stage_chk_vars[c] = var_chk
+
+            chk = ttk.Checkbutton(
+                head_wrap,
+                variable=var_chk,
+                command=lambda cc=c: self._on_stage_checkbox(cc),
+                takefocus=False,
+                style="StageChk.TCheckbutton",
+            )
+            chk.pack(side="left")
+
+            ttk.Label(head_wrap, text=str(c), font=FONT_B).pack(
+                side="left", padx=(6, 0))
 
             # Fila 1: Tiempo de etapa (entry entero, default 0)
             ent_t_etapa = self._make_entry_int(self.grid_frame, default="0")
@@ -486,6 +510,17 @@ class VentanaAuto(tk.Frame):
                 "t1": ent_t1, "t2": ent_t2,
             }
 
+            # Al iniciar: todo deshabilitado
+            self._set_stage_enabled(c, False)
+
+            # Permitir arrastrar desde cualquier parte del grid (tap+drag)
+            self.grid_frame.bind_all(
+                "<ButtonPress-1>", self._pan_any_mark, add="+")
+            self.grid_frame.bind_all(
+                "<B1-Motion>", self._pan_any_drag, add="+")
+            self.grid_frame.bind_all(
+                "<ButtonRelease-1>", self._pan_any_release, add="+")
+
     # ---------------------- helpers de celdas ----------------------
 
     def _make_entry_int(self, parent, *, default="0", cap_max=None):
@@ -506,8 +541,9 @@ class VentanaAuto(tk.Frame):
             e.insert(0, str(v))
 
         # teclado y normalización
-        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e,
-               on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        # e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        e.bind("<Button-1>", lambda _ev, w=e,
+               norm=_norm: self._open_kbd_if_enabled(w, norm))
         e.bind("<FocusOut>", lambda _e: _norm())
         # validación en escritura
         vcmd = (self.register(self._validate_numeric),
@@ -529,8 +565,9 @@ class VentanaAuto(tk.Frame):
             e.delete(0, tk.END)
             e.insert(0, f"{v:.{max_dec}f}")
 
-        e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e,
-               on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        # e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
+        e.bind("<Button-1>", lambda _ev, w=e,
+               norm=_norm: self._open_kbd_if_enabled(w, norm))
         e.bind("<FocusOut>", lambda _e: _norm())
         vcmd = (self.register(self._validate_numeric),
                 "%P", "%d", 0, max_dec)  # decimal
@@ -552,8 +589,9 @@ class VentanaAuto(tk.Frame):
             entry.delete(0, tk.END)
             entry.insert(0, str(n))
 
-        entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry,
-                   on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
+        # entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry, on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
+        entry.bind("<Button-1>", lambda _ev,
+                   w=entry: self._open_kbd_if_enabled(w, _norm_flow))
         entry.bind("<FocusOut>", lambda _e: _norm_flow())
         cmb_gas.bind("<<ComboboxSelected>>", lambda _e: _norm_flow())
 
@@ -577,6 +615,43 @@ class VentanaAuto(tk.Frame):
         except Exception:
             return False
         return True
+
+    def _open_kbd_if_enabled(self, widget: ttk.Entry, on_submit):
+        # No abrir si el entry está deshabilitado o si estamos haciendo pan
+        try:
+            if str(widget.cget("state")) == "disabled":
+                return
+        except Exception:
+            pass
+        if self._pan_active:
+            return
+        TecladoNumerico(self, widget,
+                        on_submit=lambda v: (widget.delete(0, tk.END), widget.insert(0, str(v)), on_submit()))
+
+    def _pan_any_mark(self, ev):
+        # Marcar inicio: coords absolutas del puntero
+        self._pan_active = False
+        self._pan_start = (ev.x_root, ev.y_root)
+        # Coordenadas del puntero mapeadas al canvas
+        cx = self.canvas.canvasx(ev.x_root - self.canvas.winfo_rootx())
+        cy = self.canvas.canvasy(ev.y_root - self.canvas.winfo_rooty())
+        self.canvas.scan_mark(int(cx), int(cy))
+
+    def _pan_any_drag(self, ev):
+        if not self._pan_start:
+            return
+        dx = abs(ev.x_root - self._pan_start[0])
+        dy = abs(ev.y_root - self._pan_start[1])
+        if not self._pan_active and (dx > self._pan_threshold or dy > self._pan_threshold):
+            self._pan_active = True
+        if self._pan_active:
+            cx = self.canvas.canvasx(ev.x_root - self.canvas.winfo_rootx())
+            cy = self.canvas.canvasy(ev.y_root - self.canvas.winfo_rooty())
+            self.canvas.scan_dragto(int(cx), int(cy), gain=1)
+
+    def _pan_any_release(self, _ev):
+        self._pan_active = False
+        self._pan_start = None
 
     # ====================== Acciones de botones ======================
 
@@ -670,6 +745,13 @@ class VentanaAuto(tk.Frame):
         self._col_ptr += 1
         if self._col_ptr >= len(self._active_cols):
             self._stop_all("Todas las etapas completas finalizaron.")
+            try:
+                messagebox.showwarning(
+                    "Modo Auto",
+                    "Las etapas concluyeron.\nEl sistema permanecerá en las condiciones especificadas en la última etapa."
+                )
+            except Exception:
+                pass
             return
 
         c = self._active_cols[self._col_ptr]
@@ -723,7 +805,50 @@ class VentanaAuto(tk.Frame):
 
         self._tick_id = self.after(1000, self._tick)
 
+    def _on_stage_checkbox(self, c: int):
+        """
+        Cuando el usuario marca la casilla de la etapa 'c', se interpreta como:
+        'quiero habilitar desde la etapa 1 hasta la etapa c'.
+        """
+        # Fijar máximo y reflejar el estado en todas las casillas
+        self._max_stage = c
+        for i in range(1, 9):
+            self._stage_chk_vars[i].set(1 if i <= c else 0)
+        # Habilitar/Deshabilitar controles de columnas
+        self._refresh_stage_enable()
+
+    def _refresh_stage_enable(self):
+        for i in range(1, 9):
+            self._set_stage_enabled(i, enabled=(i <= self._max_stage))
+
+    def _set_stage_enabled(self, c: int, enabled: bool):
+        """
+        Habilita/deshabilita TODOS los widgets de la columna 'c'.
+        - Entries: 'normal' / 'disabled'
+        - Comboboxes: 'readonly' / 'disabled'
+        """
+        cells = self.cells.get(c, {})
+
+        # Entradas numéricas
+        for key in ("t_etapa", "t_a", "t_b", "pres", "m1_f", "m2_f", "m3_f", "m4_f", "t1", "t2"):
+            w = cells.get(key)
+            if w:
+                try:
+                    w.configure(state=("normal" if enabled else "disabled"))
+                except Exception:
+                    pass
+
+        # Comboboxes
+        for key in ("pos_ini", "p1", "bypass", "m1_gas", "m2_gas", "m3_gas", "m4_gas"):
+            w = cells.get(key)
+            if w:
+                try:
+                    w.configure(state=("readonly" if enabled else "disabled"))
+                except Exception:
+                    pass
+
     # ====================== Actualización archivo CSV: BYP, V1 = V2 ======================
+
     def _write_valv_pos(self, v_pos: str | None = None, bypass_on: int | None = None):
         """
         Escribe valv_pos.csv con estructura fija y orden:
