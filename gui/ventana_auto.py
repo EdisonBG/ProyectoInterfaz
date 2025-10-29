@@ -175,10 +175,6 @@ class VentanaAuto(tk.Frame):
         self._max_stage = 0                 # 0 = todo deshabilitado al inicio
         self._stage_chk_vars = {}           # {c: tk.IntVar} por etapa 1..8
 
-        self._pan_active = False
-        self._pan_start = None
-        self._pan_threshold = 5  # píxeles para diferenciar tap vs drag
-
         # refs de celdas: dict[col][rowkey] -> widget
         self.cells = {c: {} for c in range(1, 9)}
 
@@ -513,14 +509,6 @@ class VentanaAuto(tk.Frame):
             # Al iniciar: todo deshabilitado
             self._set_stage_enabled(c, False)
 
-            # Permitir arrastrar desde cualquier parte del grid (tap+drag)
-            self.grid_frame.bind_all(
-                "<ButtonPress-1>", self._pan_any_mark, add="+")
-            self.grid_frame.bind_all(
-                "<B1-Motion>", self._pan_any_drag, add="+")
-            self.grid_frame.bind_all(
-                "<ButtonRelease-1>", self._pan_any_release, add="+")
-
     # ---------------------- helpers de celdas ----------------------
 
     def _make_entry_int(self, parent, *, default="0", cap_max=None):
@@ -617,41 +605,14 @@ class VentanaAuto(tk.Frame):
         return True
 
     def _open_kbd_if_enabled(self, widget: ttk.Entry, on_submit):
-        # No abrir si el entry está deshabilitado o si estamos haciendo pan
+        """Abre el TecladoNumerico sólo si el entry NO está 'disabled'."""
         try:
-            if str(widget.cget("state")) == "disabled":
-                return
+            if str(widget.cget("state")) != "disabled":
+                TecladoNumerico(self, widget,
+                                on_submit=lambda v: (widget.delete(0, tk.END), widget.insert(0, str(v)), on_submit()))
         except Exception:
+            # Si el widget no tiene 'state' por alguna razón, intenta comportamiento seguro
             pass
-        if self._pan_active:
-            return
-        TecladoNumerico(self, widget,
-                        on_submit=lambda v: (widget.delete(0, tk.END), widget.insert(0, str(v)), on_submit()))
-
-    def _pan_any_mark(self, ev):
-        # Marcar inicio: coords absolutas del puntero
-        self._pan_active = False
-        self._pan_start = (ev.x_root, ev.y_root)
-        # Coordenadas del puntero mapeadas al canvas
-        cx = self.canvas.canvasx(ev.x_root - self.canvas.winfo_rootx())
-        cy = self.canvas.canvasy(ev.y_root - self.canvas.winfo_rooty())
-        self.canvas.scan_mark(int(cx), int(cy))
-
-    def _pan_any_drag(self, ev):
-        if not self._pan_start:
-            return
-        dx = abs(ev.x_root - self._pan_start[0])
-        dy = abs(ev.y_root - self._pan_start[1])
-        if not self._pan_active and (dx > self._pan_threshold or dy > self._pan_threshold):
-            self._pan_active = True
-        if self._pan_active:
-            cx = self.canvas.canvasx(ev.x_root - self.canvas.winfo_rootx())
-            cy = self.canvas.canvasy(ev.y_root - self.canvas.winfo_rooty())
-            self.canvas.scan_dragto(int(cx), int(cy), gain=1)
-
-    def _pan_any_release(self, _ev):
-        self._pan_active = False
-        self._pan_start = None
 
     # ====================== Acciones de botones ======================
 
