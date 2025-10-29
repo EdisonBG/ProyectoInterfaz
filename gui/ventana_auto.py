@@ -189,6 +189,22 @@ class VentanaAuto(tk.Frame):
         except Exception:
             pass
 
+        GREEN = "#9bd7b1"    # verde
+        GREEN_D = "#27ae60"   # verde oscuro (pressed / activo)
+
+        RED = "#FF4B3B"     # rojo
+        RED_D = "#db4231"     # rojo oscuro (pressed / activo)
+
+        style.configure("iniciar.TButton", padding=(16, 8),
+                        font=getattr(C, "FONT_BASE", ("Calibri", 13)))
+        style.map("iniciar.TButton", background=[
+                  ("!disabled", GREEN), ("pressed", GREEN_D)])
+
+        style.configure("detener.TButton", padding=(16, 8),
+                        font=getattr(C, "FONT_BASE", ("Calibri", 13)))
+        style.map("detener.TButton", background=[
+                  ("!disabled", RED), ("pressed", RED_D)])
+
         style.configure("B.TButton", padding=(16, 8),
                         font=getattr(C, "FONT_BASE", ("Calibri", 13)))
         style.map("B.TButton", background=[
@@ -243,7 +259,7 @@ class VentanaAuto(tk.Frame):
             x=POS[1]["btn_validar"][0], y=POS[1]["btn_validar"][1])
 
         self.btn_iniciar = TouchButton(
-            wrap, text="Iniciar", width=6, style="B.TButton", command=self._cmd_iniciar)
+            wrap, text="Iniciar", width=6, style="iniciar.TButton", command=self._cmd_iniciar)
         self.btn_iniciar.place(
             x=POS[1]["btn_iniciar"][0], y=POS[1]["btn_iniciar"][1])
 
@@ -258,7 +274,7 @@ class VentanaAuto(tk.Frame):
             x=POS[1]["btn_reanudar"][0], y=POS[1]["btn_reanudar"][1])
 
         self.btn_detener = TouchButton(
-            wrap, text="Detener", width=7, style="B.TButton", command=self._cmd_detener)
+            wrap, text="Detener", width=7, style="detener.TButton", command=self._cmd_detener)
         self.btn_detener.place(
             x=POS[1]["btn_detener"][0], y=POS[1]["btn_detener"][1])
 
