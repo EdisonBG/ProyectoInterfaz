@@ -2,6 +2,7 @@
 import csv
 import os
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, messagebox, filedialog
 
 from .barra_navegacion import BarraNavegacion
@@ -1027,34 +1028,188 @@ class VentanaAuto(tk.Frame):
         self.var_mon_pres.set("-")
 
     # ======================== Presets CSV ========================
-
     def _cmd_guardar_preset(self):
-        path = filedialog.asksaveasfilename(
-            defaultextension=".csv",
-            filetypes=[("CSV", "*.csv")],
-            title="Guardar preset"
-        )
-        if not path:
-            return
+        # Crear instancia de la clase anidada
+        popup = self._GuardarPresetPopup(self)
+    # No necesitamos hacer más aquí, la clase se encarga de todo
 
-        # cabecera
-        headers = ["col",
-                   "t_etapa", "pos_ini", "t_a", "t_b", "ps10",
-                   "p1_on", "bypass_on",
-                   "m1_gas", "m1_f", "m2_gas", "m2_f", "m3_gas", "m3_f", "m4_gas", "m4_f",
-                   "t1_sp", "t2_sp"]
+    # Definir la clase anidada para el popup de guardar preset
+    class _GuardarPresetPopup(tk.Toplevel):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.parent = parent
+            self.title("Guardar preset")
+            self.geometry("600x340+300+50")
+            self.resizable(False, False)
 
-        try:
-            with open(path, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(headers)
-                for c in range(1, 9):
-                    row = self._row_from_col(c)
-                    w.writerow(row)
-            messagebox.showinfo("Preset", "Preset guardado correctamente.")
-        except Exception as ex:
-            messagebox.showerror(
-                "Preset", f"No se pudo guardar el preset:\n{ex}")
+            # Configurar el cierre de la ventana
+            self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+            # Inicializar la interfaz
+            self._inicializar_ui()
+
+            # Configurar modalidad
+            self.transient(parent)
+            self.grab_set()
+
+            # Enfoque diferente: siempre enfocar el entry y habilitar teclado
+            self.after(100, self._enfocar_entry)
+
+        def _enfocar_entry(self):
+            """Enfocar el entry y habilitar el teclado"""
+            self.entry_nombre.focus_set()
+            self.entry_nombre.icursor(tk.END)
+            self.focus_force()
+
+        def _inicializar_ui(self):
+            # === Copiar estilo/colores como en TecladoNumerico ===
+            st = ttk.Style(self)
+            try:
+                st.theme_use("clam")
+            except Exception:
+                pass  # mantener robustez
+
+            self.bg_theme = st.lookup("TFrame", "background")
+            if not self.bg_theme:
+                self.bg_theme = self.cget("bg")
+            self.configure(bg=self.bg_theme)
+
+            # Fuente coherente con tu teclado numérico
+            self._font = tkfont.Font(family="Calibri", size=16)
+
+            # --- título + entry (con mismo fondo) ---
+            tk.Label(self, text="Nombre del archivo:", font=("Calibri", 14), bg=self.bg_theme)\
+                .pack(pady=(12, 6))
+
+            self.entry_nombre = tk.Entry(self, font=(
+                "Calibri", 18), width=32, justify="center")
+            self.entry_nombre.pack(pady=(0, 10))
+
+            # === Teclado alfanumérico (sin espacio) ===
+            filas_teclas = [
+                ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],  # fila 0
+                ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],  # fila 1
+                ["A", "S", "D", "F", "G", "H", "J", "K",
+                    "L"],       # fila 2 (col 9 libre)
+                ["Z", "X", "C", "V", "B", "N", "M", "_",
+                    "-"],       # fila 3 (col 9 libre)
+            ]
+
+            self.frame_teclado = tk.Frame(
+                self, bg=self.bg_theme, highlightthickness=0, bd=0)
+            self.frame_teclado.pack(pady=12)
+
+            # Teclas más grandes
+            KEY_W, KEY_H = 2, 1
+
+            # Crear teclado
+            self._crear_teclado(filas_teclas, KEY_W, KEY_H)
+
+            # === Botones de guardado ===
+            self._crear_botones_guardado()
+
+            # Atajos coherentes
+            self.bind("<Return>", lambda e: self.guardar())
+            self.bind("<Escape>", lambda e: self._on_close())
+
+            # Enfocar el entry después de que la UI esté completamente cargada
+            self.after(200, self._enfocar_entry)
+
+        def _crear_teclado(self, filas_teclas, key_w, key_h):
+            # Filas 0 y 1 completas (10 columnas)
+            for r in (0, 1):
+                for c, tecla in enumerate(filas_teclas[r]):
+                    btn = tk.Button(
+                        self.frame_teclado,
+                        text=tecla,
+                        font=self._font,
+                        width=key_w, height=key_h,
+                        command=lambda k=tecla: self.escribir(k),
+                        bg=self.bg_theme, activebackground=self.bg_theme,
+                        relief="raised",
+                        takefocus=False
+                    )
+                    btn.grid(row=r, column=c, padx=4, pady=4, sticky="")
+
+            # Filas 2 y 3 con 9 columnas (dejando libre col 9)
+            for r in (2, 3):
+                for c, tecla in enumerate(filas_teclas[r]):
+                    tk.Button(
+                        self.frame_teclado,
+                        text=tecla,
+                        font=self._font,
+                        width=key_w, height=key_h,
+                        command=lambda k=tecla: self.escribir(k),
+                        bg=self.bg_theme, activebackground=self.bg_theme,
+                        relief="raised",
+                        takefocus=False
+                    ).grid(row=r, column=c, padx=4, pady=4, sticky="")
+
+            # Botón "<-" vertical ocupando la columna 9 en filas 2 y 3
+            tk.Button(
+                self.frame_teclado,
+                text="<-",
+                font=self._font,
+                width=key_w, height=key_h * 2,  # más alto
+                command=lambda: self.escribir("<-"),
+                bg=self.bg_theme, activebackground=self.bg_theme,
+                relief="raised",
+                takefocus=False
+            ).grid(row=2, column=9, rowspan=2, padx=4, pady=4, sticky="nsew")
+
+        def _crear_botones_guardado(self):
+            # Barra de acciones (mismo fondo)
+            acciones = tk.Frame(self, bg=self.bg_theme)
+            acciones.pack(pady=8)
+            tk.Button(acciones, text="Guardar", font=("Calibri", 16),
+                      command=self.guardar, bg=self.bg_theme, activebackground=self.bg_theme)\
+                .pack(side="left", padx=8)
+            tk.Button(acciones, text="Cancelar", font=("Calibri", 16),
+                      command=self._on_close, bg=self.bg_theme, activebackground=self.bg_theme)\
+                .pack(side="left", padx=8)
+
+        def escribir(self, tecla):
+            # Insertar la tecla directamente sin verificación de supresión
+            if tecla == "<-":
+                txt = self.entry_nombre.get()
+                if txt:
+                    self.entry_nombre.delete(len(txt)-1, tk.END)
+            else:
+                self.entry_nombre.insert(tk.END, tecla)
+
+        def guardar(self):
+            nombre = (self.entry_nombre.get() or "").strip()
+            if not nombre:
+                messagebox.showwarning(
+                    "Guardar preset", "Por favor ingresa un nombre.", parent=self)
+                return
+
+            # Ruta destino (ajústala a lo que uses en tu proyecto)
+            carpeta_destino = os.path.expanduser("~/home/eia/Documents/preset")
+            os.makedirs(carpeta_destino, exist_ok=True)
+            path = os.path.join(carpeta_destino, f"{nombre}.csv")
+
+            headers = ["StNu", "TiSt", "VaPo", "TiPo_A", "TiPo_B", "WoPr10",
+                       "CoPu", "ByPa", "GS_O2", "FW_O2", "GS_CO2", "FW_CO2",
+                       "GS_N2", "FW_N2", "GS_H2", "FW_H2", "WoTe1", "Wote2"]
+
+            try:
+                with open(path, "w", newline="", encoding="utf-8") as f:
+                    w = csv.writer(f)
+                    w.writerow(headers)
+                    for c in range(1, 9):
+                        row = self.parent._row_from_col(c)
+                        w.writerow(row)
+                # Messagebox indicando la RUTA COMPLETA
+                messagebox.showinfo(
+                    "Preset", f"Preset guardado correctamente en:\n{path}", parent=self)
+                self._on_close()
+            except Exception as ex:
+                messagebox.showerror(
+                    "Preset", f"No se pudo guardar el preset:\n{ex}", parent=self)
+
+        def _on_close(self):
+            self.destroy()
 
     def _row_from_col(self, c: int):
         # helpers para string
@@ -1090,7 +1245,11 @@ class VentanaAuto(tk.Frame):
         ]
 
     def _cmd_cargar_preset(self):
+        carpeta_destino = os.path.expanduser("~/home/eia/Documents/preset")
+        os.makedirs(carpeta_destino, exist_ok=True)
+
         path = filedialog.askopenfilename(
+            initialdir=carpeta_destino,
             filetypes=[("CSV", "*.csv")],
             title="Cargar preset"
         )
