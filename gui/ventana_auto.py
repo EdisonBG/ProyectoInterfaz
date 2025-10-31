@@ -1191,7 +1191,7 @@ class VentanaAuto(tk.Frame):
 
             headers = ["StNu", "TiSt", "VaPo", "TiPo_A", "TiPo_B", "WoPr10",
                        "CoPu", "ByPa", "GS_O2", "FW_O2", "GS_CO2", "FW_CO2",
-                       "GS_N2", "FW_N2", "GS_H2", "FW_H2", "WoTe1", "Wote2"]
+                       "GS_N2", "FW_N2", "GS_H2", "FW_H2", "WoTe1", "WoTe2"]
 
             try:
                 with open(path, "w", newline="", encoding="utf-8") as f:
@@ -1228,20 +1228,20 @@ class VentanaAuto(tk.Frame):
         ps10 = str(int(round(p * 10)))
 
         return [
-            str(c),
-            ent_str(self.cells[c]["t_etapa"], "0"),
-            pos_ini,
-            ent_str(self.cells[c]["t_a"], "0"),
-            ent_str(self.cells[c]["t_b"], "0"),
-            ps10,
-            "1" if self.cells[c]["p1"].get() == "ON" else "2",
-            "1" if self.cells[c]["bypass"].get() == "1" else "2",
-            self.cells[c]["m1_gas"].get(), ent_str(self.cells[c]["m1_f"], "0"),
-            self.cells[c]["m2_gas"].get(), ent_str(self.cells[c]["m2_f"], "0"),
-            self.cells[c]["m3_gas"].get(), ent_str(self.cells[c]["m3_f"], "0"),
-            self.cells[c]["m4_gas"].get(), ent_str(self.cells[c]["m4_f"], "0"),
-            ent_str(self.cells[c]["t1"], "0"),
-            ent_str(self.cells[c]["t2"], "0"),
+            str(c),  # StNu
+            ent_str(self.cells[c]["t_etapa"], "0"),  # TiSt
+            pos_ini,  # VaPo
+            ent_str(self.cells[c]["t_a"], "0"),  # TiPo_A
+            ent_str(self.cells[c]["t_b"], "0"),  # TiPo_B
+            ps10,  # WoPr10
+            "1" if self.cells[c]["p1"].get() == "ON" else "2",  # CoPu
+            "1" if self.cells[c]["bypass"].get() == "1" else "2",  # ByPa
+            self.cells[c]["m1_gas"].get(), ent_str(self.cells[c]["m1_f"], "0"),  # GS_O2, FW_O2
+            self.cells[c]["m2_gas"].get(), ent_str(self.cells[c]["m2_f"], "0"),  # GS_CO2, FW_CO2
+            self.cells[c]["m3_gas"].get(), ent_str(self.cells[c]["m3_f"], "0"),  # GS_N2, FW_N2
+            self.cells[c]["m4_gas"].get(), ent_str(self.cells[c]["m4_f"], "0"),  # GS_H2, FW_H2
+            ent_str(self.cells[c]["t1"], "0"),  # WoTe1
+            ent_str(self.cells[c]["t2"], "0"),  # WoTe2
         ]
 
     def _cmd_cargar_preset(self):
@@ -1258,60 +1258,88 @@ class VentanaAuto(tk.Frame):
 
         try:
             with open(path, newline="", encoding="utf-8") as f:
-                r = csv.DictReader(f)
-                for row in r:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+            
+                # Primero: determinar qué columnas habilitar basado en TiSt > 0
+                stages_to_enable = []
+                for row in rows:
                     try:
-                        col = int(row.get("col", "0"))
-                    except Exception:
+                        col = int(row.get("StNu", "0").strip())
+                        t_etapa = int(row.get("TiSt", "0").strip())
+                        if t_etapa > 0 and 1 <= col <= 8:
+                            stages_to_enable.append(col)
+                    except:
                         continue
-                    if 1 <= col <= 8:
-                        self._apply_csv_row_to_col(col, row)
-            messagebox.showinfo("Preset", "Preset cargado.")
+            
+                # Habilitar las columnas necesarias
+                if stages_to_enable:
+                    max_stage = max(stages_to_enable)
+                    self._on_stage_checkbox(max_stage)
+            
+                # Segundo: cargar los datos
+                for row in rows:
+                    try:
+                        col = int(row.get("StNu", "0").strip())
+                        if 1 <= col <= 8:
+                            self._apply_csv_row_to_col(col, row)
+                    except Exception as e:
+                        print(f"DEBUG: Error procesando fila: {e}")
+                        continue
+                    
+            messagebox.showinfo("Preset", "Preset cargado correctamente.")
         except Exception as ex:
             messagebox.showerror(
                 "Preset", f"No se pudo cargar el preset:\n{ex}")
-
+        
     def _apply_csv_row_to_col(self, c: int, row: dict):
         def set_e(e: ttk.Entry, val: str):
             e.delete(0, tk.END)
             e.insert(0, val or "")
 
         # tiempos y posición
-        set_e(self.cells[c]["t_etapa"], row.get("t_etapa", "0"))
+        set_e(self.cells[c]["t_etapa"], row.get("TiSt", "0"))
         self.cells[c]["pos_ini"].set(
-            "A" if row.get("pos_ini", "1") == "1" else "B")
-        set_e(self.cells[c]["t_a"], row.get("t_a", "0"))
-        set_e(self.cells[c]["t_b"], row.get("t_b", "0"))
+            "A" if row.get("VaPo", "1") == "1" else "B")
+        set_e(self.cells[c]["t_a"], row.get("TiPo_A", "0"))
+        set_e(self.cells[c]["t_b"], row.get("TiPo_B", "0"))
 
-        # presión ps10 -> bar
+        # presión WoPr10 -> bar
         try:
-            ps10 = int(row.get("ps10", "0"))
-            p = clamp(ps10 / 10.0, 0.0, MAX_PRES)
+            WoPr10 = int(row.get("WoPr10", "0"))
+            p = clamp(WoPr10 / 10.0, 0.0, MAX_PRES)
             set_e(self.cells[c]["pres"], f"{p:.1f}")
         except Exception:
             set_e(self.cells[c]["pres"], "0.0")
 
         # peristálticas
         self.cells[c]["p1"].set("ON" if row.get(
-            "p1_on", "2") == "1" else "OFF")
+            "CoPu", "2") == "1" else "OFF")
         self.cells[c]["bypass"].set(
-            "2" if row.get("bypass_on", "2") == "1" else "1")
+            "2" if row.get("ByPa", "2") == "1" else "1")
 
-        # MFCs
-        for mid in (1, 2, 3, 4):
-            gkey = f"m{mid}_gas"
-            fkey = f"m{mid}_f"
-            gas = row.get(gkey, MFC_DEFAULTS[mid][0])
-            if gas not in GASES:
-                gas = MFC_DEFAULTS[mid][0]
-            self.cells[c][f"m{mid}_gas"].set(gas)
-            set_e(self.cells[c][f"m{mid}_f"], row.get(fkey, "0"))
-            # aplicar clamp por gas actual
-            self._apply_flow_clamp(c, mid)
+        # MFCs - usando los nombres exactos del CSV
+        self.cells[c]["m1_gas"].set(row.get("GS_O2", "O2"))
+        set_e(self.cells[c]["m1_f"], row.get("FW_O2", "0"))
+    
+        self.cells[c]["m2_gas"].set(row.get("GS_CO2", "CO2"))
+        set_e(self.cells[c]["m2_f"], row.get("FW_CO2", "0"))
+    
+        self.cells[c]["m3_gas"].set(row.get("GS_N2", "N2"))
+        set_e(self.cells[c]["m3_f"], row.get("FW_N2", "0"))
+    
+        self.cells[c]["m4_gas"].set(row.get("GS_H2", "H2"))
+        set_e(self.cells[c]["m4_f"], row.get("FW_H2", "0"))
 
-        # SPs
-        set_e(self.cells[c]["t1"], row.get("t1_sp", "0"))
-        set_e(self.cells[c]["t2"], row.get("t2_sp", "0"))
+        # Aplicar clamp para cada MFC después de cargar los valores
+        self._apply_flow_clamp(c, 1)
+        self._apply_flow_clamp(c, 2)
+        self._apply_flow_clamp(c, 3)
+        self._apply_flow_clamp(c, 4)
+
+        # SPs - usando los nuevos nombres
+        set_e(self.cells[c]["t1"], row.get("WoTe1", "0"))
+        set_e(self.cells[c]["t2"], row.get("WoTe2", "0"))  # Corregido a "WoTe2"
 
     def _apply_flow_clamp(self, c: int, mfc_id: int):
         gas = self.cells[c][f"m{mfc_id}_gas"].get()
