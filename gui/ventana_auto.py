@@ -303,11 +303,11 @@ class VentanaAuto(tk.Frame):
         # ttk.Label(box, text="Monitor", font=FONT_B).grid(row=0, column=0, padx=(6, 8), pady=1, sticky="w")
 
         # Vars (valores que tú actualizas luego)
-        self.var_mon_etapa = tk.StringVar(value="8")  # "1/8"
-        self.var_mon_pos = tk.StringVar(value="B")  # "A"/"B"
-        self.var_mon_rest_etapa = tk.StringVar(value="99:99")  # "mm:ss"
-        self.var_mon_rest_seg = tk.StringVar(value="99:99")  # "mm:ss"
-        self.var_mon_pres = tk.StringVar(value="24.9")  # "25.0"
+        self.var_mon_etapa = tk.StringVar(value="-")  # "1/8"
+        self.var_mon_pos = tk.StringVar(value="-")  # "A"/"B"
+        self.var_mon_rest_etapa = tk.StringVar(value="-")  # "mm:ss"
+        self.var_mon_rest_seg = tk.StringVar(value="-")  # "mm:ss"
+        self.var_mon_pres = tk.StringVar(value="-")  # "25.0"
 
         # Pares etiqueta/valor (tamaño fijo por width, nada de expansión)
         ttk.Label(box, text="Etapa:", font=FONT).grid(
@@ -641,31 +641,31 @@ class VentanaAuto(tk.Frame):
     def _cmd_validar(self):
         incompletas = []
         for c in range(1, 9):
-            if not self._col_is_complete(c):
+            if self._stage_chk_vars[c].get() and not self._col_is_complete(c):
                 incompletas.append(str(c))
+
         if incompletas and len(incompletas) < 8:
             messagebox.showwarning(
                 "Validación",
-                "Las siguientes etapas no están completas (se ignorarán al iniciar): "
+                "Las siguientes etapas habilitadas no están completas (se ignorarán al iniciar): "
                 + ", ".join(incompletas)
             )
         elif len(incompletas) == 8:
             messagebox.showerror(
-                "Validación", "No hay ninguna etapa completa.")
+                "Validación", "No hay ninguna etapa completa entre las habilitadas.")
         else:
             messagebox.showinfo(
-                "Validación", "Todas las etapas están completas.")
+                "Validación", "Todas las etapas habilitadas están completas.")
 
     def _cmd_iniciar(self):
         if self._run_active:
             messagebox.showinfo("Auto", "El proceso ya está en ejecución.")
             return
 
-        self._active_cols = [c for c in range(
-            1, 9) if self._col_is_complete(c)]
+        self._active_cols = [c for c in range(1, 9) if self._col_is_complete(c)]
         if not self._active_cols:
             messagebox.showerror(
-                "Auto", "No hay etapas completas para ejecutar.")
+                "Auto", "No hay etapas completas y habilitadas para ejecutar.")
             return
 
         self._run_active = True
@@ -718,7 +718,10 @@ class VentanaAuto(tk.Frame):
     # ====================== Lógica de ejecución ======================
 
     def _col_is_complete(self, c: int) -> bool:
-        """Criterio mínimo: Tiempo de etapa > 0, y tiempos A y B > 0."""
+        """Criterio mínimo: Tiempo de etapa > 0, y tiempos A y B > 0.Checkbox habilitado"""
+        if not self._stage_chk_vars[c].get():
+            return False
+        
         t_etapa = self._get_int(self.cells[c]["t_etapa"])
         t_a = self._get_int(self.cells[c]["t_a"])
         t_b = self._get_int(self.cells[c]["t_b"])
@@ -731,7 +734,7 @@ class VentanaAuto(tk.Frame):
             try:
                 messagebox.showwarning(
                     "Modo Auto",
-                    "Las etapas concluyeron.\nEl sistema permanecerá en las condiciones especificadas en la última etapa."
+                    "Las etapas concluyeron.\nEl sistema permanecerá en las condiciones especificadas en la última etapa habilitada."
                 )
             except Exception:
                 pass
