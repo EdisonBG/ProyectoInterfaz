@@ -12,16 +12,17 @@ from matplotlib.ticker import FuncFormatter
 
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
 
 # ====== Definición de variables que graficamos / registramos ======
 SERIES_DEF = {
-    "T_horno1": ("Temperatura horno 1", "°C", 3, 1.0),
-    "T_horno2": ("Temperatura horno 2", "°C", 4, 1.0),
-    "T_omega1": ("Temperatura omega 1", "°C", 1, 1.0),
-    "T_omega2": ("Temperatura omega 2", "°C", 2, 1.0),
-    "T_cond1":  ("Temperatura condensador 1", "°C", 5, 1.0),
-    "T_cond2":  ("Temperatura condensador 2", "°C", 6, 1.0),
+    "T_horno1": ("Temp. horno 1", "°C", 3, 1.0),
+    "T_horno2": ("Temp. horno 2", "°C", 4, 1.0),
+    "T_omega1": ("Temp. omega 1", "°C", 1, 1.0),
+    "T_omega2": ("Temp. omega 2", "°C", 2, 1.0),
+    "T_cond1":  ("Temp. cond. 1", "°C", 5, 1.0),
+    "T_cond2":  ("Temp. cond. 2", "°C", 6, 1.0),
     "P_mezcla": ("Presión mezcla", "bar", 7, 0.1),
     "P_H2":     ("Presión H2", "bar", 8, 0.1),
     "P_salida": ("Presión salida", "bar", 9, 0.1),
@@ -43,6 +44,24 @@ def _app_base_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
+
+class _C_:
+    FONT_BASE = ("Calibri", 13)
+    ENTRY_WIDTH = 12
+    COMBO_WIDTH = 12
+C = _C_()
+
+POS = {
+    1: {
+        "btn_graph":   (0, 0),
+        "btn_pause": (0,  45),     
+        "btn_log":   (0,  90), 
+        "lbl_period":     (5, 140),  "ent_period":  (100,  140),
+        "btn_select_todo": (15, 0),   "btn_desselect": (105, 0),
+        "lbl_status": (43, 380),
+    },
+}
+
 class VentanaGraph(tk.Frame):
     # --- Objetivo de layout fijo (área útil) ---
     _TARGET_W = 1024
@@ -57,6 +76,8 @@ class VentanaGraph(tk.Frame):
         super().__init__(master)
         self.controlador = controlador
         self.arduino = arduino
+
+        self._configurar_estilos()
 
         if hasattr(self.controlador, "__setattr__"):
             setattr(self.controlador, "_ventana_graph", self)
@@ -96,7 +117,22 @@ class VentanaGraph(tk.Frame):
 
         self._build_ui()
         self.bind("<Destroy>", self._on_destroy)
+    
 
+    def _configurar_estilos(self):
+        """Configura estilos igual que en ventana_auto.py"""
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure("B.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 13)))
+        style.map("B.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+
+        style.configure("BSelected.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 13)), background="#bdbdbd")
+        style.map("BSelected.TButton", background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+        
     def _fit_mpl_to_available_space(self):
         """
         Calcula el espacio real del contenedor del canvas y ajusta el tamaño de la
@@ -128,36 +164,41 @@ class VentanaGraph(tk.Frame):
 
         # Contenido principal: panel izquierdo mínimo para controles; resto la gráfica
         wrap = ttk.Frame(self)
-        wrap.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
+        wrap.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
         wrap.grid_rowconfigure(0, weight=1)
-        wrap.grid_columnconfigure(0, weight=0, minsize=172)  # compacto
+        wrap.grid_columnconfigure(0, weight=0, minsize=205)  # compacto
         wrap.grid_columnconfigure(1, weight=1)               # gráfica grande
 
         # --------- Panel izquierdo (vertical) ---------
         left = ttk.Frame(wrap)
-        left.grid(row=0, column=0, sticky="nsw", padx=(0, 10))
+        left.grid(row=0, column=0, sticky="nsw", padx=(0, 0))
         left.grid_rowconfigure(2, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
-        acciones = ttk.LabelFrame(left, text="Acciones")
+        # ===== ACCIONES ===== (sin título, más compacto)
+        acciones = ttk.Frame(left,width=205, height=175, borderwidth=2, relief="groove", padding=(6, 2))  # Cambiado de LabelFrame a Frame normal
         acciones.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        acciones.grid_columnconfigure(0, weight=1)
+        acciones.grid_propagate(False)  # Importante: evitar que el frame se ajuste al contenido
 
-        self.btn_graph = ttk.Button(acciones, text="Iniciar gráfica", command=self._toggle_graph)
-        self.btn_graph.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 3))
+        # Fila 0: Dos botones - Iniciar gráfica y Pausar        
+        self.btn_graph = TouchButton(acciones, text="Iniciar gráfica", width=15, style="B.TButton", command=self._toggle_graph)
+        self.btn_graph.place(x=POS[1]["btn_graph"][0], y=POS[1]["btn_graph"][1])
+        
+        self.btn_pause = TouchButton(acciones, text="Pausar", width=15, style="B.TButton",command=self._toggle_pause, state="disabled")
+        self.btn_pause.place(x=POS[1]["btn_pause"][0], y=POS[1]["btn_pause"][1])
 
-        self.btn_pause = ttk.Button(acciones, text="Pausar", command=self._toggle_pause, state="disabled")
-        self.btn_pause.grid(row=1, column=0, sticky="ew", padx=6, pady=3)
+        # Fila 1: Un botón - Iniciar registro
+        self.btn_log = TouchButton(acciones, text="Iniciar registro CSV", width=15, style="B.TButton",command=self._toggle_log)
+        self.btn_log.place(x=POS[1]["btn_log"][0], y=POS[1]["btn_log"][1])
+        
 
-        self.btn_log = ttk.Button(acciones, text="Iniciar registro (CSV)", command=self._toggle_log)
-        self.btn_log.grid(row=2, column=0, sticky="ew", padx=6, pady=3)
-
-        # Periodo -> Entry con TecladoNum
-        per_row = ttk.Frame(acciones)
-        per_row.grid(row=3, column=0, sticky="ew", padx=6, pady=(6, 6))
-        ttk.Label(per_row, text="Periodo (s):").pack(side="left")
-        self.ent_period = ttk.Entry(per_row, width=6, justify="center")
-        self.ent_period.pack(side="left", padx=(6, 0))
+        # Fila 2: Label y Entry del periodo
+        self.lbl_period = ttk.Label(acciones, text="Periodo (s):", font=C.FONT_BASE)
+        self.lbl_period.place(x=POS[1]["lbl_period"][0], y=POS[1]["lbl_period"][1])
+        
+        self.ent_period = ttk.Entry(acciones, width=8,justify="center", font=C.FONT_BASE)
+        self.ent_period.place(x=POS[1]["ent_period"][0], y=POS[1]["ent_period"][1])
+       
         self.ent_period.insert(0, str(self._sample_period))
 
         def _norm_period():
@@ -196,30 +237,42 @@ class VentanaGraph(tk.Frame):
         self.ent_period.bind("<FocusOut>", lambda _e: _norm_period())
 
         # Selección de series
-        selbox = ttk.LabelFrame(left, text="Variables a graficar")
-        selbox.grid(row=1, column=0, sticky="nsew")
-        selbox.grid_columnconfigure(0, weight=1)
+        # Frame con tamaño fijo y mismo estilo que "acciones"
+        selbox = ttk.Frame(left, width=205, height=415, borderwidth=2, relief="groove", padding=(6, 2))
+        selbox.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
+        selbox.grid_propagate(False)
 
-        tools = ttk.Frame(selbox)
-        tools.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 0))
-        ttk.Button(tools, text="Seleccionar todo", command=self._select_all).pack(side="left")
-        ttk.Button(tools, text="Ninguno", command=self._select_none).pack(side="left", padx=(6, 0))
 
-        checks = ttk.Frame(selbox)
-        checks.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
-        selbox.grid_rowconfigure(1, weight=1)
-        checks.grid_columnconfigure(0, weight=1)
+        self.btn_select_todo = TouchButton(selbox, text="✓", width=4, style="B.TButton",command=self._select_all)
+        self.btn_select_todo.place(x=POS[1]["btn_select_todo"][0], y=POS[1]["btn_select_todo"][1])
 
+        self.btn_desselect = TouchButton(selbox, text="☐", width=4, style="B.TButton",command=self._select_none)
+        self.btn_desselect.place(x=POS[1]["btn_desselect"][0], y=POS[1]["btn_desselect"][1])
+
+        # Configurar estilo para los checkbuttons
+        style = ttk.Style()
+        style.configure("GraphCheck.TCheckbutton", font=C.FONT_BASE)
+
+        # Checkboxes directamente en el frame
         for i, key in enumerate(SERIES_ORDER):
             var = tk.BooleanVar(value=False)
             self._series_vars[key] = var
             label, unit, *_ = SERIES_DEF[key]
-            cb = ttk.Checkbutton(checks, text=f"{label} [{unit}]", variable=var, command=self._refresh_legend_next)
-            cb.grid(row=i, column=0, sticky="w", pady=2)
+            
+            cb = ttk.Checkbutton(
+                selbox, 
+                text=f"{label} [{unit}]", 
+                variable=var, 
+                command=self._refresh_legend_next,
+                style="GraphCheck.TCheckbutton"  # Aplicar el estilo con la fuente
+            )
+            #cb.configure(font=C.FONT_BASE)
+            cb.place(x=0, y=45 + i*25, width=193, height=30)
 
         # Estado (leyenda corta)
-        self.lbl_status = ttk.Label(left, text="Gráfica: OFF   |   Registro: OFF")
-        self.lbl_status.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        self.lbl_status = ttk.Label(selbox, text="Registro:OFF", font=C.FONT_BASE)
+        self.lbl_status.place(x=POS[1]["lbl_status"][0], y=POS[1]["lbl_status"][1])
+        
 
         # --------- Panel derecho (figura) más grande ---------
         fig_frame = ttk.Frame(wrap)
@@ -353,7 +406,7 @@ class VentanaGraph(tk.Frame):
         status_g = "ON" if self._graph_active else "OFF"
         if self._graph_active and self._graph_paused:
             status_g += " (PAUSA)"
-        self.lbl_status.configure(text=f"Gráfica: {status_g}   |   Registro: {'ON' if self._log_active else 'OFF'}")
+        self.lbl_status.configure(text=f"Registro: {'ON' if self._log_active else 'OFF'}")
 
     # ========================= Ciclos (after) =========================
     def _graph_tick(self):
