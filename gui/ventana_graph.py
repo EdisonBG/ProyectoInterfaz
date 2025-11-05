@@ -4,6 +4,7 @@ import sys
 import csv
 from datetime import datetime
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, messagebox
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -374,14 +375,196 @@ class VentanaGraph(tk.Frame):
 
     def _toggle_log(self):
         if not self._log_active:
-            path = self._prompt_new_csv_path()
-            if not path:
-                return
-            self._csv_path = path
-            self._log_active = True
-            self.btn_log.configure(text="Detener registro (CSV)")
-            self._log_tick()
+            # Crear popup similar al de guardar preset
+            popup = tk.Toplevel(self)
+            popup.title("Datos del experimento")
+            popup.geometry("600x400+140+50")
+            popup.resizable(False, False)
+
+            # === Copiar estilo/colores como en TecladoNumerico ===
+            st = ttk.Style(popup)
+            try:
+                st.theme_use("clam")
+            except Exception:
+                pass
+
+            bg_theme = st.lookup("TFrame", "background")
+            if not bg_theme:
+                bg_theme = popup.cget("bg")
+            popup.configure(bg=bg_theme)
+
+            # Fuente coherente
+            _font = tkfont.Font(family="Calibri", size=16)
+
+            # Hacerlo modal/transiente
+            popup.transient(self.winfo_toplevel())
+            popup.wait_visibility()
+            popup.lift()
+            popup.focus_force()
+            popup.grab_set()
+            popup.protocol("WM_DELETE_WINDOW", popup.destroy)
+
+            # Variables para los campos
+            result = {"path": None}
+            current_entry = None  # Para saber qué entry está activo
+
+            # --- Frame para los campos (horizontal) ---
+            campos_frame = tk.Frame(popup, bg=bg_theme)
+            campos_frame.pack(pady=20)
+
+            # Campo 1: Nombre (izquierda)
+            nombre_frame = tk.Frame(campos_frame, bg=bg_theme)
+            nombre_frame.pack(side="left", padx=20)
+
+            tk.Label(nombre_frame, text="Nombre (Nombre_Apellido):", font=("Calibri", 14), bg=bg_theme)\
+                .pack(pady=(0, 6))
+
+            entry_nombre = tk.Entry(nombre_frame, font=("Calibri", 16), width=20, justify="center")
+            entry_nombre.pack(pady=(0, 10))
+
+            # Campo 2: Fecha (derecha)
+            fecha_frame = tk.Frame(campos_frame, bg=bg_theme)
+            fecha_frame.pack(side="left", padx=20)
+
+            tk.Label(fecha_frame, text="Fecha (YYYYMMDD):", font=("Calibri", 14), bg=bg_theme)\
+                .pack(pady=(0, 6))
+
+            entry_fecha = tk.Entry(fecha_frame, font=("Calibri", 16), width=20, justify="center")
+            entry_fecha.pack(pady=(0, 10))
+            entry_fecha.insert(0, datetime.now().strftime("%Y%m%d"))
+
+            # Función para enfocar entry
+            def focus_entry(entry):
+                nonlocal current_entry
+                current_entry = entry
+                entry.focus_set()
+
+            # Bind para cambiar entre entries
+            entry_nombre.bind("<Button-1>", lambda e: focus_entry(entry_nombre))
+            entry_fecha.bind("<Button-1>", lambda e: focus_entry(entry_fecha))
+
+            # === Teclado alfanumérico ===
+            filas_teclas = [
+                ["1","2","3","4","5","6","7","8","9","0"],
+                ["Q","W","E","R","T","Y","U","I","O","P"],
+                ["A","S","D","F","G","H","J","K","L"],
+                ["Z","X","C","V","B","N","M","_","-"],
+            ]
+
+            frame_teclado = tk.Frame(popup, bg=bg_theme, highlightthickness=0, bd=0)
+            frame_teclado.pack(pady=20)
+
+            KEY_W, KEY_H = 2, 1
+
+            def escribir(tecla):
+                if current_entry:
+                    if tecla == "<-":
+                        txt = current_entry.get()
+                        if txt:
+                            current_entry.delete(len(txt)-1, tk.END)
+                    else:
+                        current_entry.insert(tk.END, tecla)
+
+            # Crear teclado
+            for r in (0, 1):
+                for c, tecla in enumerate(filas_teclas[r]):
+                    tk.Button(
+                        frame_teclado,
+                        text=tecla,
+                        font=_font,
+                        width=KEY_W, height=KEY_H,
+                        command=lambda k=tecla: escribir(k),
+                        bg=bg_theme, activebackground=bg_theme,
+                        relief="raised"
+                    ).grid(row=r, column=c, padx=4, pady=4, sticky="")
+
+            for r in (2, 3):
+                for c, tecla in enumerate(filas_teclas[r]):
+                    tk.Button(
+                        frame_teclado,
+                        text=tecla,
+                        font=_font,
+                        width=KEY_W, height=KEY_H,
+                        command=lambda k=tecla: escribir(k),
+                        bg=bg_theme, activebackground=bg_theme,
+                        relief="raised"
+                    ).grid(row=r, column=c, padx=4, pady=4, sticky="")
+
+            # Botón "<-"
+            tk.Button(
+                frame_teclado,
+                text="<-",
+                font=_font,
+                width=KEY_W, height=KEY_H * 2,
+                command=lambda: escribir("<-"),
+                bg=bg_theme, activebackground=bg_theme,
+                relief="raised"
+            ).grid(row=2, column=9, rowspan=2, padx=4, pady=4, sticky="nsew")
+
+            # === Funcionalidad de guardado ===
+            def aceptar():
+                nombre = self._safe_slug(entry_nombre.get())
+                fecha = self._safe_slug(entry_fecha.get())
+                
+                if not nombre:
+                    messagebox.showerror("Registro", "Ingresa un nombre válido.", parent=popup)
+                    return
+                if not (len(fecha) == 8 and fecha.isdigit()):
+                    messagebox.showerror("Registro", "La fecha debe tener formato YYYYMMDD.", parent=popup)
+                    return
+                
+                filename = f"RegistroDatos_{nombre}_{fecha}.csv"
+                path = os.path.join(self._reg_dir, filename)
+                result["path"] = os.path.abspath(path)
+                
+                # Crear el archivo con headers si no existe
+                try:
+                    file_exists = os.path.exists(result["path"])
+                    if not file_exists:
+                        with open(result["path"], "w", newline="", encoding="utf-8") as f:
+                            w = csv.writer(f, delimiter=",")
+                            header = ["timestamp"] + SERIES_ORDER
+                            w.writerow(header)
+                except Exception as ex:
+                    messagebox.showerror("Registro", f"No se pudo crear el archivo:\n{ex}", parent=popup)
+                    return
+                
+                popup.destroy()
+
+            def cancelar():
+                result["path"] = None
+                popup.destroy()
+
+            # Barra de acciones
+            acciones = tk.Frame(popup, bg=bg_theme)
+            acciones.pack(pady=20)
+            
+            tk.Button(acciones, text="Aceptar", font=("Calibri", 16),
+                    command=aceptar, bg=bg_theme, activebackground=bg_theme)\
+                .pack(side="left", padx=8)
+            tk.Button(acciones, text="Cancelar", font=("Calibri", 16),
+                    command=cancelar, bg=bg_theme, activebackground=bg_theme)\
+                .pack(side="left", padx=8)
+
+            # Atajos
+            popup.bind("<Return>", lambda e: aceptar())
+            popup.bind("<Escape>", lambda e: cancelar())
+
+            # Enfocar el primer entry por defecto
+            focus_entry(entry_nombre)
+
+            # Esperar a que se cierre el popup
+            self.wait_window(popup)
+
+            # Si se obtuvo una ruta válida, iniciar el registro
+            if result["path"]:
+                self._csv_path = result["path"]
+                self._log_active = True
+                self.btn_log.configure(text="Detener registro (CSV)")
+                self._log_tick()
+                self._update_status()
         else:
+            # Detener registro
             self._log_active = False
             self.btn_log.configure(text="Iniciar registro (CSV)")
             if self._log_job:
@@ -390,7 +573,7 @@ class VentanaGraph(tk.Frame):
                 except Exception:
                     pass
                 self._log_job = None
-        self._update_status()
+            self._update_status()
 
     def _select_all(self):
         for v in self._series_vars.values():
