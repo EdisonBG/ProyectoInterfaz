@@ -2,6 +2,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, PhotoImage
 from .barra_navegacion import BarraNavegacion
+from .teclado_numerico import TecladoNumerico
 
 # ========================= POSICIONES DE LOS LABELS =========================
 # Editar estas coordenadas (x, y). Están en píxeles relativos al área de la imagen.
@@ -61,6 +62,8 @@ class VentanaPrincipal(tk.Frame):
         self.img_fondo = PhotoImage(file=fondo_file)
 
         self._build_ui()
+
+        self.after(100, lambda: TecladoNumerico(self))
 
     # ---------------- UI ----------------
     def _build_ui(self):
