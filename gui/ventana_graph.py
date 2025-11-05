@@ -90,6 +90,8 @@ class VentanaGraph(tk.Frame):
         self._graph_job = None
         self._log_job = None
 
+        self._usb_monitor_job = None  # para monitorear USB
+
         # Tiempo relativo y periodo
         self._elapsed_sec = 0
         self._sample_period = 5
@@ -117,8 +119,73 @@ class VentanaGraph(tk.Frame):
         self._need_legend_refresh = True
 
         self._build_ui()
+
+        # Iniciar monitoreo de USB
+        self._monitorear_usb()
+
         self.bind("<Destroy>", self._on_destroy)
     
+    def _monitorear_usb(self):
+        """Monitorea continuamente el estado de la USB y actualiza el botón"""
+        usb_conectada = self._detectar_usb() is not None
+        
+        # Actualizar estado del botón
+        if usb_conectada:
+            self.btn_log.configure(state="normal")
+        else:
+            self.btn_log.configure(state="disabled")
+            # Si la USB se desconecta durante el registro, detenerlo
+            if self._log_active:
+                self._detener_registro_por_usb()
+        
+        # Programar siguiente verificación (cada 2 segundos)
+        self._usb_monitor_job = self.after(2000, self._monitorear_usb)
+
+    def _detener_registro_por_usb(self):
+        """Detiene el registro automáticamente cuando se desconecta la USB"""
+        self._log_active = False
+        self.btn_log.configure(text="Iniciar registro CSV")
+        if self._log_job:
+            try:
+                self.after_cancel(self._log_job)
+            except Exception:
+                pass
+            self._log_job = None
+        self._update_status()
+        
+        # Limpiar ruta
+        self._csv_path = None
+    
+    def _detectar_usb(self):
+        """
+        Detecta memorias USB conectadas en Raspberry Pi.
+        Retorna la ruta de la primera USB encontrada o None si no hay.
+        """
+        # Posibles puntos de montaje de USB en Raspberry Pi
+        posibles_montajes = [
+            "/media/pi",  # Raspberry Pi OS con usuario 'pi'
+            "/media",     # Otras distribuciones
+            "/media/eia",
+            "/mnt",       # Punto de montaje tradicional
+            "/run/media/pi"  # Algunas distribuciones modernas
+        ]
+    
+        for montaje in posibles_montajes:
+            if os.path.exists(montaje):
+                try:
+                    # Listar dispositivos en el punto de montaje
+                    dispositivos = os.listdir(montaje)
+                    for dispositivo in dispositivos:
+                        ruta_completa = os.path.join(montaje, dispositivo)
+                        # Verificar que es un directorio y no está vacío (puede ser USB)
+                        if os.path.isdir(ruta_completa) and dispositivo:
+                            # Verificar permisos de escritura
+                            if os.access(ruta_completa, os.W_OK):
+                                return ruta_completa
+                except (PermissionError, OSError):
+                    continue
+    
+        return None
 
     def _configurar_estilos(self):
         """Configura estilos igual que en ventana_auto.py"""
@@ -189,7 +256,7 @@ class VentanaGraph(tk.Frame):
         self.btn_pause.place(x=POS[1]["btn_pause"][0], y=POS[1]["btn_pause"][1])
 
         # Fila 1: Un botón - Iniciar registro
-        self.btn_log = TouchButton(acciones, text="Iniciar registro CSV", width=15, style="B.TButton",command=self._toggle_log)
+        self.btn_log = TouchButton(acciones, text="Iniciar registro CSV", width=15, style="B.TButton",command=self._toggle_log, state="disabled")
         self.btn_log.place(x=POS[1]["btn_log"][0], y=POS[1]["btn_log"][1])
         
 
@@ -513,18 +580,25 @@ class VentanaGraph(tk.Frame):
                     messagebox.showerror("Registro", "La fecha debe tener formato YYYYMMDD.", parent=popup)
                     return
                 
+                # Obtener ruta de USB (ya verificada por el monitoreo)
+                usb_path = self._detectar_usb()
+                if not usb_path:
+                    messagebox.showerror("USB desconectada", 
+                                    "La USB ha sido desconectada.\n\n"
+                                    "Vuelva a conectar la USB e intente nuevamente.", 
+                                    parent=popup)
+                    return
+                
                 filename = f"RegistroDatos_{nombre}_{fecha}.csv"
-                path = os.path.join(self._reg_dir, filename)
+                path = os.path.join(usb_path, filename)
                 result["path"] = os.path.abspath(path)
                 
-                # Crear el archivo con headers si no existe
+                # Crear el archivo con headers
                 try:
-                    file_exists = os.path.exists(result["path"])
-                    if not file_exists:
-                        with open(result["path"], "w", newline="", encoding="utf-8") as f:
-                            w = csv.writer(f, delimiter=",")
-                            header = ["timestamp"] + SERIES_ORDER
-                            w.writerow(header)
+                    with open(result["path"], "w", newline="", encoding="utf-8") as f:
+                        w = csv.writer(f, delimiter=",")
+                        header = ["timestamp"] + SERIES_ORDER
+                        w.writerow(header)
                 except Exception as ex:
                     messagebox.showerror("Registro", f"No se pudo crear el archivo:\n{ex}", parent=popup)
                     return
@@ -560,13 +634,13 @@ class VentanaGraph(tk.Frame):
             if result["path"]:
                 self._csv_path = result["path"]
                 self._log_active = True
-                self.btn_log.configure(text="Detener registro (CSV)")
+                self.btn_log.configure(text="Detener registro")
                 self._log_tick()
                 self._update_status()
         else:
             # Detener registro
             self._log_active = False
-            self.btn_log.configure(text="Iniciar registro (CSV)")
+            self.btn_log.configure(text="Iniciar registro CSV")
             if self._log_job:
                 try:
                     self.after_cancel(self._log_job)
@@ -618,9 +692,13 @@ class VentanaGraph(tk.Frame):
         if not self._log_active:
             return
         if self._last_snapshot is not None and self._csv_path:
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            row = [ts] + [self._last_snapshot.get(k, 0.0) for k in SERIES_ORDER]
-            self._append_csv(row)
+            try:
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                row = [ts] + [self._last_snapshot.get(k, 0.0) for k in SERIES_ORDER]
+                self._append_csv(row)
+            except (IOError, OSError) as e:
+                pass
+
         self._log_job = self.after(1000, self._log_tick)
 
     # ========================= Plot helpers =========================
@@ -783,7 +861,7 @@ class VentanaGraph(tk.Frame):
 
     # ========================= Limpieza =========================
     def _on_destroy(self, _e):
-        for job in (self._graph_job, self._log_job):
+        for job in (self._graph_job, self._log_job, self._usb_monitor_job):
             if job:
                 try:
                     self.after_cancel(job)
@@ -791,3 +869,4 @@ class VentanaGraph(tk.Frame):
                     pass
         self._graph_job = None
         self._log_job = None
+        self._usb_monitor_job = None
