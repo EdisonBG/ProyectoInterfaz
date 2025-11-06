@@ -2,6 +2,8 @@ import os
 import tkinter as tk
 from tkinter import ttk, PhotoImage
 from .barra_navegacion import BarraNavegacion
+from .teclado_numerico import TecladoNumerico
+from .mfc_manager import mfc_gas_manager  # Importar el manager
 
 # ========================= CONFIGURACIÓN DE FUENTE =========================
 FUENTE_LABELS = ("Calibri", 15)  # Fuente modificable desde aquí
@@ -95,6 +97,11 @@ class VentanaPrincipal(tk.Frame):
 
         self._build_ui()
 
+        self.after(100, lambda: TecladoNumerico(self))
+
+        # Registrar callbacks para cambios de gas
+        self._register_gas_callbacks()
+
     # ---------------- UI ----------------
     def _build_ui(self):
         # layout: barra izq fija, contenido der expandible
@@ -132,6 +139,26 @@ class VentanaPrincipal(tk.Frame):
         self._labels = {}
         self._create_all_labels()
 
+    def _register_gas_callbacks(self):
+        """Registra las funciones callback para cambios de gas"""
+        # Mapeo de MFC ID a clave de variable
+        mfc_mapping = {
+            1: "mfc_o2_nombre",
+            2: "mfc_co2_nombre", 
+            3: "mfc_n2_nombre",
+            4: "mfc_h2_nombre"
+        }
+        
+        def actualizar_gas_label(mfc_id, nuevo_gas):
+            """Callback que actualiza el label cuando cambia el gas"""
+            variable_key = mfc_mapping.get(mfc_id)
+            if variable_key and hasattr(self, '_vars') and variable_key in self._vars:
+                self._vars[variable_key].set(nuevo_gas)
+        
+        # Registrar callbacks para los 4 MFCs
+        for mfc_id in range(1, 5):
+            mfc_gas_manager.register_callback_ejecucion(mfc_id, actualizar_gas_label)
+
     def _create_all_labels(self):
         # Definición para variables normales
         campos_normales = {
@@ -165,16 +192,20 @@ class VentanaPrincipal(tk.Frame):
 
         # Crear labels separados para MFC
         mfc_gases = {
-            "mfc_o2": "O₂",
-            "mfc_co2": "CO₂", 
-            "mfc_n2": "N₂",
-            "mfc_h2": "H₂"
+            "mfc_o2": mfc_gas_manager.get_gas_en_ejecucion(1),  # Usar gases en ejecución
+            "mfc_co2": mfc_gas_manager.get_gas_en_ejecucion(2),
+            "mfc_n2": mfc_gas_manager.get_gas_en_ejecucion(3),
+            "mfc_h2": mfc_gas_manager.get_gas_en_ejecucion(4)
         }
 
         for key, nombre_gas in mfc_gases.items():
             # Label para el nombre del gas
             v_nombre = tk.StringVar(value=nombre_gas)
+            
+            # Determinar MFC ID basado en la clave
+            mfc_id = {"mfc_o2": 1, "mfc_co2": 2, "mfc_n2": 3, "mfc_h2": 4}[key]
             self._vars[f"{key}_nombre"] = v_nombre
+            
             x_nombre, y_nombre = LABEL_POS.get(f"{key}_nombre", (10, 10))
             color_nombre = COLOR_LABELS.get(f"{key}_nombre", "#F0F8FF")
             
@@ -186,22 +217,19 @@ class VentanaPrincipal(tk.Frame):
             lbl_nombre.place(x=x_nombre, y=y_nombre)
             self._labels[f"{key}_nombre"] = lbl_nombre
 
-            # Label para el valor (con formato vertical)
-            # Inicializar con texto que tenga salto de línea
+            #Label para el VALOR del MFC (flujo)
             texto_inicial = "--\nmL/min"
+            x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (160, 10))
+            color_valor = COLOR_LABELS.get(f"{key}_valor", "#90c6e5")
+            
             lbl_valor = tk.Label(
                 self.area_grafica, text=texto_inicial,
-                bg=COLOR_LABELS.get(f"{key}_valor", "white"), 
-                fg="#111", font=FUENTE_VALORES,
+                bg=color_valor, fg="#111", font=FUENTE_VALORES,
                 relief="solid", bd=1, padx=4, pady=2,
-                justify=tk.CENTER
+                justify=tk.CENTER  # Para centrar el texto de las 2 líneas
             )
-            x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (50, 10))
             lbl_valor.place(x=x_valor, y=y_valor)
             self._labels[f"{key}_valor"] = lbl_valor
-
-            # Guardar referencia al label para actualizaciones posteriores
-            # No usaremos StringVar para estos labels, actualizaremos directamente el texto
 
     def aplicar_datos_cmd5(self, partes: list[str]):
         """

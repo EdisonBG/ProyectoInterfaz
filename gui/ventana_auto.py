@@ -8,6 +8,7 @@ from tkinter import ttk, messagebox, filedialog
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
 from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
+from .mfc_manager import mfc_gas_manager  # Importar al inicio
 
 # Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
 
@@ -477,13 +478,35 @@ class VentanaAuto(tk.Frame):
 
             # MFC1..4: gas + flujo con límites
             def make_gas_flow(row_gas, row_flow, mfc_id):
-                gas_default = MFC_DEFAULTS[mfc_id][0]
-                cmb = ttk.Combobox(
-                    self.grid_frame, values=GASES, state="readonly", width=8)
+                # Obtener gas actual del manager en lugar de valor por defecto
+                gas_actual = mfc_gas_manager.get_gas(mfc_id)
+    
+                cmb = ttk.Combobox(self.grid_frame, values=GASES, state="readonly", width=8)
                 cmb.configure(font=FONT)
-                cmb.set(gas_default)
+                cmb.set(gas_actual)  # Usar el gas actual del manager
                 cmb.grid(row=row_gas, column=c, sticky="ew", **cell_pad)
                 cmb.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
+
+                columna_actual = c  # Capturar el valor actual
+
+                # Registrar callback para cuando cambie el combobox
+                def on_gas_change(event):
+                    nuevo_gas = cmb.get()
+                    # Y si esta etapa está habilitada (el usuario está configurando activamente)
+                    if not self._run_active and self._etapa_esta_habilitada(columna_actual):
+                        mfc_gas_manager.set_gas(mfc_id, nuevo_gas)
+                
+                cmb.bind('<<ComboboxSelected>>', on_gas_change)
+
+                # Registrar callback para actualizar este combobox cuando otros lo cambien
+                def actualizar_combobox(mfc_id_param, nuevo_gas):
+                    if mfc_id_param == mfc_id and cmb.get() != nuevo_gas and not self._etapa_esta_habilitada(columna_actual):
+                        cmb.set(nuevo_gas)
+                        # Solo actualizar el manager si NO estamos en ejecución automática
+                        if not self._run_active:
+                            mfc_gas_manager.set_gas(mfc_id, nuevo_gas)
+
+                mfc_gas_manager.register_callback(mfc_id, actualizar_combobox)
 
                 ent = self._make_entry_int(self.grid_frame, default="0")
                 ent.configure(font=FONT)
@@ -529,6 +552,25 @@ class VentanaAuto(tk.Frame):
 
             # Al iniciar: todo deshabilitado
             self._set_stage_enabled(c, False)
+
+    def _etapa_esta_habilitada(self, columna: int) -> bool:
+        """
+        Verifica si una etapa específica está habilitada (checkbox marcado y controles activos)
+        """
+        # Verificar si el checkbox está marcado
+        if not self._stage_chk_vars.get(columna, tk.IntVar(value=0)).get():
+            return False
+        
+        # Verificar adicionalmente si los controles están habilitados
+        try:
+            # Tomar un control como referencia para verificar el estado
+            ejemplo_control = self.cells[columna].get("t_etapa")
+            if ejemplo_control and str(ejemplo_control.cget("state")) == "disabled":
+                return False
+        except Exception:
+            pass
+        
+        return True
 
     # ---------------------- helpers de celdas ----------------------
 
@@ -672,7 +714,11 @@ class VentanaAuto(tk.Frame):
         self._paused = False
         self.btn_pausar.configure(state="normal")
         self.btn_reanudar.configure(state="disabled")
-
+        
+        # DESHABILITAR controles en VentanaMfc si existe
+        if hasattr(self.controlador, "_ventana_mfc") and self.controlador._ventana_mfc:
+            self.controlador._ventana_mfc.set_controles_habilitados(False)
+            
         self._col_ptr = -1
         self._iniciar_siguiente_etapa()
 
@@ -694,7 +740,7 @@ class VentanaAuto(tk.Frame):
             return
         self._paused = False
         self.btn_pausar.configure(state="normal")
-        self.btn_reanudar.configure(state="disabled")
+        self.btn_reanudar.configure(state="disabled")       
         self._tick()
 
     def _cmd_detener(self):
@@ -712,6 +758,11 @@ class VentanaAuto(tk.Frame):
         self.btn_pausar.configure(state="disabled")
         self.btn_reanudar.configure(state="disabled")
         self._reset_monitor()
+
+        # HABILITAR controles en VentanaMfc al detener
+        if hasattr(self.controlador, "_ventana_mfc") and self.controlador._ventana_mfc:
+            self.controlador._ventana_mfc.set_controles_habilitados(True)
+
         if msg:
             print("[AUTO]", msg)
 
@@ -926,11 +977,32 @@ class VentanaAuto(tk.Frame):
         # se envía el mensaje al arduino
         estado_mensaje = self._tx(";".join(partes) + ";!")
 
-        # 2) Persistencia (modo auto): V1 = V2 = pos_ini; BYP de la etapa
+        #Actualizar los gases en el mfc_manager con los de esta etapa
+        c = d["col"]  # La columna/etapa actual
+        self._actualizar_gases_en_ejecucion(c)
+
+        # Persistencia (modo auto): V1 = V2 = pos_ini; BYP de la etapa
         pos_ini_char = "A" if int(d.get("pos_ini", 1)) == 1 else "B"
         if estado_mensaje:
             self._write_valv_pos(v_pos=pos_ini_char,
                                  bypass_on=int(d.get("bypass_on", 1)))
+            
+    def _actualizar_gases_en_ejecucion(self, c: int):
+        """
+        Actualiza SOLO los gases en ejecución en el mfc_manager con los de la etapa actual.
+        Esto NO afecta los combobox de configuración en ventana_auto.
+        """
+        # Obtener los gases de los combobox de esta etapa específica
+        gas_m1 = self.cells[c]["m1_gas"].get()
+        gas_m2 = self.cells[c]["m2_gas"].get()
+        gas_m3 = self.cells[c]["m3_gas"].get()
+        gas_m4 = self.cells[c]["m4_gas"].get()
+        
+        # Actualizar SOLO los gases en ejecución (no los de configuración)
+        mfc_gas_manager.set_gas_en_ejecucion(1, gas_m1)
+        mfc_gas_manager.set_gas_en_ejecucion(2, gas_m2)
+        mfc_gas_manager.set_gas_en_ejecucion(3, gas_m3)
+        mfc_gas_manager.set_gas_en_ejecucion(4, gas_m4)
 
     def _send_valve_position(self, pos: str):
         """Cambio de posición automático durante la etapa."""

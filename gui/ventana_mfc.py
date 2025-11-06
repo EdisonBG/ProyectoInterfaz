@@ -8,7 +8,8 @@ from tkinter import ttk, messagebox
 
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
-from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
+from ui.widgets import TouchButton, LabeledEntryNum
+from .mfc_manager import mfc_gas_manager
 
 # Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
 try:
@@ -151,6 +152,90 @@ class VentanaMfc(tk.Frame):
         # Exponer referencia en el controlador
         if hasattr(self.controlador, "__setattr__"):
             setattr(self.controlador, "_ventana_mfc", self)
+        
+        # Registrar callbacks para actualizar combobox cuando otros los cambien
+        self._register_gas_callbacks()
+
+        self.after(100, lambda: self.set_controles_habilitados(True))
+    
+
+    def _register_gas_callbacks(self):
+        """Registra callbacks para actualizar combobox cuando otros los cambien"""
+        def actualizar_combobox_y_leyenda(mfc_id, nuevo_gas):
+            """Callback que actualiza combobox y leyenda cuando cambia el gas"""
+            if mfc_id in self.refs and "combo" in self.refs[mfc_id]:
+                combo = self.refs[mfc_id]["combo"]
+                # Actualizar solo si es diferente para evitar bucles
+                if combo.get() != nuevo_gas:
+                    combo.set(nuevo_gas)
+                    # Actualizar también la leyenda
+                    self._on_cambio_gas(mfc_id)
+        
+        # Registrar callbacks para los 4 MFCs
+        for mfc_id in range(1, 5):
+            mfc_gas_manager.register_callback_ejecucion(mfc_id, actualizar_combobox_y_leyenda)
+
+
+    def set_controles_habilitados(self, habilitado: bool):
+        """Habilita o deshabilita los controles de flujo y envío"""
+        estado = "normal" if habilitado else "disabled"
+        estado_combo = "readonly" if habilitado else "disabled"  # Estado especial para combobox
+
+        for mfc_id in range(1, 5):
+            # Deshabilitar/habilitar el entry de flujo
+            entry = self.refs[mfc_id].get("entry")
+            if entry:
+                try:
+                    entry.configure(state=estado)
+                except Exception:
+                    pass
+            
+            # Deshabilitar/habilitar el botón de enviar flujo
+            btn_send = self.refs[mfc_id].get("btn_send")
+            if btn_send:
+                try:
+                    btn_send.configure(state=estado)
+                except Exception:
+                    pass
+
+             # Deshabilitar/habilitar el combobox de gas
+            combo = self.refs[mfc_id].get("combo")
+            if combo:
+                try:
+                    combo.configure(state=estado_combo)
+                except Exception:
+                    pass
+
+    def set_todo_habilitado(self, habilitado: bool):
+        """Habilita o deshabilita TODOS los controles incluyendo abrir/cerrar"""
+        estado = "normal" if habilitado else "disabled"
+        estado_combo = "readonly" if habilitado else "disabled"
+        
+        for mfc_id in range(1, 5):
+            # Deshabilitar/habilitar el entry de flujo
+            entry = self.refs[mfc_id].get("entry")
+            if entry:
+                try:
+                    entry.configure(state=estado)
+                except Exception:
+                    pass
+            
+            # Deshabilitar/habilitar el combobox de gas
+            combo = self.refs[mfc_id].get("combo")
+            if combo:
+                try:
+                    combo.configure(state=estado_combo)
+                except Exception:
+                    pass
+            
+            # Deshabilitar/habilitar todos los botones
+            for btn_key in ["btn_send", "btn_open", "btn_close"]:
+                btn = self.refs[mfc_id].get(btn_key)
+                if btn:
+                    try:
+                        btn.configure(state=estado)
+                    except Exception:
+                        pass
 
     # ------------------------ Estilos ------------------------
     def _configurar_estilos(self):
@@ -204,6 +289,15 @@ class VentanaMfc(tk.Frame):
                 # fallback si no se guardó
                 base = getattr(btn, "_base_style", "SelBtn.TButton")
                 btn.configure(style=base)
+        
+        # VERIFICAR ESTADO DE EJECUCIÓN AL MOSTRARSE
+        # Si VentanaAuto está en ejecución, deshabilitar controles
+        if hasattr(self.controlador, "_ventana_auto"):
+            ventana_auto = self.controlador._ventana_auto
+            if hasattr(ventana_auto, "_run_active") and ventana_auto._run_active:
+                self.set_controles_habilitados(False)
+            else:
+                self.set_controles_habilitados(True)
 
     # ------------------------ UI ------------------------
     def _crear_ui(self) -> None:
@@ -274,12 +368,27 @@ class VentanaMfc(tk.Frame):
             height=130,
             font=getattr(C, "FONT_BASE", ("Calibri", 14)),
         )
-        combo.set(self.DEFAULT_GAS[mfc_id])
+        combo.set(mfc_gas_manager.get_gas_en_ejecucion(mfc_id))  # Usar gases en ejecución
         combo.place(x=POS[mfc_id]["combo"][0], y=POS[mfc_id]["combo"][1])
-        combo.bind("<<ComboboxSelected>>", lambda _e,
-                   m=mfc_id: self._on_cambio_gas(m))
         combo.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
         self.refs[mfc_id]["combo"] = combo
+
+        # Función para manejar el cambio de gas
+        def on_gas_change(event, mfc_id=mfc_id):
+            nuevo_gas = combo.get()
+            
+            # Notificar al manager del cambio (esto propagará a todas las ventanas)
+            mfc_gas_manager.set_gas(mfc_id, nuevo_gas)
+            mfc_gas_manager.set_gas_en_ejecucion(mfc_id, nuevo_gas)  # Para VentanaPrincipal
+            
+            # Llamar a la función existente para actualizar leyenda
+            self._on_cambio_gas(mfc_id)
+            
+            # Manejar sincronización si es necesario (BYPASS=2)
+            self._sync_gases_if_needed(mfc_id)
+
+        combo.bind("<<ComboboxSelected>>", on_gas_change)
+        
 
         # Flujo (LabeledEntryNum completo por posición)
         campo_flujo = LabeledEntryNum(frame, "Flujo (mL/min):",
@@ -545,9 +654,9 @@ class VentanaMfc(tk.Frame):
         # Sincronizar el combobox del otro MFC
         try:
             self._syncing_gas = True
-            self.refs[other]["combo"].set(gas)
-            # Actualizar leyenda y capar entry del otro MFC según su nuevo gas
-            self._on_cambio_gas(other)
+            #self.refs[other]["combo"].set(gas)
+            mfc_gas_manager.set_gas(other, gas)
+            mfc_gas_manager.set_gas_en_ejecucion(other, gas)  # Para VentanaPrincipal
         finally:
             self._syncing_gas = False
 
