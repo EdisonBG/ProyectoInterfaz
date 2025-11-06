@@ -1,10 +1,67 @@
 import os
 import csv
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk , messagebox
 from .barra_navegacion import BarraNavegacion
 from .teclado_numerico import TecladoNumerico
+from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
+# Constantes táctiles (anchos/fuentes). Si no existen, usa valores por defecto.
+try:
+    from ui import constants as C
+except Exception:
+    class _C_:
+        FONT_BASE = ("Calibri", 14)
+        ENTRY_WIDTH = 12
+        COMBO_WIDTH = 12
+    C = _C_()
+
+# --- Título movible por píxeles y con fuente configurable (solo en modo absoluto) ---
+# Posición del "título" dibujado manualmente dentro de cada sección (x, y).
+TITLE_POS = {
+    1: (8, 2),
+    2: (8, 2),
+    3: (8, 2),
+    4: (8, 2),
+}
+# Fuente (familia, tamaño, estilo) por sección para el título.
+TITLE_FONT = {
+    "v1": ("Calibri", 14, "bold"),
+    "v2": ("Calibri", 14, "bold"),
+    "con": ("Calibri", 14, "bold"),
+    "bp": ("Calibri", 14, "bold"),
+    "sol": ("Calibri", 14, "bold"),
+    "per": ("Calibri", 14, "bold"),
+}
+
+# Coordenadas por FRAME (horizontal, vertical) para cada ELEMENTO dentro del mismo.
+POS = {
+    "v1": {
+        "btn_v1_a":   (60, 80),
+        "btn_v1_b": (230,  80), 
+    },
+    "v2": {
+        "btn_v2_a":   (60, 80),
+        "btn_v2_b": (230,  80),    
+    },
+    "con": {
+        "btn_con_eq2":   (120, 80),
+        "btn_info_con": (340, 6),
+    },
+    "bp": {
+        "btn_bypass":   (105, 80),
+        "btn_info_byp": (340, 6),
+    },
+    "sol": {
+        "campo_presion_seguriad": (40,  50), 
+        "presion_manual_lbl": (40,  125), "btn_sol_toggle":   (170, 115),    
+    },
+    "per": {
+        "per1_lbl":   (50, 50),    "btn_per1":    (200,  50),
+        "per2_lbl": (50,  115),     "btn_per2":    (220,  110),
+        
+    },
+}
 
 class VentanaValv(tk.Frame):
     """
@@ -80,113 +137,160 @@ class VentanaValv(tk.Frame):
         except Exception:
             pass
 
-        style.configure("AB.TButton", padding=6)
-        style.map("AB.TButton",
-                  background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
+        style.configure("AB.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        style.map("AB.TButton", background=[("!disabled", "#e6e6e6"), ("pressed", "#d0d0d0")])
 
-        style.configure("ABSelected.TButton",
-                        padding=6, background="#007acc", foreground="white")
-        style.map("ABSelected.TButton",
-                  background=[("!disabled", "#007acc"), ("pressed", "#0062a3")],
-                  foreground=[("!disabled", "white")])
-
+        style.configure("ABSelected.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)), background="#bdbdbd")
+        style.map("ABSelected.TButton",background=[("!disabled", "#bdbdbd"), ("pressed", "#9e9e9e")])
+        
+        RUN_COLOR = "#27ae60"
+        STOP_COLOR = "#db4231"
+        #boton de abrir/cerrar
+        style.configure("AbrirBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        style.map("AbrirBtn.TButton", background=[("!disabled", RUN_COLOR), ("active", RUN_COLOR), ("pressed", RUN_COLOR)])
+        style.configure("CerrarBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        style.map("CerrarBtn.TButton", background=[("!disabled", STOP_COLOR), ("active", STOP_COLOR), ("pressed", STOP_COLOR)])
     # ------------- UI -------------
     def _build_ui(self):
         # Layout raíz: barra izq + contenido der
         self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=0)
+        self.grid_columnconfigure(0, weight=0, minsize=140)
         self.grid_columnconfigure(1, weight=1)
 
         # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
-        barra.configure(width=95)
         barra.grid(row=0, column=0, sticky="nsw")
-        barra.grid_propagate(False)
-
 
         # Contenedor derecho
-        wrap = ttk.Frame(self)
-        wrap.grid(row=0, column=1, sticky="nsew")  # sin padding para aprovechar ancho
-        # Rejilla 2×N para "tarjetas"
+        cont = ttk.Frame(self)
+        cont.grid(row=0, column=1, sticky="nsew")  # sin padding para aprovechar ancho
+
+        # Rejilla 2×3 para "tarjetas"
         for c in (0, 1):
-            wrap.grid_columnconfigure(c, weight=1, uniform="cols")
-        for r in range(4):
-            wrap.grid_rowconfigure(r, weight=1, uniform="rows")
+            cont.grid_columnconfigure(c, weight=1, uniform="cols")
+        for r in range(3):
+            cont.grid_rowconfigure(r, weight=1, uniform="rows")
 
-        card_pad = dict(padx=6, pady=6)
-        in_padx, in_pady = 6, 8
+        # Definición de secciones (2 columnas × 3 filas)
+        secciones = [
+            ("v1", "Válvula de 4 vías 1 (Entrada)"),
+            ("v2", "Válvula de 4 vías 2 (Salida)"),
+            ("con", "Conexión equipo 2"),
+            ("bp",  "Bypass"),
+            ("sol", "Control Backpressure"),
+            ("per", "Bombas peristálticas"),
+        ]
 
-        # --- Tarjeta: Válvula 1 (Entrada) ---
-        card_v1 = ttk.LabelFrame(wrap, text="Válvula 1 (Entrada)")
-        card_v1.grid(row=0, column=0, sticky="nsew", **card_pad)
-        card_v1.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v1, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
-        btns_v1 = ttk.Frame(card_v1)
-        btns_v1.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-        self.btn_v1_a = ttk.Button(btns_v1, text="A", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v1", "A"))
-        self.btn_v1_b = ttk.Button(btns_v1, text="B", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v1", "B"))
-        self.btn_v1_a.grid(row=0, column=0, padx=(0, 6))
-        self.btn_v1_b.grid(row=0, column=1, padx=(6, 0))
+        for idx, (sec_id, titulo) in enumerate(secciones, start=1):
+            fila = (idx - 1) // 2
+            col = (idx - 1) % 2
+            frame = self._crear_seccion_valv(cont, sec_id, titulo)
+            frame.grid(row=fila, column=col, padx=6, pady=6, sticky="nsew")
 
-        # --- Tarjeta: Válvula 2 (Salida) ---
-        card_v2 = ttk.LabelFrame(wrap, text="Válvula 2 (Salida)")
-        card_v2.grid(row=0, column=1, sticky="nsew", **card_pad)
-        card_v2.grid_columnconfigure(0, weight=1)
-        ttk.Label(card_v2, text="Posición:").grid(row=0, column=0, padx=in_padx, pady=(in_pady, 4), sticky="w")
-        btns_v2 = ttk.Frame(card_v2)
-        btns_v2.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-        self.btn_v2_a = ttk.Button(btns_v2, text="A", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v2", "A"))
-        self.btn_v2_b = ttk.Button(btns_v2, text="B", style="AB.TButton",
-                                   command=lambda: self._seleccionar_posicion("v2", "B"))
-        self.btn_v2_a.grid(row=0, column=0, padx=(0, 6))
-        self.btn_v2_b.grid(row=0, column=1, padx=(6, 0))
-
-        # --- Tarjeta: Conexión equipo 2 ---
-        card_con = ttk.LabelFrame(wrap, text="Conexión equipo 2")
-        card_con.grid(row=1, column=0, sticky="nsew", **card_pad)
-        self.btn_con_eq2 = ttk.Button(card_con, text=self._texto_conexion(),
-                                      command=self._toggle_conexion)
-        self.btn_con_eq2.grid(row=0, column=0, padx=in_padx, pady=in_pady, sticky="w")
-
-        # --- Tarjeta: Bypass ---
-        card_bp = ttk.LabelFrame(wrap, text="Bypass")
-        card_bp.grid(row=1, column=1, sticky="nsew", **card_pad)
-        card_bp.grid_columnconfigure(0, weight=1)
-        self.btn_bypass = ttk.Button(
-            card_bp, text=self._texto_bypass(), command=self._toggle_bypass, width=18
-        )
-        self.btn_bypass.grid(row=0, column=0, padx=in_padx, pady=in_pady, sticky="w")
-
-        # --- Tarjeta: Solenoide (seguridad) ---
-        card_sol = ttk.LabelFrame(wrap, text="Válvula solenoide (seguridad)")
-        card_sol.grid(row=2, column=0, sticky="nsew", **card_pad)
-        card_sol.grid_columnconfigure(1, weight=1)
-        self.btn_sol_toggle = ttk.Button(card_sol, text=self._texto_sol(), command=self._toggle_sol)
-        self.btn_sol_toggle.grid(row=0, column=0, columnspan=2, padx=in_padx, pady=(in_pady, 6), sticky="w")
-
-        ttk.Label(card_sol, text="Presión de seguridad (bar):").grid(
-            row=1, column=0, padx=in_padx, pady=6, sticky="e"
-        )
-        self.entry_p_seg = ttk.Entry(card_sol, width=10)
-        self.entry_p_seg.grid(row=1, column=1, padx=(4, in_padx), pady=6, sticky="w")
-        self.entry_p_seg.insert(0, f"{self.sol_presion:.1f}")
-        self.entry_p_seg.bind("<Button-1>", lambda e: TecladoNumerico(
-            self, self.entry_p_seg, on_submit=lambda v: self._aplicar_presion_y_enviar_auto(v)))
-        self.entry_p_seg.bind("<FocusOut>", lambda _e: self._aplicar_presion_y_enviar_auto(self.entry_p_seg.get()))
-
-        # --- Tarjeta: Peristálticas ---
-        card_per = ttk.LabelFrame(wrap, text="Bombas peristálticas")
-        card_per.grid(row=2, column=1, sticky="nsew", **card_pad)
-        self.btn_per1 = ttk.Button(card_per, text=self._texto_per1(), command=self._toggle_per1, width=20)
-        self.btn_per2 = ttk.Button(card_per, text=self._texto_per2(), command=self._toggle_per2, width=20)
-        self.btn_per1.grid(row=0, column=0, padx=in_padx, pady=(in_pady, 6), sticky="w")
-        self.btn_per2.grid(row=1, column=0, padx=in_padx, pady=(0, in_pady), sticky="w")
-
-        # Establecer estado inicial de conexión
+        # Estado inicial que ya tenías
         self._aplicar_estado_conexion()
+
+    def _crear_seccion_valv(self, parent, sec_id: str, titulo: str) -> ttk.LabelFrame:
+        """Crea una sección (tarjeta) según el identificador sec_id."""
+        # Padding interno coherente con tu versión original
+
+        frame = ttk.Frame(parent, borderwidth=2, relief="groove")
+        title_lbl = ttk.Label(frame, text=titulo, font=TITLE_FONT.get(sec_id, ("Calibri", 20, "bold")))
+        title_x, title_y = TITLE_POS.get(sec_id, (10, 8))
+        title_lbl.place(x=title_x, y=title_y)
+
+        
+
+        if sec_id == "v1":
+            # --- Tarjeta: Válvula 1 (Entrada) ---
+            self.btn_v1_a = TouchButton(frame, text="Posición A", style="AB.TButton", command=lambda: self._seleccionar_posicion("v1", "A"))
+            self.btn_v1_a.place(x=POS[sec_id]["btn_v1_a"][0], y=POS[sec_id]["btn_v1_a"][1])
+        
+            self.btn_v1_b = TouchButton(frame, text="Posición B", style="AB.TButton", command=lambda: self._seleccionar_posicion("v1", "B"))
+            self.btn_v1_b.place(x=POS[sec_id]["btn_v1_b"][0], y=POS[sec_id]["btn_v1_b"][1])
+
+        elif sec_id == "v2":
+            # --- Tarjeta: Válvula 2 (Salida) ---
+            self.btn_v2_a = TouchButton(frame, text="Posición A", style="AB.TButton", command=lambda: self._seleccionar_posicion("v2", "A"))
+            self.btn_v2_a.place(x=POS[sec_id]["btn_v2_a"][0], y=POS[sec_id]["btn_v2_a"][1])
+        
+            self.btn_v2_b = TouchButton(frame, text="Posición B", style="AB.TButton", command=lambda: self._seleccionar_posicion("v2", "B"))
+            self.btn_v2_b.place(x=POS[sec_id]["btn_v2_b"][0], y=POS[sec_id]["btn_v2_b"][1])
+
+
+        elif sec_id == "con":
+            # --- Tarjeta: Conexión equipo 2 ---
+            self.btn_con_eq2 = TouchButton(frame, text=self._texto_conexion(),style="AB.TButton", command=self._toggle_conexion)
+            self.btn_con_eq2.place(x=POS[sec_id]["btn_con_eq2"][0], y=POS[sec_id]["btn_con_eq2"][1])
+
+            self.btn_info_con = TouchButton(frame, text="?")
+            self.btn_info_con.place(x=POS[sec_id]["btn_info_con"][0], y=POS[sec_id]["btn_info_con"][1])
+            self.btn_info_con.configure(
+                command=lambda: messagebox.showinfo(
+                "Información de conexión",
+                "Cómo funcionan las válvulas, cable de conexion al equipo, \nprocedimiento de conexion/desconexion."
+                )
+            )
+
+        elif sec_id == "bp":
+            # --- Tarjeta: Bypass ---
+            self.btn_bypass = TouchButton(frame, text=self._texto_bypass(),style="AB.TButton", command=self._toggle_bypass)
+            self.btn_bypass.place(x=POS[sec_id]["btn_bypass"][0], y=POS[sec_id]["btn_bypass"][1])
+
+            self.btn_info_byp = TouchButton(frame, text="?")
+            self.btn_info_byp.place(x=POS[sec_id]["btn_info_byp"][0], y=POS[sec_id]["btn_info_byp"][1])
+            self.btn_info_byp.configure(
+                command=lambda: messagebox.showinfo(
+                "Información del proceso",
+                "Cómo es la mezcla de gases en ON y en OFF. Si esta en bypass 1 el gas del MFC1 y el MFC3 es el mismo, \n entonces si se cambia uno en la ventana MFCS, el otro también cambia."
+                )
+            )
+
+
+        elif sec_id == "sol":
+            # --- Tarjeta: Solenoide (seguridad) ---
+            initial_style = "CerrarBtn.TButton" if self.sol_abierta.get() else "AbrirBtn.TButton"
+            self.btn_sol_toggle = TouchButton(frame, text=self._texto_sol(), style=initial_style, command=self._toggle_sol)
+            self.btn_sol_toggle.place(x=POS[sec_id]["btn_sol_toggle"][0], y=POS[sec_id]["btn_sol_toggle"][1])
+            
+            presion_manual_lbl = ttk.Label(frame, text="Modo manual:", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+            presion_manual_lbl.place(x=POS[sec_id]["presion_manual_lbl"][0], y=POS[sec_id]["presion_manual_lbl"][1])
+
+            # Presion de seguridad (maximo 20.0bar)
+            campo_presion_seguriad = LabeledEntryNum(frame, "Presión de seguridad (bar):",
+            width=18,  # más largo
+            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),  # label más grande
+            entry_ipady=7,
+            # entry_font opcional si quieres cambiar también la fuente del entry:
+            # entry_font=(getattr(C, "FONT_BASE", ("Calibri", 16))[0], 16),
+            )
+        
+            campo_presion_seguriad.place(x=POS[sec_id]["campo_presion_seguriad"][0], y=POS[sec_id]["campo_presion_seguriad"][1])
+            self.entry_p_seg = campo_presion_seguriad.entry
+            campo_presion_seguriad.bind_numeric(
+            lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+             on_submit=lambda v: self._aplicar_presion_y_enviar_auto(v),
+        )
+
+        elif sec_id == "per":
+            # --- Tarjeta: Peristálticas ---
+            per1_lbl = ttk.Label(frame, text="Bomba 1 (BP1):", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+            per1_lbl.place(x=POS[sec_id]["per1_lbl"][0], y=POS[sec_id]["per1_lbl"][1])
+
+            self.btn_per1 = TouchButton(frame, text=self._texto_per1(), style="AB.TButton", command=self._toggle_per1)
+            self.btn_per1.place(x=POS[sec_id]["btn_per1"][0], y=POS[sec_id]["btn_per1"][1])
+
+            per2_lbl = ttk.Label(frame, text="Bomba 2 (BP2):", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+            per2_lbl.place(x=POS[sec_id]["per2_lbl"][0], y=POS[sec_id]["per2_lbl"][1])
+
+            self.btn_per2 = TouchButton(frame, text=self._texto_per2(), style="AB.TButton", command=self._toggle_per2)
+            self.btn_per2.place(x=POS[sec_id]["btn_per2"][0], y=POS[sec_id]["btn_per2"][1])
+
+            
+            
+            
+
+        return frame
 
     # ------------- Persistencia V1/V2/BYP -------------
     def _cargar_posiciones(self):
@@ -231,19 +335,40 @@ class VentanaValv(tk.Frame):
             self.btn_v2_b.configure(style="ABSelected.TButton" if sel == "B" else "AB.TButton")
 
     def _texto_sol(self) -> str:
-        return "Cerrar válvula" if self.sol_abierta.get() else "Abrir válvula"
-
+        txt = "Cerrar válvula" if self.sol_abierta.get() else "Abrir válvula"
+        # Estilo según el texto (se aplica al final del ciclo actual)
+        try:
+            style = "AbrirBtn.TButton" if txt == "Abrir válvula" else "CerrarBtn.TButton"
+            self.after(0, lambda: self.btn_sol_toggle.configure(style=style))
+        except Exception:
+            pass
+        return txt
+    
     def _texto_per1(self) -> str:
-        return "Peristáltica 1: OFF → ON" if not self.per1_on.get() else "Peristáltica 1: ON → OFF"
+        txt1 = "Encender BP1" if not self.per1_on.get() else "Apagar BP1"
+        # Estilo según el texto (se aplica al final del ciclo actual)
+        try:
+            style = "AbrirBtn.TButton" if txt1 == "Encender BP1" else "CerrarBtn.TButton"
+            self.after(0, lambda: self.btn_per1.configure(style=style))
+        except Exception:
+            pass
+        return txt1
 
     def _texto_per2(self) -> str:
-        return "Peristáltica 2: OFF → ON" if not self.per2_on.get() else "Peristáltica 2: ON → OFF"
+        txt2 = "Encender BP2" if not self.per2_on.get() else "Apagar BP2"
+            # Estilo según el texto (se aplica al final del ciclo actual)
+        try:
+            style = "AbrirBtn.TButton" if txt2 == "Encender BP2" else "CerrarBtn.TButton"
+            self.after(0, lambda: self.btn_per2.configure(style=style))
+        except Exception:
+            pass
+        return txt2
 
     def _texto_conexion(self) -> str:
-        return "Conexión equipo 2: OFF" if not self.conexion_equipo2.get() else "Conexión equipo 2: ON"
+        return "Activar conexión" if not self.conexion_equipo2.get() else "Desactivar conexión"
 
     def _texto_bypass(self) -> str:
-        return f"Bypass {self.bypass_sel.get()}  (cambiar)"
+        return f"Estado actual: Bypass {self.bypass_sel.get()}"
 
     # ------------- Handlers V1/V2 -------------
     def _seleccionar_posicion(self, cual: str, pos: str):
