@@ -3,8 +3,11 @@ import tkinter as tk
 from tkinter import ttk, PhotoImage
 from .barra_navegacion import BarraNavegacion
 
+# ========================= CONFIGURACIÓN DE FUENTE =========================
+FUENTE_LABELS = ("Calibri", 15)  # Fuente modificable desde aquí
+FUENTE_VALORES = ("Calibri", 15)
+
 # ========================= POSICIONES DE LOS LABELS =========================
-# Editar estas coordenadas (x, y). Están en píxeles relativos al área de la imagen.
 LABEL_POS = {
     "temp_omega1":       (400, 170),
     "temp_omega2":       (660, 170),
@@ -15,11 +18,41 @@ LABEL_POS = {
     "presion_mezcla":    (260, 260),
     "presion_h2":        (260, 300),
     "presion_salida":    (260, 340),
-    "mfc_o2":            (120, 420),
-    "mfc_co2":           (120, 460),
-    "mfc_n2":            (120, 500),
-    "mfc_h2":            (120, 540),
-    "potencia_total":    (700, 500),
+    # Posiciones para nombres MFC
+    "mfc_o2_nombre":     (120, 420),
+    "mfc_co2_nombre":    (120, 460),
+    "mfc_n2_nombre":     (120, 500),
+    "mfc_h2_nombre":     (120, 540),
+    # Posiciones para valores MFC
+    "mfc_o2_valor":      (160, 420),
+    "mfc_co2_valor":     (160, 460),
+    "mfc_n2_valor":      (160, 500),
+    "mfc_h2_valor":      (160, 540),
+    "potencia_horno1":    (700, 500),
+    "potencia_horno2":    (500, 500),
+}
+
+# ========================= COLORES DE FONDO =========================
+COLOR_LABELS = {
+    "temp_omega1":      "#fac689",
+    "temp_omega2":      "#fac689",
+    "temp_horno1":      "#fac689",
+    "temp_horno2":      "#fac689",
+    "temp_cond1":       "#fac689",
+    "temp_cond2":       "#fac689",
+    "presion_mezcla":   "#dfe598",
+    "presion_h2":       "#dfe598",
+    "presion_salida":   "#dfe598",
+    "mfc_o2_nombre":    "#90c6e5",
+    "mfc_co2_nombre":   "#90c6e5",
+    "mfc_n2_nombre":    "#90c6e5",
+    "mfc_h2_nombre":    "#90c6e5",
+    "mfc_o2_valor":     "#90c6e5",
+    "mfc_co2_valor":    "#90c6e5",
+    "mfc_n2_valor":     "#90c6e5",
+    "mfc_h2_valor":     "#90c6e5",
+    "potencia_horno1":   "#fce0bf",
+    "potencia_horno2":   "#fce0bf",
 }
 
 # ========================= FORMATEADORES =========================
@@ -100,8 +133,8 @@ class VentanaPrincipal(tk.Frame):
         self._create_all_labels()
 
     def _create_all_labels(self):
-        # Definición: clave -> (texto corto, unidad)
-        campos = {
+        # Definición para variables normales
+        campos_normales = {
             "temp_omega1":      ("Ω1",      "°C"),
             "temp_omega2":      ("Ω2",      "°C"),
             "temp_horno1":      ("H1",      "°C"),
@@ -111,35 +144,68 @@ class VentanaPrincipal(tk.Frame):
             "presion_mezcla":   ("P Mez",   "bar"),
             "presion_h2":       ("P H2",    "bar"),
             "presion_salida":   ("P Out",   "bar"),
-            "mfc_o2":           ("O2",      "mL/min"),
-            "mfc_co2":          ("CO2",     "mL/min"),
-            "mfc_n2":           ("N2",      "mL/min"),
-            "mfc_h2":           ("H2",      "mL/min"),
-            "potencia_total":   ("P Tot",   "W"),
+            "potencia_horno1":   ("P h1",   "W"),
+            "potencia_horno2":   ("P h2",   "W"),
         }
 
-        for key, (short, unit) in campos.items():
-            v = tk.StringVar(value=f"{short}: -- {unit if unit!='HH:MM' else ''}".strip())
+        # Crear labels normales
+        for key, (short, unit) in campos_normales.items():
+            v = tk.StringVar(value=f"{short}: -- {unit}")
             self._vars[key] = v
             x, y = LABEL_POS.get(key, (10, 10))
+            color_fondo = COLOR_LABELS.get(key, "white")
+            
             lbl = tk.Label(
                 self.area_grafica, textvariable=v,
-                bg="white", fg="#111", font=("Arial", 11, "bold"),
+                bg=color_fondo, fg="#111", font=FUENTE_LABELS,
                 relief="solid", bd=1, padx=6, pady=3
             )
             lbl.place(x=x, y=y)
             self._labels[key] = lbl
 
-    # ---------------- RX -> actualización ----------------
+        # Crear labels separados para MFC
+        mfc_gases = {
+            "mfc_o2": "O₂",
+            "mfc_co2": "CO₂", 
+            "mfc_n2": "N₂",
+            "mfc_h2": "H₂"
+        }
+
+        for key, nombre_gas in mfc_gases.items():
+            # Label para el nombre del gas
+            v_nombre = tk.StringVar(value=nombre_gas)
+            self._vars[f"{key}_nombre"] = v_nombre
+            x_nombre, y_nombre = LABEL_POS.get(f"{key}_nombre", (10, 10))
+            color_nombre = COLOR_LABELS.get(f"{key}_nombre", "#F0F8FF")
+            
+            lbl_nombre = tk.Label(
+                self.area_grafica, textvariable=v_nombre,
+                bg=color_nombre, fg="#111", font=FUENTE_LABELS,
+                relief="solid", bd=1, padx=8, pady=3
+            )
+            lbl_nombre.place(x=x_nombre, y=y_nombre)
+            self._labels[f"{key}_nombre"] = lbl_nombre
+
+            # Label para el valor (con formato vertical)
+            # Inicializar con texto que tenga salto de línea
+            texto_inicial = "--\nmL/min"
+            lbl_valor = tk.Label(
+                self.area_grafica, text=texto_inicial,
+                bg=COLOR_LABELS.get(f"{key}_valor", "white"), 
+                fg="#111", font=FUENTE_VALORES,
+                relief="solid", bd=1, padx=4, pady=2,
+                justify=tk.CENTER
+            )
+            x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (50, 10))
+            lbl_valor.place(x=x_valor, y=y_valor)
+            self._labels[f"{key}_valor"] = lbl_valor
+
+            # Guardar referencia al label para actualizaciones posteriores
+            # No usaremos StringVar para estos labels, actualizaremos directamente el texto
+
     def aplicar_datos_cmd5(self, partes: list[str]):
         """
-        Recibe la lista 'partes' sin $ ni ! ya splitteada por ';'.
-        Esperado: partes[0] == "5" y len(partes) == 16.
-        Orden:
-          1: Tω1  2: Tω2  3: Th1 4: Th2 5: Tc1 6: Tc2
-          7: Pmez*10 8: Ph2*10 9: Psal*10
-          10: Q_O2 11: Q_CO2 12: Q_N2 13: Q_H2
-          14: Potencia(W) 15: HorasEncendido(float)
+        Actualización de datos para el nuevo formato de MFC
         """
         if len(partes) < 16:
             return
@@ -156,7 +222,7 @@ class VentanaPrincipal(tk.Frame):
             except Exception:
                 return default
 
-        # Temps (°C, las muestro con 1 decimal)
+        # Temps (°C)
         t_omega1 = to_float(partes[1])
         t_omega2 = to_float(partes[2])
         t_h1     = to_float(partes[3])
@@ -176,9 +242,10 @@ class VentanaPrincipal(tk.Frame):
         q_h2     = to_int(partes[13])
 
         # Potencia (W)
-        p_tot    = to_int(partes[14])
+        p_h1    = to_int(partes[14])
+        p_h2    = to_int(partes[15])
 
-        # volcamos en los StringVar
+        # Actualizar variables normales
         self._vars["temp_omega1"].set(f"Ω1: {t_omega1:.1f} °C")
         self._vars["temp_omega2"].set(f"Ω2: {t_omega2:.1f} °C")
         self._vars["temp_horno1"].set(f"H1: {t_h1:.1f} °C")
@@ -190,10 +257,11 @@ class VentanaPrincipal(tk.Frame):
         self._vars["presion_h2"].set(f"P H2: {p_h2:.1f} bar")
         self._vars["presion_salida"].set(f"P Out: {p_out:.1f} bar")
 
-        self._vars["mfc_o2"].set(f"O2: {q_o2} mL/min")
-        self._vars["mfc_co2"].set(f"CO2: {q_co2} mL/min")
-        self._vars["mfc_n2"].set(f"N2: {q_n2} mL/min")
-        self._vars["mfc_h2"].set(f"H2: {q_h2} mL/min")
+        # Actualizar MFC con formato vertical - directamente en el label
+        self._labels["mfc_o2_valor"].config(text=f"{q_o2}\nmL/min")
+        self._labels["mfc_co2_valor"].config(text=f"{q_co2}\nmL/min")
+        self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nmL/min")
+        self._labels["mfc_h2_valor"].config(text=f"{q_h2}\nmL/min")
 
-        self._vars["potencia_total"].set(f"P Tot: {p_tot} W")
-
+        self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
+        self._vars["potencia_horno2"].set(f"P Tot: {p_h2} W")
