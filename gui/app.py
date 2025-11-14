@@ -25,6 +25,16 @@ class Aplicacion(tk.Tk):
         self.serial = None     # SerialManager
         self.arduino = None    # pyserial.Serial directo (fallback)
         self._alert_windows = {}  # dict: clave_alerta -> Toplevel
+        
+        # --- Callbacks para estado de MFCs ---
+        self._callbacks_estado_mfc = {1: [], 2: [], 3: [], 4: []}
+
+        # --- Callbacks para válvulas y bomba ---
+        self._callbacks_estado_valvulas = {"sol1": [], "sol2": [], "per1": []}
+
+        # --- Callbacks para flechas de válvulas ---
+        self._callbacks_flechas_valvulas = {1: [], 2: []}
+
         try:
 
             self.serial = SerialManager(serial_port, baud)
@@ -72,6 +82,73 @@ class Aplicacion(tk.Tk):
 
         # Cierre limpio
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # --- Métodos para manejar callbacks de estado MFC ---
+    def registrar_callback_estado_mfc(self, mfc_id, callback):
+        """Registra un callback para cambios de estado de un MFC"""
+        if mfc_id in self._callbacks_estado_mfc:
+            self._callbacks_estado_mfc[mfc_id].append(callback)
+
+    def notificar_cambio_estado_mfc(self, mfc_id, estado):
+        """Notifica a todos los callbacks registrados sobre un cambio de estado"""
+        for callback in self._callbacks_estado_mfc.get(mfc_id, []):
+            try:
+                callback(mfc_id, estado)
+            except Exception as e:
+                print(f"Error en callback estado MFC{mfc_id}: {e}")
+    
+    # --- Métodos para manejar callbacks de estado válvulas solenoides BackPressure y bomba peristáltica ---
+
+    def registrar_callback_estado_valvula(self, clave, callback):
+        """Registra un callback para cambios de estado de válvulas/bomba"""
+        if clave in self._callbacks_estado_valvulas:
+            self._callbacks_estado_valvulas[clave].append(callback)
+
+    def notificar_cambio_estado_valvula(self, clave, estado, modo_auto=False):
+        """Notifica a todos los callbacks registrados sobre un cambio de estado"""
+        for callback in self._callbacks_estado_valvulas.get(clave, []):
+            try:
+                callback(clave, estado, modo_auto)
+            except Exception as e:
+                print(f"Error en callback {clave}: {e}")
+
+    # --- Métodos para flechas de válvulas ---
+    def registrar_callback_flecha_valvula(self, valvula_id, callback):
+        """Registra un callback para cambios de posición de una válvula de 4 vías"""
+        if valvula_id in self._callbacks_flechas_valvulas:
+            self._callbacks_flechas_valvulas[valvula_id].append(callback)
+
+    def notificar_cambio_flecha_valvula(self, valvula_id, pos):
+        """Notifica a todos los callbacks registrados sobre un cambio de posición"""
+        for callback in self._callbacks_flechas_valvulas.get(valvula_id, []):
+            try:
+                callback(valvula_id, pos)
+            except Exception as e:
+                print(f"Error en callback flecha válvula {valvula_id}: {e}")
+
+    # --- Métodos para obtener estado actual de las válvulas ---
+    def obtener_estado_actual_valvulas(self):
+        """
+        Retorna el estado actual de las válvulas V1 y V2
+        Si VentanaValv no existe, retorna (None, None)
+        """
+        vvalv = self._ventanas.get("VentanaValv")
+        if vvalv is not None:
+            return vvalv.v1_pos.get(), vvalv.v2_pos.get()
+        return None, None
+
+    def obtener_estado_valvula(self, valvula_id):
+        """
+        Retorna el estado actual de una válvula específica
+        """
+        vvalv = self._ventanas.get("VentanaValv")
+        if vvalv is not None:
+            if valvula_id == 1:
+                return vvalv.v1_pos.get()
+            elif valvula_id == 2:
+                return vvalv.v2_pos.get()
+        return None
+        
 
     def enviar_a_arduino(self, mensaje: str):
         """
@@ -379,4 +456,4 @@ class Aplicacion(tk.Tk):
             win.geometry(f"+{x}+{y}")
         except Exception:
             pass
-
+        
