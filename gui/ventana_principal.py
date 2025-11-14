@@ -1,4 +1,5 @@
 import os
+import csv
 import tkinter as tk
 from tkinter import ttk, PhotoImage
 from .barra_navegacion import BarraNavegacion
@@ -70,8 +71,37 @@ COLOR_LABELS = {
 }
 
 
+# ========================= POSICIONES DE LOS INDICADORES MFC =========================
+INDICADOR_POS = {
+    "mfc_o2_abierto":   (100, 310),   # Posición para indicador abierto MFC1
+    "mfc_o2_cerrado":   (140, 310),   # Posición para indicador cerrado MFC1
+    "mfc_co2_abierto":  (200, 460),   # MFC2
+    "mfc_co2_cerrado":  (220, 460),
+    "mfc_n2_abierto":   (200, 500),   # MFC3
+    "mfc_n2_cerrado":   (220, 500),
+    "mfc_h2_abierto":   (200, 540),   # MFC4
+    "mfc_h2_cerrado":   (220, 540),
+}
 
-    
+# ========================= POSICIONES DE LOS INDICADORES VÁLVULAS/BOMBA =========================
+VALVULA_INDICADOR_POS = {
+    "sol1_abierto":   (550, 320),   # Solenoide 1 - abierto
+    "sol1_cerrado":   (570, 320),   # Solenoide 1 - cerrado
+    "sol2_abierto":   (550, 360),   # Solenoide 2 - abierto
+    "sol2_cerrado":   (570, 360),   # Solenoide 2 - cerrado
+    "per1_on":        (550, 400),   # Bomba peristáltica - encendida
+    "per1_off":       (570, 400),   # Bomba peristáltica - apagada
+}
+
+# ========================= POSICIONES FLUJO DE VÁLVULAS 4VÍAS =========================
+FLECHA_POS = {
+    "v1_a": (250, 120),   # Flecha para Válvula 1 Posición A
+    "v1_b": (270, 150),   # Flecha para Válvula 1 Posición B (misma posición, diferente dirección)
+    "v2_a": (250, 160),   # Flecha para Válvula 2 Posición A
+    "v2_b": (270, 190),   # Flecha para Válvula 2 Posición B
+}
+
+
 # ========================= FORMATEADORES =========================
 def hhmm_from_hours(horas_float: float) -> str:
     try:
@@ -141,7 +171,7 @@ class VentanaPrincipal(tk.Frame):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=0, minsize=100)
         self.grid_columnconfigure(1, weight=1)
-
+        
         # Barra navegación
         barra = BarraNavegacion(self, self.controlador)
         barra.configure(width=120)
@@ -195,6 +225,26 @@ class VentanaPrincipal(tk.Frame):
         self._vars = {}
         self._labels = {}
         self._create_all_labels()
+
+        # crear labels de variables
+        self._vars = {}
+        self._labels = {}
+        self._create_all_labels()
+        
+        # Crear indicadores de estado MFC ---
+        self._crear_indicadores_mfc()
+        self._register_estado_callbacks()
+
+        # --- Crear indicadores de estado válvulas y bomba ---
+        self._crear_indicadores_valvulas()
+        self._register_valvulas_callbacks()
+
+        # --- Crear flechas para válvulas de 4 vías ---
+        self._crear_flechas_valvulas()
+        self._register_flechas_callbacks()
+        
+        # --- Llamar inmediatamente después de crear las flechas ---
+        self._solicitar_estado_actual_flechas()
 
     def abrir_diagramas(self):
         """Abre la ventana de diagramas del equipo"""
@@ -359,6 +409,387 @@ class VentanaPrincipal(tk.Frame):
         self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
         self._vars["potencia_horno2"].set(f"P Tot: {p_horno2} W")
 
+    # ======= MÉTODOS PARA INDICADORES DE MFCS =========================
+
+    def _crear_indicadores_mfc(self):
+        """Crea los indicadores circulares para el estado de cada MFC"""
+        self.indicadores = {}
+        
+        for mfc_key in ["mfc_o2", "mfc_co2", "mfc_n2", "mfc_h2"]:
+            # Crear canvas para indicadores (uno para abierto, otro para cerrado)
+            canvas_abierto = tk.Canvas(
+                self.area_grafica, 
+                width=12, 
+                height=12, 
+                bg="white", 
+                highlightthickness=0
+            )
+            canvas_cerrado = tk.Canvas(
+                self.area_grafica, 
+                width=12, 
+                height=12, 
+                bg="white", 
+                highlightthickness=0
+            )
+            
+            # Dibujar círculos (inicialmente invisibles)
+            self.indicadores[f"{mfc_key}_abierto"] = {
+                "canvas": canvas_abierto,
+                "circle": canvas_abierto.create_oval(2, 2, 10, 10, fill="", outline="")
+            }
+            self.indicadores[f"{mfc_key}_cerrado"] = {
+                "canvas": canvas_cerrado,
+                "circle": canvas_cerrado.create_oval(2, 2, 10, 10, fill="", outline="")
+            }
+            
+            # Posicionar los indicadores
+            x_abierto, y_abierto = INDICADOR_POS.get(f"{mfc_key}_abierto", (10, 10))
+            x_cerrado, y_cerrado = INDICADOR_POS.get(f"{mfc_key}_cerrado", (30, 10))
+            
+            canvas_abierto.place(x=x_abierto, y=y_abierto)
+            canvas_cerrado.place(x=x_cerrado, y=y_cerrado)
+
+    def actualizar_indicador_mfc(self, mfc_id: int, estado: str):
+        """
+        Actualiza el indicador visual del MFC
+        Estados: "open", "close", None
+        """
+        # Mapeo de MFC ID a clave
+        mfc_mapping = {
+            1: "mfc_o2",
+            2: "mfc_co2",
+            3: "mfc_n2", 
+            4: "mfc_h2"
+        }
+        
+        mfc_key = mfc_mapping.get(mfc_id)
+        if not mfc_key or not hasattr(self, 'indicadores'):
+            return
+        
+        # Obtener referencias a los indicadores
+        indicador_abierto = self.indicadores.get(f"{mfc_key}_abierto")
+        indicador_cerrado = self.indicadores.get(f"{mfc_key}_cerrado")
+        
+        if not indicador_abierto or not indicador_cerrado:
+            return
+        
+        # Resetear ambos indicadores (hacer invisibles)
+        indicador_abierto["canvas"].itemconfig(indicador_abierto["circle"], fill="", outline="")
+        indicador_cerrado["canvas"].itemconfig(indicador_cerrado["circle"], fill="", outline="")
+        
+        # Activar el indicador correspondiente al estado
+        if estado == "open":
+            indicador_abierto["canvas"].itemconfig(indicador_abierto["circle"], 
+                                                fill="green", outline="black")
+        elif estado == "close":
+            indicador_cerrado["canvas"].itemconfig(indicador_cerrado["circle"], 
+                                                fill="red", outline="black")
+
+    def _register_estado_callbacks(self):
+        """Registra callbacks para cambios de estado de los MFCs"""
+        def actualizar_estado_indicador(mfc_id, estado):
+            """Callback que actualiza el indicador cuando cambia el estado del MFC"""
+            self.actualizar_indicador_mfc(mfc_id, estado)
+        
+        # Registrar para recibir actualizaciones de estado
+        # Esto asume que el controlador puede notificar cambios de estado
+        if hasattr(self.controlador, 'registrar_callback_estado_mfc'):
+            for mfc_id in range(1, 5):
+                self.controlador.registrar_callback_estado_mfc(mfc_id, actualizar_estado_indicador)
+
+    # ======= MÉTODOS PARA INDICADORES DE VÁLVULAS BACKP/BOMBA PERISTÁLTICA =========================
+
+    def _crear_indicadores_valvulas(self):
+        """Crea los indicadores circulares para válvulas y bomba"""
+        self.indicadores_valvulas = {}
+        
+        # Solenoide 1 - INICIALMENTE CERRADO (ROJO)
+        canvas_sol1_abierto = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        canvas_sol1_cerrado = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        
+        self.indicadores_valvulas["sol1_abierto"] = {
+            "canvas": canvas_sol1_abierto,
+            "circle": canvas_sol1_abierto.create_oval(2, 2, 10, 10, fill="", outline="")
+        }
+        self.indicadores_valvulas["sol1_cerrado"] = {
+            "canvas": canvas_sol1_cerrado,
+            "circle": canvas_sol1_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
+        }
+        
+        # Solenoide 2 - INICIALMENTE CERRADO (ROJO)
+        canvas_sol2_abierto = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        canvas_sol2_cerrado = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        
+        self.indicadores_valvulas["sol2_abierto"] = {
+            "canvas": canvas_sol2_abierto,
+            "circle": canvas_sol2_abierto.create_oval(2, 2, 10, 10, fill="", outline="")
+        }
+        self.indicadores_valvulas["sol2_cerrado"] = {
+            "canvas": canvas_sol2_cerrado,
+            "circle": canvas_sol2_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
+        }
+        
+        # Bomba peristáltica - INICIALMENTE APAGADA (ROJO)
+        canvas_per1_on = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        canvas_per1_off = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        
+        self.indicadores_valvulas["per1_on"] = {
+            "canvas": canvas_per1_on,
+            "circle": canvas_per1_on.create_oval(2, 2, 10, 10, fill="", outline="")
+        }
+        self.indicadores_valvulas["per1_off"] = {
+            "canvas": canvas_per1_off,
+            "circle": canvas_per1_off.create_oval(2, 2, 10, 10, fill="red", outline="black")
+        }
+        
+        # Posicionar todos los indicadores
+        for key, pos in VALVULA_INDICADOR_POS.items():
+            if key in self.indicadores_valvulas:
+                self.indicadores_valvulas[key]["canvas"].place(x=pos[0], y=pos[1])
+   
+    def actualizar_indicador_valvula(self, clave: str, estado: bool, modo_auto: bool = False):
+        """
+        Actualiza el indicador visual de válvulas/bomba
+        Estados: 
+        - sol1/sol2: True=abierto, False=cerrado
+        - per1: True=encendida, False=apagada
+        - modo_auto: True=control automático, False=manual
+        """
+        if not hasattr(self, 'indicadores_valvulas'):
+            return
+        
+        # Mapeo de claves a indicadores
+        indicadores_map = {
+            "sol1": {
+                True: "sol1_abierto",   # Abierto -> verde o amarillo
+                False: "sol1_cerrado"   # Cerrado -> rojo
+            },
+            "sol2": {
+                True: "sol2_abierto",
+                False: "sol2_cerrado"
+            },
+            "per1": {
+                True: "per1_on",        # Encendida -> verde
+                False: "per1_off"       # Apagada -> rojo
+            }
+        }
+        
+        if clave not in indicadores_map:
+            return
+        
+        # Obtener ambos indicadores
+        indicador_abierto = indicadores_map[clave][True]
+        indicador_cerrado = indicadores_map[clave][False]
+        
+        # Resetear ambos indicadores (hacer invisibles)
+        for indicador_key in [indicador_abierto, indicador_cerrado]:
+            if indicador_key in self.indicadores_valvulas:
+                canvas = self.indicadores_valvulas[indicador_key]["canvas"]
+                circle = self.indicadores_valvulas[indicador_key]["circle"]
+                canvas.itemconfig(circle, fill="", outline="")
+        
+        # Si es modo automático para solenoides
+        if clave in ["sol1", "sol2"] and modo_auto:
+            # En modo automático: mostrar SOLO el indicador verde en AMARILLO, apagar el rojo
+            if indicador_abierto in self.indicadores_valvulas:
+                canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]
+                circle = self.indicadores_valvulas[indicador_abierto]["circle"]
+                canvas.itemconfig(circle, fill="yellow", outline="black")
+            # El indicador rojo permanece apagado (invisible)
+        else:
+            # Modo manual: mostrar el estado real
+            indicador_activo = indicadores_map[clave][estado]
+            if indicador_activo in self.indicadores_valvulas:
+                canvas = self.indicadores_valvulas[indicador_activo]["canvas"]
+                circle = self.indicadores_valvulas[indicador_activo]["circle"]
+                
+                if "abierto" in indicador_activo or "on" in indicador_activo:
+                    canvas.itemconfig(circle, fill="green", outline="black")
+                else:
+                    canvas.itemconfig(circle, fill="red", outline="black")
+
+    def _register_valvulas_callbacks(self):
+        """Registra callbacks para cambios de estado de válvulas y bomba"""
+        def actualizar_estado_valvula(clave, estado, modo_auto=False):
+            """Callback que actualiza el indicador cuando cambia el estado"""
+            self.actualizar_indicador_valvula(clave, estado, modo_auto)
+        
+        # Registrar para recibir actualizaciones de estado
+        if hasattr(self.controlador, 'registrar_callback_estado_valvula'):
+            for clave in ["sol1", "sol2", "per1"]:
+                self.controlador.registrar_callback_estado_valvula(clave, actualizar_estado_valvula)
+                
+    # =========== MÉTODOS PARA INDICADORES DE FLUJO VÁLVULAS 4 VÍAS ===========
+
+    def _crear_flechas_valvulas(self):
+        """Crea los indicadores de flecha para las válvulas de 4 vías"""
+        self.flechas = {}
+        
+        # Válvula 1 - Flecha posición A (hacia la derecha)
+        self.flechas["v1_a"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v1_a"], "right")
+        # Válvula 1 - Flecha posición B (hacia la izquierda)  
+        self.flechas["v1_b"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v1_b"], "left")
+        
+        # Válvula 2 - Flecha posición A (hacia la derecha)
+        self.flechas["v2_a"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v2_a"], "right")
+        # Válvula 2 - Flecha posición B (hacia la izquierda)
+        self.flechas["v2_b"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v2_b"], "left")
+        
+        # Inicialmente, ocultar todas las flechas
+        for flecha in self.flechas.values():
+            flecha.place_forget()
+
+    def _crear_flecha(self, parent, pos, direccion):
+        """
+        Flechas con reducción del 40% y cuerpo más corto para mejor proporción
+        """
+        # Canvas ajustado: 80x35 (reducción del 20% desde 100x40)
+        canvas = tk.Canvas(parent, width=80, height=35, bg="white", highlightthickness=0)
+        x, y = pos
+        
+        # Determinar texto y color
+        if "v1" in str(parent):
+            valve_text = "Flow"
+            color_fill = "#7dacc8"
+            color_line = "#7dacc8"
+        else:
+            valve_text = "Flow" 
+            color_fill = "#7dacc8"
+            color_line = "#7dacc8"
+        
+        if direccion == "right":
+            # Texto identificador
+            canvas.create_text(15, 17, text=valve_text, font=("Calibri", 11, "bold"), 
+                            fill=color_line)
+            # Flecha - cuerpo más corto (40% más corto que la original)
+            # Original: 35-85 (50px), Nuevo: 35-65 (30px) - reducción del 40%
+            points = [50, 17, 65, 17, 65, 12, 72, 17, 65, 22, 65, 17]  # Cabeza ajustada
+            canvas.create_line(35, 17, 65, 17, width=3, fill=color_line)
+            canvas.create_polygon(points, fill=color_fill, outline=color_line, width=1)
+            
+        elif direccion == "left":
+            # Texto identificador
+            canvas.create_text(65, 17, text=valve_text, font=("Calibri", 11, "bold"), 
+                            fill=color_line)
+            # Flecha - cuerpo más corto (40% más corto que la original)
+            # Original: 65-15 (50px), Nuevo: 45-15 (30px) - reducción del 40%
+            points = [30, 17, 15, 17, 15, 12, 8, 17, 15, 22, 15, 17]  # Cabeza ajustada
+            canvas.create_line(45, 17, 15, 17, width=3, fill=color_line)
+            canvas.create_polygon(points, fill=color_fill, outline=color_line, width=1)
+        
+        canvas.place(x=x, y=y)
+        return canvas
+
+    def actualizar_flecha_valvula(self, valvula_id, pos):
+        """
+        Actualiza la flecha de la válvula especificada.
+        valvula_id: 1 o 2
+        pos: 'A' o 'B'
+        """
+        if not hasattr(self, 'flechas'):
+            return
+            
+        # Validar que la posición sea correcta
+        if pos not in ('A', 'B'):
+            print(f"[WARN] Posición inválida para válvula {valvula_id}: {pos}")
+            return
+        
+        # Ocultar todas las flechas de esta válvula
+        for key in [f"v{valvula_id}_a", f"v{valvula_id}_b"]:
+            if key in self.flechas:
+                self.flechas[key].place_forget()
+        
+        # Mostrar la flecha correspondiente
+        flecha_key = f"v{valvula_id}_{pos.lower()}"
+        if flecha_key in self.flechas:
+            x, y = FLECHA_POS[flecha_key]
+            self.flechas[flecha_key].place(x=x, y=y)
+
+    def _register_flechas_callbacks(self):
+        """Registra callbacks para cambios de posición de las válvulas"""
+        if hasattr(self.controlador, 'registrar_callback_flecha_valvula'):
+            self.controlador.registrar_callback_flecha_valvula(1, self.actualizar_flecha_valvula)
+            self.controlador.registrar_callback_flecha_valvula(2, self.actualizar_flecha_valvula)
+
+    def _solicitar_estado_actual_flechas(self):
+        """Obtiene el estado actual de las válvulas leyendo directamente del CSV"""
+        # Leer posiciones directamente del CSV
+        posiciones = self._leer_posiciones_valvulas_desde_csv()
+        v1_pos = posiciones.get("V1", "A")
+        v2_pos = posiciones.get("V2", "A")
+        
+        # Actualizar flechas inmediatamente
+        self.actualizar_flecha_valvula(1, v1_pos)
+        self.actualizar_flecha_valvula(2, v2_pos)
+        
+        print(f"[Flechas] Estado inicial desde CSV: V1={v1_pos}, V2={v2_pos}")
+        
+    def _leer_posiciones_valvulas_desde_csv(self):
+        """
+        Lee las posiciones de las válvulas desde el archivo CSV directamente.
+        Retorna un diccionario con las posiciones de V1 y V2.
+        """
+        # Ruta al archivo CSV - CORREGIR la ruta
+        pos_file = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
+        posiciones = {"V1": "A", "V2": "A"}  # Valores por defecto
+        
+        print(f"[DEBUG] Buscando archivo en: {pos_file}")  # Para debug
+        
+        if not os.path.exists(pos_file):
+            print(f"[INFO] Archivo {pos_file} no encontrado, usando valores por defecto")
+            return posiciones
+        
+        try:
+            with open(pos_file, newline="", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if len(row) >= 2:
+                        clave = row[0].strip().upper()
+                        valor = row[1].strip().upper()
+                        if clave in ["V1", "V2"] and valor in ["A", "B"]:
+                            posiciones[clave] = valor
+            print(f"[INFO] Posiciones leídas del CSV: {posiciones}")
+        except Exception as e:
+            print(f"[ERROR] No se pudo leer {pos_file}: {e}")
+        
+        return posiciones
+    
 class VentanaDiagramas(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
