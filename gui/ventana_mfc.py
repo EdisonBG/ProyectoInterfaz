@@ -157,7 +157,7 @@ class VentanaMfc(tk.Frame):
         GREEN = "#9bd7b1"    # verde
         GREEN_D = "#27ae60"   # verde oscuro (pressed / activo)
 
-        RED = "#FF4B3B"     # rojo
+        RED = "#fa9f9f"     # rojo
         RED_D = "#db4231"     # rojo oscuro (pressed / activo)
 
         st = ttk.Style(self)

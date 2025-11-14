@@ -153,6 +153,7 @@ class PanelOmega(ttk.Frame):
         combo = ttk.Combobox(
             sp_area,
             values=self.MEMORIAS,
+            textvariable=self.memoria,
             state="readonly",
             width=getattr(C, "COMBO_WIDTH", 10),
             height=130,

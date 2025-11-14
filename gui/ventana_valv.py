@@ -446,6 +446,17 @@ class VentanaValv(tk.Frame):
         nuevo = not self.conexion_equipo2.get()
         self.conexion_equipo2.set(nuevo)
         self.btn_con_eq2.configure(text=self._texto_conexion())
+
+
+        if nuevo:
+            self.v1_pos.set("A")
+            self.v2_pos.set("A")
+            self._refrescar_botones("v1")
+            self._refrescar_botones("v2")
+        else:
+            self.v2_pos.set(self.v1_pos.get())
+            self._refrescar_botones("v2")
+            
         self._aplicar_estado_conexion()
         if nuevo:
             msg = "$;3;0;8;!"

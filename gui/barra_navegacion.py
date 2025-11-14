@@ -29,18 +29,19 @@ class BarraNavegacion(ttk.Frame):
             pass
         style.configure(
             "BotonMenu.TButton",
-            font=("Arial", 10, "bold"),
-            padding=5,
+            font=("Calibri", 10, "bold"),
+            padding=14,
             foreground="white",
-            background="#007acc",
+            background="#081D66",
         )
         style.configure(
             "CerrarMenu.TButton",
-            font=("Arial", 10, "bold"),
-            padding=5,
+            font=("Calibri", 10, "bold"),
+            padding=14,
             foreground="white",
             background="#e74c3c",
         )
+        style.map("BotonMenu.TButton", background=[('active', "#7F89AF"), ('pressed', "#7F89AF")])
 
         # Imágenes (opcionales)
         img_path = os.path.join(_app_base_dir(), "img")
@@ -58,13 +59,12 @@ class BarraNavegacion(ttk.Frame):
 
         # Botones (incluye Registros SIN separadores)
         botones = [
-            ("Home", self.img_home, "VentanaPrincipal", None),
-            ("MFC", self.img_mfc, "VentanaMfc", None),
-            ("Temp", self.img_omega, "VentanaOmega", None),
-            ("Valv", self.img_valv, "VentanaValv", None),
-            ("Auto", self.img_auto, "VentanaAuto", None),
-            ("Graph", self.img_graph, "VentanaGraph", None),
-            ("Registros", self.img_folder, None, self._abrir_carpeta_registros),
+            ("", self.img_home, "VentanaPrincipal", None),
+            ("", self.img_mfc, "VentanaMfc", None),
+            ("", self.img_omega, "VentanaOmega", None),
+            ("", self.img_valv, "VentanaValv", None),
+            ("", self.img_auto, "VentanaAuto", None),
+            ("", self.img_graph, "VentanaGraph", None),
             ("Cerrar", self.img_folder, None, self._cerrar_app),
             ("Minimizar", self.img_folder, None, self._minimizar_app)
         ]
@@ -76,28 +76,14 @@ class BarraNavegacion(ttk.Frame):
                 self,
                 text=texto,
                 image=imagen,
-                compound="top" if imagen else "",
+                compound="center" if imagen else "",
                 style=btn_style,
                 command=cmd,
             )
             btn.grid(row=ro, column=0, pady=5, sticky="ew")
             if imagen:
                 btn.image = imagen  # evitar GC
-
-    def _abrir_carpeta_registros(self):
-        reg_dir = os.path.join(_app_base_dir(), "registros_experimento")
-        os.makedirs(reg_dir, exist_ok=True)
-        try:
-            if sys.platform.startswith("win"):
-                os.startfile(reg_dir)  # type: ignore[attr-defined]
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", reg_dir])
-            else:
-                subprocess.Popen(["xdg-open", reg_dir])
-        except Exception as ex:
-            import tkinter.messagebox as mb
-            mb.showinfo("Registros",
-                        f"Carpeta de registros:\n{reg_dir}\n\n(No se pudo abrir el explorador: {ex})")
+  
     def _cerrar_app(self):
         top = self.winfo_toplevel()
         try:
