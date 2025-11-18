@@ -37,29 +37,29 @@ TITLE_FONT = {
 # Coordenadas por FRAME (horizontal, vertical) para cada ELEMENTO dentro del mismo.
 POS = {
     "v1": {
-        "btn_v1_a":   (60, 80),
-        "btn_v1_b": (230,  80), 
+        "btn_v1_a":   (52, 80),
+        "btn_v1_b": (225,  80), 
     },
     "v2": {
-        "btn_v2_a":   (60, 80),
-        "btn_v2_b": (230,  80),    
+        "btn_v2_a":   (52, 80),
+        "btn_v2_b": (225,  80),    
     },
     "con": {
-        "btn_con_eq2":   (120, 80),
-        "btn_info_con": (340, 6),
+        "btn_con_eq2":   (110, 86),
+        "btn_info_con": (320, 6),
     },
     "bp": {
-        "btn_bypass":   (105, 80),
-        "btn_info_byp": (340, 6),
+        "btn_bypass":   (75, 80),
+        "btn_info_byp": (320, 6),
     },
     "sol": {
-        "campo_presion_seguriad": (40,  35), 
-        "presion_manual_lbl": (160,  85), 
-        "btn_sol_toggle":   (24, 119),    
-        "btn_sol2_toggle":  (215, 119),   # Reutilizando la posición del btn_per2
+        "campo_presion_seguriad": (5,  38), 
+        "presion_manual_lbl": (150,  88), 
+        "btn_sol_toggle":   (10, 123),    
+        "btn_sol2_toggle":  (215, 123),   # Reutilizando la posición del btn_per2
     },
     "per": {
-        "per1_lbl":   (50, 50),    "btn_per1":    (200,  50),
+        "btn_per1":    (130,  92),
         # Eliminamos per2_lbl y btn_per2 ya que se reutilizará
     },
 }
@@ -156,9 +156,9 @@ class VentanaValv(tk.Frame):
         RUN_COLOR = "#27ae60"
         STOP_COLOR = "#db4231"
         #boton de abrir/cerrar
-        style.configure("AbrirBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        style.configure("AbrirBtn.TButton", padding=(12, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         style.map("AbrirBtn.TButton", background=[("!disabled", RUN_COLOR), ("active", RUN_COLOR), ("pressed", RUN_COLOR)])
-        style.configure("CerrarBtn.TButton", padding=(16, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
+        style.configure("CerrarBtn.TButton", padding=(12, 8), font=getattr(C, "FONT_BASE", ("Calibri", 16)))
         style.map("CerrarBtn.TButton", background=[("!disabled", STOP_COLOR), ("active", STOP_COLOR), ("pressed", STOP_COLOR)])
 
     # ------------- UI -------------
@@ -284,10 +284,7 @@ class VentanaValv(tk.Frame):
         )
 
         elif sec_id == "per":
-            # --- Tarjeta: Peristáltica (solo una ahora) ---
-            per1_lbl = ttk.Label(frame, text="Bomba 1 (BP1):", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
-            per1_lbl.place(x=POS[sec_id]["per1_lbl"][0], y=POS[sec_id]["per1_lbl"][1])
-
+            # --- Tarjeta: Peristáltica (solo una ) ---
             self.btn_per1 = TouchButton(frame, text=self._texto_per1(), style="AB.TButton", command=self._toggle_per1)
             self.btn_per1.place(x=POS[sec_id]["btn_per1"][0], y=POS[sec_id]["btn_per1"][1])
 
@@ -372,10 +369,10 @@ class VentanaValv(tk.Frame):
         return txt
     
     def _texto_per1(self) -> str:
-        txt1 = "Encender BP1" if not self.per1_on.get() else "Apagar BP1"
+        txt1 = "Encender Bomba" if not self.per1_on.get() else "Apagar Bomba"
         # Estilo según el texto (se aplica al final del ciclo actual)
         try:
-            style = "AbrirBtn.TButton" if txt1 == "Encender BP1" else "CerrarBtn.TButton"
+            style = "AbrirBtn.TButton" if txt1 == "Encender Bomba" else "CerrarBtn.TButton"
             self.after(0, lambda: self.btn_per1.configure(style=style))
         except Exception:
             pass

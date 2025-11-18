@@ -680,7 +680,7 @@ class VentanaPrincipal(tk.Frame):
         Flechas con reducción del 40% y cuerpo más corto para mejor proporción
         """
         # Canvas ajustado: 80x35 (reducción del 20% desde 100x40)
-        canvas = tk.Canvas(parent, width=80, height=35, bg="white", highlightthickness=0)
+        canvas = tk.Canvas(parent, width=82, height=35, bg="white", highlightthickness=0)
         x, y = pos
         
         # Determinar texto y color

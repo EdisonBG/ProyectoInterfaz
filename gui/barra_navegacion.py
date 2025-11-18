@@ -13,9 +13,10 @@ def _app_base_dir() -> str:
 
 
 class BarraNavegacion(ttk.Frame):
-    def __init__(self, parent, controlador):
+    def __init__(self, parent, controlador, arduino=None):
         super().__init__(parent)
         self.controlador = controlador
+        self.arduino = arduino
 
         # ancho fijo solicitado
         self.configure(width=149)
@@ -83,8 +84,19 @@ class BarraNavegacion(ttk.Frame):
             btn.grid(row=ro, column=0, pady=5, sticky="ew")
             if imagen:
                 btn.image = imagen  # evitar GC
-  
     def _cerrar_app(self):
+        #Enviar mensaje antes de cerrar
+        mensaje = "$7;0;2;0;!"
+        print(f"[TX] cerrando app: {mensaje}")
+
+        #Enviar a través del controlador
+        if hasattr(self.controlador, "enviar_a_arduino"):
+            self.controlador.enviar_a_arduino(mensaje)
+
+        #pausa para asegurar que se envie el mensaje
+        self.after(100, self._real_cerrar_app)
+
+    def _real_cerrar_app(self):
         top = self.winfo_toplevel()
         try:
             top.destroy()
