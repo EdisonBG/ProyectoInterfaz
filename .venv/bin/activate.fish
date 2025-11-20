@@ -30,7 +30,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV "/home/eia/Desktop/ProyectoInterfaz/ProyectoInterfaz/.venv"
+set -gx VIRTUAL_ENV "/home/eia/Encrypted/.ProyectoInterfaz_descifrado/.ProyectoInterfaz/ProyectoInterfaz/.venv"
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/bin" $PATH

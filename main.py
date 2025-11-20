@@ -1,11 +1,96 @@
 import tkinter as tk
+import sys
+import os
+import threading
+
+try:
+    import cv2
+    print(cv2.__file__)
+    print("OpenCV version:", cv2.__version__)
+    CV_AVAILABLE = True
+except ImportError as e:
+    print("ERROR:", e)
+    CV_AVAILABLE = False
+print("===================")
+
 from gui.app import Aplicacion
+import time
+
+def reproducir_video_splash(video_path="splash.mp4", duracion=6):
+    """Reproduce un video MP4 de duracion fija como splash screen"""
+    
+    if not CV_AVAILABLE:
+        print("ERROR: OpenCV no disponible para reproducir video")
+        return False
+    
+    # NUEVO: convertir ruta relativa a ruta absoluta basada en este archivo
+    if not os.path.isabs(video_path):
+        base_dir = os.path.dirname(os.path.abspath(__file__))  # carpeta de main.py
+        video_path = os.path.join(base_dir, video_path)
+
+    print(f"Usando ruta de video: {video_path}")
+
+    # Verificar si el archivo de video existe
+    if not os.path.exists(video_path):
+        print(f"ERROR: Video no encontrado: {video_path}")
+        return False
+        
+    try:
+        print("Intentando abrir video...")
+        cap = cv2.VideoCapture(video_path)
+        
+        if not cap.isOpened():
+            print(f"ERROR: No se pudo abrir el video: {video_path}")
+            return False
+            
+        print("Creando ventana OpenCV...")
+        # Crear ventana de OpenCV en pantalla completa
+        cv2.namedWindow("Splash", cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty("Splash", cv2.WND_PROP_FULLSCREEN, 1)
+        
+        print("Reproduciendo video splash...")
+        start_time = time.time()
+        
+        while (time.time() - start_time) < duracion:
+            ret, frame = cap.read()
+            
+            if not ret:
+                # Si el video termina antes, reiniciarlo
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+            cv2.imshow("Splash", frame)
+            
+            # Salir si se presiona ESC o pasa el tiempo
+            if cv2.waitKey(25) & 0xFF == 27:  # Tecla ESC
+                break
+                
+        cap.release()
+        cv2.destroyAllWindows()
+        print("Video splash completado")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR reproduciendo video splash: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 if __name__ == "__main__":
+
     app = Aplicacion()
     app.geometry("1024x600+0+0")  # si la usas
 
-    # --- Solución anticlick-through (RPi Bookworm/Wayland) ---
+    # Iniciar splash en background
+    threading.Thread(
+        target=reproducir_video_splash,
+        args=("video_inicial.mp4", 5),
+        daemon=True
+    ).start()
+
+    # --- Solucion anticlick-through (RPi Bookworm/Wayland) ---
 
     app.update_idletasks()
 
@@ -19,7 +104,7 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-    # 1) Mostrar con pequeño retraso: VS Code suelta foco
+    # 1) Mostrar con peque�o retraso: VS Code suelta foco
     def _show_after_withdraw():
         try:
             app.deiconify()
@@ -41,7 +126,7 @@ if __name__ == "__main__":
             app.after(120, lambda: _focus_cycle(n+1))
     app.after(160, _focus_cycle)
 
-    # 3) Si el primer click llega demasiado pronto, lo “tragamos” y pedimos foco
+    # 3) Si el primer click llega demasiado pronto, lo "tragamos" y pedimos foco
     _first_click_done = {"v": False}
 
     def _swallow_until_focused(ev=None):
@@ -50,16 +135,16 @@ if __name__ == "__main__":
             _first_click_done["v"] = True
             return "break"  # evita que ese primer click llegue a VS Code
     app.bind_all("<ButtonPress-1>", _swallow_until_focused, add="+")
-    # también al map/idle por si el WM ignora el primero
+    # tambien al map/idle por si el WM ignora el primero
     app.bind("<Map>", lambda e: app.after(10, _ensure_front_and_focus))
     app.after_idle(_ensure_front_and_focus)
 
     # --- Pantalla completa gestionada + "recordar volver a fullscreen" ---
-    app.attributes("-fullscreen", True)   # sin barra de título
-    app._want_fullscreen = True         # bandera de preferencia
+    app.attributes("-fullscreen", True)  # sin barra de t�tulo
+    app._want_fullscreen = True          # bandera de preferencia
 
     def _reapply_fullscreen(_=None):
-        # Al restaurar desde la barra de tareas, vuelve a fullscreen si así se prefirió
+        # Al restaurar desde la barra de tareas, vuelve a fullscreen si as� se prefiri�
         if getattr(app, "_want_fullscreen", False):
             app.after(50, lambda: app.attributes("-fullscreen", True))
 
@@ -67,7 +152,7 @@ if __name__ == "__main__":
     app.bind("<Map>", _reapply_fullscreen, add="+")
     app.bind("<FocusIn>", _reapply_fullscreen, add="+")
 
-    # (Opcional) salir de fullscreen con ESC, y NO volver automáticamente
+    # (Opcional) salir de fullscreen con ESC, y NO volver autom�ticamente
     def _exit_fs(_=None):
         app._want_fullscreen = False
         app.attributes("-fullscreen", False)

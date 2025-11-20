@@ -1,4 +1,4 @@
-#!/home/eia/Desktop/ProyectoInterfaz/ProyectoInterfaz/.venv/bin/python
+#!/home/eia/Encrypted/.ProyectoInterfaz_descifrado/.ProyectoInterfaz/ProyectoInterfaz/.venv/bin/python
 import sys
 from numpy._configtool import main
 if __name__ == '__main__':

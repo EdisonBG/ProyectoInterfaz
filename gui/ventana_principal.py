@@ -19,8 +19,8 @@ except Exception:
     C = _C_()
     
 # ========================= CONFIGURACIÓN DE FUENTE =========================
-FUENTE_LABELS = ("Calibri", 15)  # Fuente modificable desde aquí
-FUENTE_VALORES = ("Calibri", 15)
+FUENTE_LABELS = ("Calibri", 12)  # Fuente modificable desde aquí
+FUENTE_VALORES = ("Calibri", 12)
 
 # ========================= POSICIONES DE LOS LABELS =========================
 LABEL_POS = {

@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/home/eia/Desktop/ProyectoInterfaz/ProyectoInterfaz/.venv"
+VIRTUAL_ENV="/home/eia/Encrypted/.ProyectoInterfaz_descifrado/.ProyectoInterfaz/ProyectoInterfaz/.venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
