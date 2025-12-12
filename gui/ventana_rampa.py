@@ -71,8 +71,8 @@ class VentanaRampa(tk.Toplevel):
         self.wait_visibility()
         self.lift()
         self.focus_force()
-        self.grab_set()
-        self.protocol("WM_DELETE_WINDOW",  self._on_close)
+        self.attributes('-topmost', True)  # Mantener encima
+        self.protocol("WM_DELETE_WINDOW",  self._cerrar_seguro)
 
         ttk.Label(self, text=f"Configuracion de Rampa - Omega {id_omega}",
                   font=("Calibri", 18, "bold")).pack(pady=10)
@@ -267,6 +267,21 @@ class VentanaRampa(tk.Toplevel):
 
         print("[TX] Mensaje Rampa:", mensaje)
 
+
+        # Cerrar cualquier teclado abierto ANTES de enviar
+        try:
+            for child in self.winfo_children():
+                if isinstance(child, tk.Toplevel):
+                    try:
+                        child.grab_release()
+                        child.destroy()
+                    except:
+                        pass
+        except:
+            pass
+
+        self._liberar_recursos()
+
         # envio centralizado
         if self.controlador and hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(mensaje)
@@ -276,7 +291,7 @@ class VentanaRampa(tk.Toplevel):
             except Exception as e:
                 print("Error al enviar al Arduino:", e)
 
-        self._on_close()
+        self.destroy()
 
         # ----------------- cierre/limpieza -----------------
     def _on_close(self):
@@ -288,4 +303,41 @@ class VentanaRampa(tk.Toplevel):
                     setattr(self.controlador, attr, None)
         except Exception:
             pass
+        self.destroy()
+
+    def _liberar_recursos(self):
+        """Libera todos los recursos que pueden bloquear la GUI"""
+        # 1. Liberar cualquier modalidad
+        try:
+            # Si por alguna raz�n hay grab_set(), liberarlo
+            self.grab_release()
+        except:
+            pass
+        
+        # 2. Quitar el atributo topmost
+        try:
+            self.attributes('-topmost', False)
+        except:
+            pass
+        
+        # 3. Forzar que la ventana principal reciba foco
+        try:
+            self.master.focus_set()
+        except:
+            pass
+        
+        # 4. Limpiar referencias en el controlador
+        if self.controlador and hasattr(self.controlador, "_rampa_wins"):
+            if self.id_omega in self.controlador._rampa_wins:
+                del self.controlador._rampa_wins[self.id_omega]
+        
+        # 5. Actualizar la GUI inmediatamente
+        self.update_idletasks()
+    
+    def _cerrar_seguro(self):
+        """Cierra la ventana de manera segura"""
+        # Liberar recursos primero
+        self._liberar_recursos()
+        
+        # Luego destruir
         self.destroy()

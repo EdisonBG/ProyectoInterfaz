@@ -90,6 +90,15 @@ MFC_DEFAULTS = {
 MAX_SP = 600         # setpoint hornos
 MAX_PRES = 20.0      # presión máxima (bar, 1 decimal)
 
+BYPASS_MAPPING = {
+    "1": "O2/N2",
+    "2": "N2/N2"
+}
+
+BYPASS_REVERSE_MAPPING = {
+    "O2/N2": "1",
+    "N2/N2": "2"
+}
 
 def flujo_a_pwm(flujo_ml_min: float, maximo: int) -> int:
     """
@@ -175,6 +184,9 @@ class VentanaAuto(tk.Frame):
 
         self._max_stage = 0                 # 0 = todo deshabilitado al inicio
         self._stage_chk_vars = {}           # {c: tk.IntVar} por etapa 1..8
+
+        # Estado del bypass de la etapa anterior
+        self._last_bypass = None
 
         # refs de celdas: dict[col][rowkey] -> widget
         self.cells = {c: {} for c in range(1, 9)}
@@ -467,9 +479,9 @@ class VentanaAuto(tk.Frame):
 
             # Bypass
             cmb_bypass = ttk.Combobox(self.grid_frame, values=(
-                "1", "2"), state="readonly", width=6)
+                "O2/N2", "N2/N2"), state="readonly", width=6)
             cmb_bypass.configure(font=FONT)
-            cmb_bypass.set("1")
+            cmb_bypass.set("O2/N2")
             cmb_bypass.grid(row=9, column=c, sticky="ew", **cell_pad)
             cmb_bypass.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
 
@@ -662,6 +674,48 @@ class VentanaAuto(tk.Frame):
             messagebox.showinfo("Auto", "El proceso ya está en ejecución.")
             return
 
+        # --- NUEVA VERIFICACIÓN: Comprobar presión límite ---
+        try:
+            # Obtener la presión límite desde VentanaValv
+            vvalv = self.controlador._ventanas.get("VentanaValv")
+            if vvalv is None or not hasattr(vvalv, 'sol_presion_limite'):
+                messagebox.showerror(
+                    "Error de configuración", 
+                    "No se ha configurado la presión límite del sistema.\n\n" +
+                    "Por favor, ingrese la presión límite en la ventana correspondiente antes de iniciar."
+                )
+                return
+            
+            presion_limite = vvalv.sol_presion_limite
+            
+            # Verificar que la presión límite no sea el valor por defecto (20.0) o 0
+            if presion_limite <= 0 or presion_limite == 21.0:
+                messagebox.showerror(
+                    "Error de configuración", 
+                    "No se ha configurado la presión límite del sistema.\n\n" +
+                    "Por favor, ingrese la presión límite en la ventana de Bomba Peristáltica antes de iniciar."
+                )
+                return
+                
+        except Exception as e:
+            messagebox.showerror(
+                "Error", 
+                f"No se pudo verificar la presión límite: {str(e)}"
+            )
+            return
+        
+        # --- LEER BYPASS ACTUAL DESDE CSV SOLO AL INICIAR ---
+        current_bypass = self._read_bypass_from_csv()
+        if current_bypass is not None:
+            self._last_bypass = current_bypass
+            print(f"[INFO] Bypass actual le�do desde CSV: {self._last_bypass}")
+        else:
+            # Si no se puede leer, inicializamos como None
+            self._last_bypass = None
+
+        # --- AJUSTAR PRESIONES DE LAS ETAPAS ---
+        self._ajustar_presiones_etapas(presion_limite)
+
         self._active_cols = [c for c in range(1, 9) if self._col_is_complete(c)]
         if not self._active_cols:
             messagebox.showerror(
@@ -672,9 +726,40 @@ class VentanaAuto(tk.Frame):
         self._paused = False
         self.btn_pausar.configure(state="normal")
         self.btn_reanudar.configure(state="disabled")
-
+        self.controlador.set_auto_modo_activo(True)  # Modo auto activo
         self._col_ptr = -1
         self._iniciar_siguiente_etapa()
+
+    def _ajustar_presiones_etapas(self, presion_limite: float):
+        """
+        Ajusta las presiones de trabajo (WoPr) de todas las etapas habilitadas
+        que excedan la presión límite del sistema.
+        """
+        etapas_ajustadas = []
+        
+        for c in range(1, 9):
+            if self._stage_chk_vars[c].get():  # Solo etapas habilitadas
+                presion_celda = self.cells[c]["pres"]
+                presion_actual = self._get_float(presion_celda)
+                
+                # Si la presión actual excede el límite, ajustarla
+                if presion_actual > presion_limite:
+                    nueva_presion = max(0, presion_limite - 2.0)
+                    presion_celda.delete(0, tk.END)
+                    presion_celda.insert(0, f"{nueva_presion:.1f}")
+                    etapas_ajustadas.append((c, presion_actual, nueva_presion))
+        
+        # Mostrar mensaje informativo si se hicieron ajustes
+        if etapas_ajustadas:
+            mensaje_ajustes = "Se ajustaron presiones de etapa:\n\n"
+            for etapa, vieja, nueva in etapas_ajustadas:
+                mensaje_ajustes += f"Etapa {etapa}: {vieja:.1f} bar → {nueva:.1f} bar\n"
+            mensaje_ajustes += f"\nPresión límite del sistema: {presion_limite:.1f} bar"
+            
+            messagebox.showinfo(
+                "Ajuste automático de presiones",
+                mensaje_ajustes
+            )
 
     def _cmd_pausar(self):
         if not self._run_active or self._paused:
@@ -698,7 +783,9 @@ class VentanaAuto(tk.Frame):
         self._tick()
 
     def _cmd_detener(self):
+        self._tx("$;4;2;!")
         self._stop_all("Proceso detenido por el usuario.")
+        self.controlador.set_auto_modo_activo(False)  # Modo auto inactivo
 
     def _stop_all(self, msg: str = ""):
         self._run_active = False
@@ -731,6 +818,7 @@ class VentanaAuto(tk.Frame):
         self._col_ptr += 1
         if self._col_ptr >= len(self._active_cols):
             self._stop_all("Todas las etapas completas finalizaron.")
+            self.controlador.set_auto_modo_activo(False)  # Modo auto inactivo
             try:
                 messagebox.showwarning(
                     "Modo Auto",
@@ -894,6 +982,28 @@ class VentanaAuto(tk.Frame):
         except Exception as e:
             print(f"[WARN] No se pudo escribir {self._pos_file}: {e}")
 
+        self.controlador.set_posicion_valvulas_auto(cur_v)
+
+    def _read_bypass_from_csv(self) -> str:
+        """
+        Lee la posicion actual del bypass desde el archivo CSV.
+        Retorna "1" o "2". Si no se puede leer, retorna None.
+        """
+        try:
+            if os.path.exists(self._pos_file):
+                with open(self._pos_file, newline="", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        if len(row) >= 2:
+                            key = (row[0] or "").strip().upper()
+                            val = (row[1] or "").strip()
+                            if key == "BYP" and val in ("1", "2"):
+                                return val
+        except Exception as e:
+            print(f"[WARN] Error leyendo bypass de {self._pos_file}: {e}")
+        
+        return None  # No se pudo leer
+
     # ----------------------- TX helpers -----------------------
 
     def _tx(self, mensaje: str) -> bool:
@@ -913,11 +1023,21 @@ class VentanaAuto(tk.Frame):
         """
         $;4;POS_INI;PS*10;P1_ON;BYPASS;M1_PWM;M2_PWM;M3_PWM;M4_PWM;T1_SP;T2_SP;!
         """
+
+        # Si la posicion actual es igual a la anterior, envoa 3 en lugar de 1 o 2
+        bypass_to_send = str(d["bypass_on"])
+    
+        if self._last_bypass is not None and bypass_to_send == self._last_bypass:
+            bypass_to_send = "3"  # C�digo especial: "no mover"
+           
+        # Actualiza el �ltimo bypass con el valor REAL (1 o 2, no 3)
+        self._last_bypass = str(d["bypass_on"])
+
         partes = [
             "$;4",
             str(d["pos_ini"]), str(d["ps10"]),
             str(d["p1_on"]),
-            str(d["bypass_on"]),
+            bypass_to_send,
             str(d["m1_pwm"]), str(d["m2_pwm"]), str(
                 d["m3_pwm"]), str(d["m4_pwm"]),
             str(d["t1_sp"]), str(d["t2_sp"]),
@@ -975,16 +1095,31 @@ class VentanaAuto(tk.Frame):
         pos_ini = 1 if (self.cells[c]["pos_ini"].get()
                         or "A").upper() == "A" else 2
 
-        # presión
+        # presión - CON VERIFICACIÓN FINAL DE LÍMITE
         pres_bar = clamp(round(self._get_float(
             self.cells[c]["pres"]), 1), 0.0, MAX_PRES)
+        
+        # Verificación final contra presión límite del sistema
+        try:
+            vvalv = self.controlador._ventanas.get("VentanaValv")
+            if vvalv and hasattr(vvalv, 'sol_presion_limite'):
+                presion_limite_sistema = vvalv.sol_presion_limite
+                if pres_bar > presion_limite_sistema:
+                    pres_bar = max(0, presion_limite_sistema - 2.0)
+                    # Actualizar también la celda por si acaso
+                    self.cells[c]["pres"].delete(0, tk.END)
+                    self.cells[c]["pres"].insert(0, f"{pres_bar:.1f}")
+        except Exception:
+            pass  # Si hay error, mantener la presión calculada
+        
         ps10 = int(round(pres_bar * 10))
 
         # peristálticas
         p1_on = 1 if (self.cells[c]["p1"].get() == "ON") else 2
 
         # Bypass: 1 - OFF, 2 - ON
-        bypass_on = 1 if (self.cells[c]["bypass"].get() == "1") else 2
+        bypass_visual = self.cells[c]["bypass"].get()
+        bypass_on = 1 if bypass_visual == "O2/N2" else 2
 
         # MFCs -> PWM
 
@@ -1230,6 +1365,10 @@ class VentanaAuto(tk.Frame):
         p = clamp(round(p, 1), 0.0, MAX_PRES)
         ps10 = str(int(round(p * 10)))
 
+        # Bypass: convertir visual (O2/N2, N2/N2) a l�gico (1, 2)
+        bypass_visual = self.cells[c]["bypass"].get()
+        bypass_logico = "1" if bypass_visual == "O2/N2" else "2"
+
         return [
             str(c),  # StNu
             ent_str(self.cells[c]["t_etapa"], "0"),  # TiSt
@@ -1238,7 +1377,7 @@ class VentanaAuto(tk.Frame):
             ent_str(self.cells[c]["t_b"], "0"),  # TiPo_B
             ps10,  # WoPr10
             "1" if self.cells[c]["p1"].get() == "ON" else "2",  # CoPu
-            "1" if self.cells[c]["bypass"].get() == "1" else "2",  # ByPa
+            bypass_logico,  # ByPa
             self.cells[c]["m1_gas"].get(), ent_str(self.cells[c]["m1_f"], "0"),  # GS_O2, FW_O2
             self.cells[c]["m2_gas"].get(), ent_str(self.cells[c]["m2_f"], "0"),  # GS_CO2, FW_CO2
             self.cells[c]["m3_gas"].get(), ent_str(self.cells[c]["m3_f"], "0"),  # GS_N2, FW_N2
@@ -1285,7 +1424,7 @@ class VentanaAuto(tk.Frame):
                     try:
                         col = int(row.get("StNu", "0").strip())
                         if 1 <= col <= 8:
-                            self._apply_csv_row_to_col(col, row)
+                            self._apply_csv_row_to_col (col, row)
                     except Exception as e:
                         print(f"DEBUG: Error procesando fila: {e}")
                         continue
@@ -1318,8 +1457,12 @@ class VentanaAuto(tk.Frame):
         # peristálticas
         self.cells[c]["p1"].set("ON" if row.get(
             "CoPu", "2") == "1" else "OFF")
-        self.cells[c]["bypass"].set(
-            "2" if row.get("ByPa", "2") == "1" else "1")
+        
+        bypass_csv_val = row.get("ByPa", "1")
+        if bypass_csv_val == "1":
+            self.cells[c]["bypass"].set("O2/N2")
+        else:
+            self.cells[c]["bypass"].set("N2/N2")
 
         # MFCs - usando los nombres exactos del CSV
         self.cells[c]["m1_gas"].set(row.get("GS_O2", "O2"))

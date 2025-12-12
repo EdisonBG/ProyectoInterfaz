@@ -49,18 +49,21 @@ POS = {
         "btn_info_con": (320, 6),
     },
     "bp": {
-        "btn_bypass":   (75, 80),
+        "btn_bypass":   (45, 80),
         "btn_info_byp": (320, 6),
     },
     "sol": {
-        "campo_presion_seguriad": (5,  38), 
+        "campo_presion_seguridad": (5,  38), 
         "presion_manual_lbl": (150,  88), 
         "btn_sol_toggle":   (10, 123),    
-        "btn_sol2_toggle":  (215, 123),   # Reutilizando la posición del btn_per2
+        "btn_sol2_toggle":  (215, 123),   
     },
     "per": {
-        "btn_per1":    (130,  92),
-        # Eliminamos per2_lbl y btn_per2 ya que se reutilizará
+        
+        "bomba_per_lbl":    (30,  130),
+        "btn_per1":    (220,  123),
+        "campo_presion_limite": (5, 7),      # Movido a sección per
+        "btn_enviar_presiones": (150, 60),    # Movido a sección per
     },
 }
 
@@ -118,6 +121,8 @@ class VentanaValv(tk.Frame):
         # Solenoide 2 - Misma presion que Solenoide 1
         self.sol2_abierta = tk.BooleanVar(value=False)
         
+        # Nueva variable para presión límite
+        self.sol_presion_limite = 20.0  # bar
 
         # Peristáltica 1 (solo una ahora)
         self.per1_on = tk.BooleanVar(value=False)
@@ -138,6 +143,12 @@ class VentanaValv(tk.Frame):
 
         # --- Notificar estado inicial de las flechas ---
         self._notificar_estado_actual_flechas()
+
+        # para que barra_navegacion pueda acceder a esta instancia
+        if hasattr(self.controlador, '_ventana_valv'):
+            print("[DEBUG] VentanaValv ya existe en controlador")
+        else:
+            self.controlador._ventana_valv = self
 
     # ------------- Estilos -------------
     def _configurar_estilos(self):
@@ -189,7 +200,7 @@ class VentanaValv(tk.Frame):
             ("con", "Conexión equipo 2"),
             ("bp",  "Bypass"),
             ("sol", "Control Backpressure"),
-            ("per", "Bomba peristáltica"),
+            ("per", " "),
         ]
 
         for idx, (sec_id, titulo) in enumerate(secciones, start=1):
@@ -269,24 +280,46 @@ class VentanaValv(tk.Frame):
             presion_manual_lbl = ttk.Label(frame, text="Modo manual", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
             presion_manual_lbl.place(x=POS[sec_id]["presion_manual_lbl"][0], y=POS[sec_id]["presion_manual_lbl"][1])
 
-            # Presion de seguridad (maximo 20.0bar)
-            campo_presion_seguriad = LabeledEntryNum(frame, "Presión de seguridad (bar):",
-            width=18,  # más largo
-            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),  # label más grande
+            # Presion de seguridad (maximo 20.0bar) - AHORA SIN ENVÍO AUTOMÁTICO
+            campo_presion_seguridad = LabeledEntryNum(frame, "Presión deseada (bar):",
+            width=18,
+            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),
             entry_ipady=7,
             )
         
-            campo_presion_seguriad.place(x=POS[sec_id]["campo_presion_seguriad"][0], y=POS[sec_id]["campo_presion_seguriad"][1])
-            self.entry_p_seg = campo_presion_seguriad.entry
-            campo_presion_seguriad.bind_numeric(
-            lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
-             on_submit=lambda v: self._aplicar_presion_y_enviar_auto(v),
-        )
+            campo_presion_seguridad.place(x=POS[sec_id]["campo_presion_seguridad"][0], y=POS[sec_id]["campo_presion_seguridad"][1])
+            self.entry_p_seg = campo_presion_seguridad.entry
+            # Solo actualiza el valor, no envía
+            campo_presion_seguridad.bind_numeric(
+                lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                on_submit=lambda v: self._actualizar_presion_seguridad(v),
+            )
 
         elif sec_id == "per":
-            # --- Tarjeta: Peristáltica (solo una ) ---
+            # --- Tarjeta: Peristáltica (solo una) ---
             self.btn_per1 = TouchButton(frame, text=self._texto_per1(), style="AB.TButton", command=self._toggle_per1)
             self.btn_per1.place(x=POS[sec_id]["btn_per1"][0], y=POS[sec_id]["btn_per1"][1])
+
+            # NUEVO: Campo para presión límite en sección per
+            campo_presion_limite = LabeledEntryNum(frame, "Presión límite (bar):",
+            width=18,
+            label_font=getattr(C, "FONT_BASE", ("Calibri", 14)),
+            entry_ipady=7,
+            )
+        
+            campo_presion_limite.place(x=POS[sec_id]["campo_presion_limite"][0], y=POS[sec_id]["campo_presion_limite"][1])
+            self.entry_p_lim = campo_presion_limite.entry
+            campo_presion_limite.bind_numeric(
+                lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                on_submit=lambda v: self._actualizar_presion_limite(v),
+            )
+
+            # NUEVO: Botón para enviar ambas presiones en sección per
+            self.btn_enviar_presiones = TouchButton(frame, text="Enviar", style="AB.TButton", command=self._enviar_presiones)
+            self.btn_enviar_presiones.place(x=POS[sec_id]["btn_enviar_presiones"][0], y=POS[sec_id]["btn_enviar_presiones"][1])
+
+            bomba_per_lbl = ttk.Label(frame, text="Condensador", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+            bomba_per_lbl.place(x=POS[sec_id]["bomba_per_lbl"][0], y=POS[sec_id]["bomba_per_lbl"][1])
 
         return frame
 
@@ -324,6 +357,13 @@ class VentanaValv(tk.Frame):
                 w.writerow(["BYP", str(self.bypass_sel.get())])
         except Exception as e:
             print(f"[WARN] No se pudo escribir {self._pos_file}: {e}")
+
+    def actualizar_desde_csv(self):
+        """Funci�n simple que actualiza TODO desde el CSV"""
+        self._cargar_posiciones()
+        self._refrescar_botones("v1")
+        self._refrescar_botones("v2")
+        self.btn_bypass.configure(text=self._texto_bypass())
 
     # --- Para la visualización del sentido de flujo segun las V4vias -----
     def _notificar_estado_actual_flechas(self):
@@ -369,10 +409,10 @@ class VentanaValv(tk.Frame):
         return txt
     
     def _texto_per1(self) -> str:
-        txt1 = "Encender Bomba" if not self.per1_on.get() else "Apagar Bomba"
+        txt1 = "Encender" if not self.per1_on.get() else "Apagar"
         # Estilo según el texto (se aplica al final del ciclo actual)
         try:
-            style = "AbrirBtn.TButton" if txt1 == "Encender Bomba" else "CerrarBtn.TButton"
+            style = "AbrirBtn.TButton" if txt1 == "Encender" else "CerrarBtn.TButton"
             self.after(0, lambda: self.btn_per1.configure(style=style))
         except Exception:
             pass
@@ -382,7 +422,7 @@ class VentanaValv(tk.Frame):
         return "Activar conexión" if not self.conexion_equipo2.get() else "Desactivar conexión"
 
     def _texto_bypass(self) -> str:
-        return f"Estado actual: Bypass {self.bypass_sel.get()}"
+        return "Estado actual: Bypass O2/N2" if self.bypass_sel.get() == 1 else "Estado actual: Bypass N2/N2"
 
     # ------------- Handlers V1/V2 -------------
     def _seleccionar_posicion(self, cual: str, pos: str):
@@ -440,6 +480,8 @@ class VentanaValv(tk.Frame):
             if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
                 self.controlador.notificar_cambio_flecha_valvula(1, "A")
                 self.controlador.notificar_cambio_flecha_valvula(2, "A")
+
+            self.controlador.set_equipo2_conectado(True)  # equipo 2 conectado
         else:
             # 2. Al desactivar conexión: v2 queda en la misma posición que v1
             self.v2_pos.set(self.v1_pos.get())
@@ -447,7 +489,11 @@ class VentanaValv(tk.Frame):
             # --- Notificar cambio de flecha para válvula 2 ---
             if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
                 self.controlador.notificar_cambio_flecha_valvula(2, self.v1_pos.get())
-    
+            
+            self.controlador.set_equipo2_conectado(False)  #equipo 2 desconectado
+
+        self._guardar_posiciones()
+        
         self._aplicar_estado_conexion()
         if nuevo:
             msg = "$;3;0;8;!"
@@ -463,32 +509,118 @@ class VentanaValv(tk.Frame):
         self.btn_v1_a.configure(state="normal")
         self.btn_v1_b.configure(state="normal")
 
+    # ------------- Nuevas funciones para manejar presiones -------------
+    def _actualizar_presion_seguridad(self, valor):
+        """Actualiza solo el campo de entrada, NO la variable interna"""
+        p = self._leer_presion_float_capada(valor, es_presion_deseada=True)
+        
+        # NUEVA LÓGICA: Ajustar si la presión de seguridad es mayor que la límite
+        # Solo si la presión límite es mayor que 0 (ya se ingresó un valor)
+        if self.sol_presion_limite > 0 and p > self.sol_presion_limite:
+            p = max(0, self.sol_presion_limite - 2.0)  # 2 bar por debajo, mínimo 0
+        
+        # Solo actualiza la interfaz, no la variable interna
+        self.entry_p_seg.delete(0, tk.END)
+        self.entry_p_seg.insert(0, f"{p:.1f}")
+
+    def _actualizar_presion_limite(self, valor):
+        """Actualiza la presión límite sin enviar automáticamente"""
+        p = self._leer_presion_float_capada(valor, es_presion_deseada=False)
+    
+        # Solo actualiza la interfaz, no la variable interna
+        self.entry_p_lim.delete(0, tk.END)
+        self.entry_p_lim.insert(0, f"{p:.1f}")
+
+    def _enviar_presiones(self):
+        """Envía ambas presiones (seguridad y límite) al Arduino en un solo mensaje"""
+        
+        # NUEVA LÓGICA: Verificar qué campos están completos
+        tiene_p_seg = bool(self.entry_p_seg.get())
+        tiene_p_lim = bool(self.entry_p_lim.get())
+        
+        # Caso 1: Solo tiene presión límite -> ajustar presión deseada automáticamente
+        if tiene_p_lim and not tiene_p_seg:
+            p_lim = self._leer_presion_float_capada(self.entry_p_lim.get(), es_presion_deseada=False)
+            p_seg = max(0, p_lim - 2.0)
+            
+            # Asegurar que la presión deseada no exceda 20 bar
+            if p_seg > 20.0:
+                p_seg = 20.0
+                
+            # Actualizar la interfaz
+            self.entry_p_seg.delete(0, tk.END)
+            self.entry_p_seg.insert(0, f"{p_seg:.1f}")
+            
+            # Ambas presiones están listas, continuar...
+            tiene_p_seg = True
+        
+        # Caso 2: Solo tiene presión deseada -> mostrar error
+        elif tiene_p_seg and not tiene_p_lim:
+            messagebox.showerror("Error", "Es necesario ingresar ambas presiones")
+            return
+        
+        # Caso 3: Ninguna presión ingresada -> mostrar error
+        elif not tiene_p_seg and not tiene_p_lim:
+            messagebox.showerror("Error", "Es necesario ingresar ambas presiones")
+            return
+        
+        # Si llegamos aquí, ambas presiones están disponibles
+        p_seg = self._leer_presion_float_capada(self.entry_p_seg.get(), es_presion_deseada=True)
+        p_lim = self._leer_presion_float_capada(self.entry_p_lim.get(), es_presion_deseada=False)
+        
+        # Aplicar lógica de ajuste si es necesario
+        if p_seg > p_lim:
+            p_seg = max(0, p_lim - 2.0)
+            # Actualizar también la entrada visual
+            self.entry_p_seg.delete(0, tk.END)
+            self.entry_p_seg.insert(0, f"{p_seg:.1f}")
+
+        # Convertir a decibares
+        p10_seg = int(round(p_seg * 10))
+        p10_lim = int(round(p_lim * 10))
+
+        # Enviar mensaje
+        msg = f"$;3;5;0;{p10_seg};{p10_lim};!"
+        print("[TX] Presiones (seguridad y límite):", msg)
+
+        if hasattr(self.controlador, "enviar_a_arduino"):
+            # SOLO ACTUALIZAMOS LAS VARIABLES INTERNAS SI EL ENVÍO ES EXITOSO
+            try:
+                self.controlador.enviar_a_arduino(msg)
+                
+                # AHORA SÍ ACTUALIZAMOS LAS VARIABLES INTERNAS
+                self.sol_presion = p_seg
+                self.sol_presion_limite = p_lim
+                
+                # Activar modo automático en la UI
+                self._activar_control_presion_automatico(True)
+                # Resetear botones de solenoides
+                self._resetear_botones_solenoides()
+                
+            except Exception as e:
+                messagebox.showerror("Error de comunicación", 
+                                f"No se pudo enviar al Arduino: {str(e)}")
+
     # ------------- Solenoide (ID 5) -------------
-    def _leer_presion_float_capada(self, v) -> float:
+    def _leer_presion_float_capada(self, v, es_presion_deseada=False) -> float:
         try:
             s = "20" if v is None else str(v).strip() or "20"
             p = float(s)
         except Exception:
             p = 20.0
-        if p > 20.0:
-            p = 20.0
+        
+        # Diferentes límites según el tipo de presión
+        if es_presion_deseada:
+            # Presión deseada: máximo 20.0 bar
+            if p > 20.0:
+                p = 20.0
+        else:
+            # Presión límite: máximo 24.0 bar
+            if p > 24.0:
+                p = 24.0
+        
         return round(p, 1)
 
-    def _aplicar_presion_y_enviar_auto(self, valor):
-        p = self._leer_presion_float_capada(valor)
-        self.sol_presion = p
-        self.entry_p_seg.delete(0, tk.END)
-        self.entry_p_seg.insert(0, f"{p:.1f}")
-        p10 = int(round(p * 10))
-        msg = f"$;3;5;0;{p10};!"
-        print("[TX]", msg)
-        if hasattr(self.controlador, "enviar_a_arduino"):
-            self.controlador.enviar_a_arduino(msg)
-
-        self._activar_control_presion_automatico(True)
-
-        # --- Resetear los botones manuales a estado inicial ---
-        self._resetear_botones_solenoides()
 
     def _resetear_botones_solenoides(self):
         """
@@ -532,16 +664,25 @@ class VentanaValv(tk.Frame):
             )
 
     def _toggle_sol(self):
-        p = self._leer_presion_float_capada(self.entry_p_seg.get())
-        self.sol_presion = p
-        self.entry_p_seg.delete(0, tk.END)
-        self.entry_p_seg.insert(0, f"{p:.1f}")
+        # Leer directamente de los campos de entrada
+        p_seg = self._leer_presion_float_capada(self.entry_p_seg.get(), es_presion_deseada=True)
+        
+        # Si no hay presión límite configurada en el campo, usar 24.0
+        p_lim = self._leer_presion_float_capada(self.entry_p_lim.get(), es_presion_deseada=False)
+        if not self.entry_p_lim.get() or p_lim == 0:
+            p_lim = 24.0
+            self.entry_p_lim.delete(0, tk.END)
+            self.entry_p_lim.insert(0, "24.0")
+        
         nuevo = not self.sol_abierta.get()
         self.sol_abierta.set(nuevo)
         self.btn_sol_toggle.configure(text=self._texto_sol())
         estado = "1" if nuevo else "2"
-        p10 = int(round(p * 10))
-        msg = f"$;3;5;1;{estado};{p10};!"
+        p10 = int(round(p_seg * 10))
+        p10_lim = int(round(self.sol_presion_limite * 10))  # Convertir límite a decibares
+        
+        # MODIFICADO: Incluir la presión límite en el mensaje
+        msg = f"$;3;5;1;{estado};{p10};{p10_lim};!"
         print("[TX]", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
@@ -552,19 +693,26 @@ class VentanaValv(tk.Frame):
         if hasattr(self.controlador, 'notificar_cambio_estado_valvula'):
             self.controlador.notificar_cambio_estado_valvula("sol1", nuevo, False)
 
-    # NUEVA FUNCIÓN para el toggle del solenoide 2
     def _toggle_sol2(self):
-        p = self._leer_presion_float_capada(self.entry_p_seg.get())
-        self.sol_presion = p
-        self.entry_p_seg.delete(0, tk.END)
-        self.entry_p_seg.insert(0, f"{p:.1f}")
+        # Leer directamente de los campos de entrada
+        p_seg = self._leer_presion_float_capada(self.entry_p_seg.get(), es_presion_deseada=True)
+        
+        # Si no hay presión límite configurada en el campo, usar 24.0
+        p_lim = self._leer_presion_float_capada(self.entry_p_lim.get(), es_presion_deseada=False)
+        if not self.entry_p_lim.get() or p_lim == 0:
+            p_lim = 24.0
+            self.entry_p_lim.delete(0, tk.END)
+            self.entry_p_lim.insert(0, "24.0")
+        
         nuevo = not self.sol2_abierta.get()
         self.sol2_abierta.set(nuevo)
         self.btn_sol2_toggle.configure(text=self._texto_sol2())
         estado = "1" if nuevo else "2"
-        p10 = int(round(p * 10))
-        # CAMBIO IMPORTANTE: aquí se usa el ID 6 en lugar del 5
-        msg = f"$;3;8;1;{estado};{p10};!"
+        p10 = int(round(p_seg * 10))
+        p10_lim = int(round(self.sol_presion_limite * 10))  # Convertir límite a decibares
+        
+        # MODIFICADO: Incluir la presión límite en el mensaje
+        msg = f"$;3;8;1;{estado};{p10};{p10_lim};!"
         print("[TX]", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
@@ -610,4 +758,3 @@ class VentanaValv(tk.Frame):
         # --- Notificar cambio de estado de la bomba peristáltica ---
         if hasattr(self.controlador, 'notificar_cambio_estado_valvula'):
             self.controlador.notificar_cambio_estado_valvula("per1", nuevo)
-            

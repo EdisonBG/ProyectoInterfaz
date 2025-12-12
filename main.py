@@ -2,6 +2,7 @@ import tkinter as tk
 import sys
 import os
 import threading
+import csv
 
 try:
     import cv2
@@ -11,7 +12,7 @@ try:
 except ImportError as e:
     print("ERROR:", e)
     CV_AVAILABLE = False
-print("===================")
+
 
 from gui.app import Aplicacion
 import time
@@ -80,15 +81,35 @@ def reproducir_video_splash(video_path="splash.mp4", duracion=6):
 
 if __name__ == "__main__":
 
+    # Usamos la misma ruta que en Aplicacion: valv_pos.csv en el directorio de gui.app
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pos_file = os.path.join(base_dir, "gui", "valv_pos.csv")
+    
+    if os.path.exists(pos_file):
+        try:
+            # Leer archivo CSV
+            with open(pos_file, 'r', encoding='utf-8') as f:
+                lineas = list(csv.reader(f))
+            
+            # Modificar solo V1 y V2
+            for fila in lineas:
+                if fila and fila[0].upper() in ["V1", "V2"]:
+                    fila[1] = "A"
+            
+            # Reescribir archivo
+            with open(pos_file, 'w', newline='', encoding='utf-8') as f:
+                csv.writer(f).writerows(lineas)
+            
+            print("[INFO] V1 y V2 forzadas a posici�n A, BYP sin cambios")
+        except Exception as e:
+            print(f"[WARN] No se pudo modificar {pos_file}: {e}")
+    else:
+        print(f"[INFO] Archivo {pos_file} no existe, se crear� al iniciar la aplicaci�n")
+
+    reproducir_video_splash("video_inicial.mp4", 5)
+    
     app = Aplicacion()
     app.geometry("1024x600+0+0")  # si la usas
-
-    # Iniciar splash en background
-    threading.Thread(
-        target=reproducir_video_splash,
-        args=("video_inicial.mp4", 5),
-        daemon=True
-    ).start()
 
     # --- Solucion anticlick-through (RPi Bookworm/Wayland) ---
 

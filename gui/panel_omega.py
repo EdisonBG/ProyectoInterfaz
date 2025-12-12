@@ -436,6 +436,18 @@ class PanelOmega(ttk.Frame):
             # vuelve el color normal al label
             self.campo_setpoint.label.configure(foreground="")
 
+            try:
+                # Remover cualquier bind existente primero
+                self.entry_setpoint.unbind("<Button-1>")
+            except:
+                pass
+            
+            # Volver a vincular el teclado
+            self.campo_setpoint.bind_numeric(
+                lambda entry, on_submit: TecladoNumerico(self, entry, on_submit=on_submit),
+                on_submit=lambda v: self._guardar_setpoint_int(v)
+            )
+
         else:
             # Rampa: boton de configuracion
             self.boton_rampa.place(
@@ -536,26 +548,42 @@ class PanelOmega(ttk.Frame):
     def abrir_ventana_rampa(self):
         """
         Abre (o levanta) la ventana de rampa.
-        NOTA: La ventana, en su __init__, ya envia $;2;ID;4;3;! para solicitar datos.
         """
-        if getattr(self, "_rampa_win", None) and self._rampa_win.winfo_exists():
-            self._rampa_win.lift()
-            return
+        # Limpiar cualquier referencia anterior
+        if hasattr(self, "_rampa_win") and self._rampa_win is not None:
+            try:
+                if self._rampa_win.winfo_exists():
+                    # Intentar cerrar correctamente
+                    if hasattr(self._rampa_win, "_liberar_recursos"):
+                        self._rampa_win._liberar_recursos()
+                    self._rampa_win.destroy()
+            except:
+                pass
+            finally:
+                self._rampa_win = None
+        
+        # Tambi�n limpiar en el controlador
+        if hasattr(self.controlador, "_rampa_wins"):
+            if self.id_omega in self.controlador._rampa_wins:
+                old_win = self.controlador._rampa_wins[self.id_omega]
+                if old_win and old_win.winfo_exists():
+                    try:
+                        if hasattr(old_win, "_liberar_recursos"):
+                            old_win._liberar_recursos()
+                        old_win.destroy()
+                    except:
+                        pass
+                del self.controlador._rampa_wins[self.id_omega]
+        
+        # Crear nueva ventana
         self._rampa_win = VentanaRampa(self, self.id_omega, self.arduino)
-        # Registrar en la App para poder actualizarla cuando llegue la respuesta
+        
+        # Registrar en la App
         app = getattr(self, "controlador", None)
         if app is not None:
             if not hasattr(app, "_rampa_wins"):
                 app._rampa_wins = {}
-            app._rampa_wins[self.id_omega] = self._rampa_win
-
-        # Registrar en la App para poder actualizarla cuando llegue la respuesta
-        app = getattr(self, "controlador", None)
-        if app is not None:
-            # Diccionario por id_omega -> ventana
-            if not hasattr(app, "_rampa_wins"):
-                app._rampa_wins = {}
-            app._rampa_wins[self.id_omega] = self._rampa_win
+        app._rampa_wins[self.id_omega] = self._rampa_win
 
     def enviar_autotuning_directo(self):
         mem_idx = self._indice_memoria()

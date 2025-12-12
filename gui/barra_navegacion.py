@@ -63,7 +63,7 @@ class BarraNavegacion(ttk.Frame):
             ("", self.img_home, "VentanaPrincipal", None),
             ("", self.img_mfc, "VentanaMfc", None),
             ("", self.img_omega, "VentanaOmega", None),
-            ("", self.img_valv, "VentanaValv", None),
+            ("", self.img_valv, None, self._ir_a_valv_actualizada),
             ("", self.img_auto, "VentanaAuto", None),
             ("", self.img_graph, "VentanaGraph", None),
             ("Cerrar", self.img_folder, None, self._cerrar_app),
@@ -95,6 +95,12 @@ class BarraNavegacion(ttk.Frame):
 
         #pausa para asegurar que se envie el mensaje
         self.after(100, self._real_cerrar_app)
+
+    def _ir_a_valv_actualizada(self):
+        """Cambia a VentanaValv y actualiza sus botones"""
+        self.controlador.mostrar_ventana("VentanaValv")
+        if hasattr(self.controlador, '_ventana_valv'):
+            self.controlador._ventana_valv.actualizar_desde_csv()
 
     def _real_cerrar_app(self):
         top = self.winfo_toplevel()

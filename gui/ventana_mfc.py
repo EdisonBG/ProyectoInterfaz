@@ -50,7 +50,7 @@ POS = {
         "rango_lbl": (42, 39),  "legend":    (194, 39),
         "gas_lbl":   (112,  79), "combo":    (214, 79),
         "entry":     (66, 112),
-        "btn_open":  (50,  173), "btn_close": (214, 173),
+        "btn_open":  (30,  173), "btn_close": (230, 173),
         "btn_send":  (123,  226),
     },
     2: {
@@ -58,7 +58,7 @@ POS = {
         "rango_lbl": (42, 39),  "legend":    (194, 39),
         "gas_lbl":   (112,  79), "combo":    (214, 79),
         "entry":     (66, 112),
-        "btn_open":  (50,  173), "btn_close": (214, 173),
+        "btn_open":  (30,  173), "btn_close": (230, 173),
         "btn_send":  (123,  226),
     },
     3: {
@@ -66,7 +66,7 @@ POS = {
         "rango_lbl": (42, 39),  "legend":    (194, 39),
         "gas_lbl":   (112,  79), "combo":    (214, 79),
         "entry":     (66, 112),
-        "btn_open":  (50,  173), "btn_close": (214, 173),
+        "btn_open":  (30,  173), "btn_close": (230, 173),
         "btn_send":  (123,  226),
     },
     4: {
@@ -74,7 +74,7 @@ POS = {
         "rango_lbl": (42, 39),  "legend":    (194, 39),
         "gas_lbl":   (112,  79), "combo":    (214, 79),
         "entry":     (66, 112),
-        "btn_open":  (50,  173), "btn_close": (214, 173),
+        "btn_open":  (30,  173), "btn_close": (230, 173),
         "btn_send":  (123,  226),
     },
 }
@@ -426,9 +426,9 @@ class VentanaMfc(tk.Frame):
         self.refs[mfc_id]["legend"] = legend
 
         # Botones
-        btn_open = TouchButton(frame, text="Abrir MFC", style="Open.TButton",
+        btn_open = TouchButton(frame, text="Apertura 100%", style="Open.TButton",
                                command=lambda m=mfc_id: self._btn_open(m))
-        btn_close = TouchButton(frame, text="Cerrar MFC", style="Close.TButton",
+        btn_close = TouchButton(frame, text="Cierre 0%", style="Close.TButton",
                                 command=lambda m=mfc_id: self._btn_close(m))
         btn_open.place(x=POS[mfc_id]["btn_open"][0],
                        y=POS[mfc_id]["btn_open"][1])

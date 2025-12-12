@@ -275,7 +275,7 @@ class VentanaGraph(tk.Frame):
                 v = int(float(txt))
             except Exception:
                 v = self._sample_period
-            v = max(1, min(60, v))
+            v = max(3, min(60, v))
             self.ent_period.delete(0, tk.END)
             self.ent_period.insert(0, str(v))
             if v != self._sample_period:
@@ -731,12 +731,14 @@ class VentanaGraph(tk.Frame):
         if self.ax is None or self.mpl_canvas is None:
             return
         xs = self._times
+        
         for key in SERIES_ORDER:
             ln = self._lines[key]
             if self._series_vars[key].get():
                 ln.set_data(xs, self._buffers[key])
             else:
                 ln.set_data([], [])
+        
         # ------- Ventana deslizante en X -------
         xmax = max(xs) if xs else 1
         win_sec = self._max_points * self._sample_period
@@ -751,9 +753,55 @@ class VentanaGraph(tk.Frame):
         # Autoscale Y según series visibles
         self.ax.relim()
         self.ax.autoscale_view(scalex=False, scaley=True)
-
+        
+        # Configurar formateador del eje Y según las series visibles
+        visible_series = [key for key in SERIES_ORDER if self._series_vars[key].get()]
+        
+        if visible_series:
+            # Verificar si hay alguna serie que NO sea temperatura
+            has_non_temp = any(not key.startswith('T_') for key in visible_series)
+            
+            if has_non_temp:
+                # Si hay presiones/flujos, usar 1 decimal
+                self.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{x:.1f}'))
+            else:
+                # Si solo hay temperaturas, usar enteros
+                self.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, p: f'{int(round(x))}'))
+        
         self._refresh_legend()
         self.mpl_canvas.draw_idle()
+
+    def _get_y_formatter(self):
+        """Retorna un formateador apropiado para el eje Y según las series visibles"""
+        visible_series = [key for key in SERIES_ORDER if self._series_vars[key].get()]
+        
+        # Verificar si todas las series visibles son de temperatura
+        all_are_temp = all(key.startswith('T_') for key in visible_series)
+        
+        # Verificar si todas las series visibles NO son de temperatura (presiones/flujos)
+        all_are_non_temp = all(not key.startswith('T_') for key in visible_series)
+        
+        # Crear formateador dinámico
+        def dynamic_formatter(value, pos):
+            if value == 0:
+                return '0'
+            
+            # Si todas son temperaturas, mostrar enteros
+            if all_are_temp:
+                return f'{int(round(value))}'
+            
+            # Si todas son NO temperaturas, mostrar 1 decimal
+            if all_are_non_temp:
+                return f'{value:.1f}'
+            
+            # Si hay mezcla, usar formato adaptativo
+            # Para valores grandes (>10) mostrar enteros, para valores pequeños mostrar 1 decimal
+            if abs(value) >= 10:
+                return f'{int(round(value))}'
+            else:
+                return f'{value:.1f}'
+        
+        return dynamic_formatter
 
     def _reset_plot_buffers(self):
         self._elapsed_sec = 0

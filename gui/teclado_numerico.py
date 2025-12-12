@@ -3,35 +3,14 @@ from tkinter import ttk, messagebox
 import tkinter.font as tkfont
 
 class TecladoNumerico(tk.Toplevel):
-    _instance = None
-    _current_entry = None
-    _current_on_submit = None
-   
-    def __new__(cls, master, entry_destino=None, on_submit=None):
-        # Si ya existe una instancia, la reutilizamos
-        if cls._instance is None:
-            cls._instance = super(TecladoNumerico, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-   
     def __init__(self, master, entry_destino=None, on_submit=None):
-        # Si ya está inicializado, solo actualizamos las referencias
-        if self._initialized:
-            self._update_entry(entry_destino, on_submit)
-            return
-           
-        # Inicialización normal (solo una vez)
-        tk.Toplevel.__init__(self, master)
-        self._initialized = True
+        super().__init__(master)
        
-        self.title("Teclado Numérico")
+        self.title("Teclado Numerico")
         self.geometry("300x320")
         self.resizable(False, False)
        
-        # Ocultar inicialmente
-        self.withdraw()
-       
-        # Configuración visual
+        # Configuraci�n visual
         self._font = tkfont.Font(family="Calibri", size=14)
        
         st = ttk.Style(self)
@@ -46,8 +25,8 @@ class TecladoNumerico(tk.Toplevel):
         self.configure(bg=bg_theme)
 
         # Inicializar referencias
-        self._current_entry = None
-        self._current_on_submit = None
+        self._current_entry = entry_destino
+        self._current_on_submit = on_submit
         self._valor_original = ""
         self._primera_tecla = True
        
@@ -56,18 +35,10 @@ class TecladoNumerico(tk.Toplevel):
        
         # Configurar eventos
         self.bind("<Return>", lambda e: self.enviar_valor())
-        self.bind("<Escape>", lambda e: self.ocultar())
-        self.protocol("WM_DELETE_WINDOW", self.ocultar)
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.protocol("WM_DELETE_WINDOW", self.destroy)
        
-        # Configurar para el entry actual si se proporciona
-        if entry_destino is not None:
-            self._update_entry(entry_destino, on_submit)
-   
-    def _update_entry(self, entry_destino, on_submit):
-        """Actualiza el entry actual y muestra el teclado"""
-        self._current_entry = entry_destino
-        self._current_on_submit = on_submit
-       
+        # Si se proporcion� un entry, configurarlo
         if self._current_entry is not None:
             self._valor_original = self._current_entry.get()
             self._primera_tecla = True
@@ -76,14 +47,14 @@ class TecladoNumerico(tk.Toplevel):
             self._current_entry.select_range(0, tk.END)
             self._current_entry.icursor(tk.END)
            
-            # Mostrar y posicionar el teclado
-            self.deiconify()
-            self.lift()
-            self.focus_force()
-            self.grab_set()
-           
-            # Forzar actualización de la UI
-            self.update_idletasks()
+        # Mostrar y posicionar el teclado
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+        self.grab_set()
+       
+        # Forzar actualizaci�n de la UI
+        self.update_idletasks()
    
     def crear_teclas(self):
         botones = [
@@ -108,7 +79,7 @@ class TecladoNumerico(tk.Toplevel):
         tk.Button(self, text="Limpiar", font=self._font, width=16,
                  command=lambda: self.presionar("Limpiar"))\
             .grid(row=5, column=0, columnspan=3, pady=10)
-   
+        
     def presionar(self, texto):
         if self._current_entry is None:
             return
@@ -144,26 +115,7 @@ class TecladoNumerico(tk.Toplevel):
 
         if self._current_on_submit:
             self._current_on_submit(valor)
-        self.ocultar()
-   
-    def ocultar(self):
-        # Restaurar el valor original si no se envió y está vacío
-        if (self._current_entry and
-            self._current_entry.get() == "" and
-            self._valor_original != ""):
-            self._current_entry.delete(0, tk.END)
-            self._current_entry.insert(0, self._valor_original)
-       
-        # Liberar el grab y ocultar
+        
+        # Liberar recursos antes de destruir
         self.grab_release()
-        self.withdraw()
-       
-        # Limpiar referencias
-        self._current_entry = None
-        self._current_on_submit = None
-
-# Función para pre-crear el teclado (opcional, para mejor rendimiento)
-def precrear_teclado(master):
-    """Pre-crea el teclado para reducir latencia en el primer uso"""
-    # Esto fuerza la creación del Singleton
-    TecladoNumerico(master)
+        self.destroy()

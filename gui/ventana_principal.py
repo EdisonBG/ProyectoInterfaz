@@ -24,27 +24,29 @@ FUENTE_VALORES = ("Calibri", 12)
 
 # ========================= POSICIONES DE LOS LABELS =========================
 LABEL_POS = {
-    "temp_omega1":       (400, 170),
-    "temp_omega2":       (660, 170),
-    "temp_horno1":       (530, 140),
-    "temp_horno2":       (530, 180),
-    "temp_cond1":        (740,  80),
-    "temp_cond2":        (740, 120),
-    "presion_mezcla":    (260, 260),
-    "presion_h2":        (260, 300),
-    "presion_salida":    (260, 340),
+    "potencia_horno1":    (375, 100),
+    "temp_omega1":       (375, 160),
+    "temp_horno1":       (375, 210),
+    "temp_cond1":        (373,  310),
+
+    "potencia_horno2":    (680, 100),
+    "temp_omega2":       (680, 160),
+    "temp_horno2":       (680, 210),
+    "temp_cond2":        (680, 310),
+
+    "presion_mezcla":    (65, 160),
+    "presion_h2":        (220, 165),
+    "presion_salida":    (695, 490),
     # Posiciones para nombres MFC
-    "mfc_o2_nombre":     (120, 420),
-    "mfc_co2_nombre":    (120, 460),
-    "mfc_n2_nombre":     (120, 500),
-    "mfc_h2_nombre":     (120, 540),
+    "mfc_o2_nombre":     (49, 440),
+    "mfc_co2_nombre":    (112, 440),
+    "mfc_n2_nombre":     (178, 440),
+    "mfc_h2_nombre":     (246, 440),
     # Posiciones para valores MFC
-    "mfc_o2_valor":      (160, 420),
-    "mfc_co2_valor":     (160, 460),
-    "mfc_n2_valor":      (160, 500),
-    "mfc_h2_valor":      (160, 540),
-    "potencia_horno1":    (700, 500),
-    "potencia_horno2":    (500, 500),
+    "mfc_o2_valor":      (30, 500),
+    "mfc_co2_valor":     (102, 500),
+    "mfc_n2_valor":      (177, 500),
+    "mfc_h2_valor":      (252, 500), 
 }
 
 # ========================= COLORES DE FONDO =========================
@@ -70,36 +72,40 @@ COLOR_LABELS = {
     "potencia_horno2":   "#fce0bf",
 }
 
-
 # ========================= POSICIONES DE LOS INDICADORES MFC =========================
 INDICADOR_POS = {
-    "mfc_o2_abierto":   (100, 310),   # Posición para indicador abierto MFC1
-    "mfc_o2_cerrado":   (140, 310),   # Posición para indicador cerrado MFC1
-    "mfc_co2_abierto":  (200, 460),   # MFC2
-    "mfc_co2_cerrado":  (220, 460),
-    "mfc_n2_abierto":   (200, 500),   # MFC3
-    "mfc_n2_cerrado":   (220, 500),
-    "mfc_h2_abierto":   (200, 540),   # MFC4
-    "mfc_h2_cerrado":   (220, 540),
+    "mfc_o2_abierto":   (73, 280),   # Posición para indicador abierto MFC1
+    "mfc_o2_cerrado":   (106, 280),   # Posición para indicador cerrado MFC1
+    "mfc_co2_abierto":  (155, 280),   # MFC2
+    "mfc_co2_cerrado":  (185, 280),
+    "mfc_n2_abierto":   (233, 280),   # MFC3
+    "mfc_n2_cerrado":   (263, 280),
+    "mfc_h2_abierto":   (313, 280),   # MFC4
+    "mfc_h2_cerrado":   (343, 280),
 }
 
 # ========================= POSICIONES DE LOS INDICADORES VÁLVULAS/BOMBA =========================
 VALVULA_INDICADOR_POS = {
-    "sol1_abierto":   (550, 320),   # Solenoide 1 - abierto
-    "sol1_cerrado":   (570, 320),   # Solenoide 1 - cerrado
-    "sol2_abierto":   (550, 360),   # Solenoide 2 - abierto
-    "sol2_cerrado":   (570, 360),   # Solenoide 2 - cerrado
-    "per1_on":        (550, 400),   # Bomba peristáltica - encendida
-    "per1_off":       (570, 400),   # Bomba peristáltica - apagada
+    "sol1_abierto":   (690, 443),   # Solenoide 1 - abierto
+    "sol1_cerrado":   (718, 443),   # Solenoide 1 - cerrado
+    "sol2_abierto":   (360, 420),   # Solenoide 2 - abierto
+    "sol2_cerrado":   (388, 420),   # Solenoide 2 - cerrado
+    "per1_on":        (560, 258),   # Bomba peristáltica - encendida
+    "per1_off":       (588, 258),   # Bomba peristáltica - apagada
 }
 
-# ========================= POSICIONES FLUJO DE VÁLVULAS 4VÍAS =========================
-FLECHA_POS = {
-    "v1_a": (250, 120),   # Flecha para Válvula 1 Posición A
-    "v1_b": (270, 150),   # Flecha para Válvula 1 Posición B (misma posición, diferente dirección)
-    "v2_a": (250, 160),   # Flecha para Válvula 2 Posición A
-    "v2_b": (270, 190),   # Flecha para Válvula 2 Posición B
-}
+# ========================= POSICIONES FLECHAS VÁLVULAS 4VÍAS =========================
+# POSICIONES PARA VÁLVULA 1 (V4S1)
+FLECHA_V1_ARRIBA_POS = (250, 35)   # Posición flecha superior V1
+FLECHA_V1_ABAJO_POS = (250, 105)    # Posición flecha inferior V1
+
+# POSICIONES PARA VÁLVULA 2 (V4S2) - POSICIÓN A
+FLECHA_V2A_IZQ_POS = (490, 455)     # Flecha izquierda posición A
+FLECHA_V2A_ABAJO_POS = (625, 406)   # Flecha abajo posición A
+
+# POSICIONES PARA VÁLVULA 2 (V4S2) - POSICIÓN B  
+FLECHA_V2B_IZQ_POS = (490, 455)     # Flecha izquierda posición B
+FLECHA_V2B_ABAJO_POS = (625, 406)   # Flecha abajo posición B
 
 
 # ========================= FORMATEADORES =========================
@@ -197,7 +203,7 @@ class VentanaPrincipal(tk.Frame):
         # ajusta la posición de la imagen dentro del área (x=0,y=0 la deja en la esquina)
         self.lbl_fondo.place(x=0, y=0)
 
-                 # ========================= BOTONES SUPERIORES DERECHOS =========================
+        # ========================= BOTONES SUPERIORES DERECHOS =========================
         frame_botones_superiores = tk.Frame(self.area_grafica, bg="white")
         frame_botones_superiores.place(relx=1.0, x=-10, y=10, anchor="ne")  # Esquina superior derecha
         
@@ -220,11 +226,6 @@ class VentanaPrincipal(tk.Frame):
             style="SelBtn.TButton"
         )
         btn_info.pack(side=tk.LEFT)
-
-        # crear labels de variables
-        self._vars = {}
-        self._labels = {}
-        self._create_all_labels()
 
         # crear labels de variables
         self._vars = {}
@@ -283,16 +284,16 @@ class VentanaPrincipal(tk.Frame):
             "temp_horno2":      ("H2",      "°C"),
             "temp_cond1":       ("Cond1",   "°C"),
             "temp_cond2":       ("Cond2",   "°C"),
-            "presion_mezcla":   ("P Mez",   "bar"),
-            "presion_h2":       ("P H2",    "bar"),
-            "presion_salida":   ("P Out",   "bar"),
+            "presion_mezcla":   ("P Mez",""),
+            "presion_h2":       ("P H2",""),
+            "presion_salida":   ("P Out",""),
             "potencia_horno1":   ("P h1",   "W"),
             "potencia_horno2":   ("P h2",   "W"),
         }
 
         # Crear labels normales
         for key, (short, unit) in campos_normales.items():
-            v = tk.StringVar(value=f"{short}: -- {unit}")
+            v = tk.StringVar(value=f"{short}:--{unit}")
             self._vars[key] = v
             x, y = LABEL_POS.get(key, (10, 10))
             color_fondo = COLOR_LABELS.get(key, "white")
@@ -333,7 +334,7 @@ class VentanaPrincipal(tk.Frame):
             self._labels[f"{key}_nombre"] = lbl_nombre
 
             #Label para el VALOR del MFC (flujo)
-            texto_inicial = "--\nmL/min"
+            texto_inicial = "--\nL/min"
             x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (160, 10))
             color_valor = COLOR_LABELS.get(f"{key}_valor", "#90c6e5")
             
@@ -366,19 +367,19 @@ class VentanaPrincipal(tk.Frame):
                 return default
 
         # Temps (°C)
-        t_omega1 = to_float(partes[1])
-        t_omega2 = to_float(partes[2])
-        t_h1     = to_float(partes[3])
-        t_h2     = to_float(partes[4])
-        t_c1     = to_float(partes[5])
-        t_c2     = to_float(partes[6])
+        t_omega1 = to_int(partes[1])
+        t_omega2 = to_int(partes[2])
+        t_h1     = to_int(partes[3])
+        t_h2     = to_int(partes[4])
+        t_c1     = to_int(partes[5])
+        t_c2     = to_int(partes[6])
 
         # Presiones llegan *10
         p_mez    = to_float(partes[7]) / 10.0
         p_h2     = to_float(partes[8]) / 10.0
         p_out    = to_float(partes[9]) / 10.0
 
-        # Flujos (mL/min)
+        # Flujos (L/min)
         q_o2     = to_int(partes[10]) / 10.0
         q_co2    = to_int(partes[11]) / 10.0
         q_n2     = to_int(partes[12]) / 10.0
@@ -389,22 +390,22 @@ class VentanaPrincipal(tk.Frame):
         p_horno2    = to_int(partes[15])
 
         # Actualizar variables normales
-        self._vars["temp_omega1"].set(f"Ω1: {t_omega1:.1f} °C")
-        self._vars["temp_omega2"].set(f"Ω2: {t_omega2:.1f} °C")
-        self._vars["temp_horno1"].set(f"H1: {t_h1:.1f} °C")
-        self._vars["temp_horno2"].set(f"H2: {t_h2:.1f} °C")
-        self._vars["temp_cond1"].set(f"Cond1: {t_c1:.1f} °C")
-        self._vars["temp_cond2"].set(f"Cond2: {t_c2:.1f} °C")
+        self._vars["temp_omega1"].set(f"Ω1: {t_omega1} °C")
+        self._vars["temp_omega2"].set(f"Ω2: {t_omega2} °C")
+        self._vars["temp_horno1"].set(f"H1: {t_h1} °C")
+        self._vars["temp_horno2"].set(f"H2: {t_h2} °C")
+        self._vars["temp_cond1"].set(f"Cond1: {t_c1} °C")
+        self._vars["temp_cond2"].set(f"Cond2: {t_c2} °C")
 
-        self._vars["presion_mezcla"].set(f"P Mez: {p_mez:.1f} bar")
-        self._vars["presion_h2"].set(f"P H2: {p_h2:.1f} bar")
+        self._vars["presion_mezcla"].set(f"P Mez: \n{p_mez:.1f} bar")
+        self._vars["presion_h2"].set(f"P H2: \n{p_h2:.1f} bar")
         self._vars["presion_salida"].set(f"P Out: {p_out:.1f} bar")
 
         # Actualizar MFC con formato vertical - directamente en el label
-        self._labels["mfc_o2_valor"].config(text=f"{q_o2}\nmL/min")
-        self._labels["mfc_co2_valor"].config(text=f"{q_co2}\nmL/min")
-        self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nmL/min")
-        self._labels["mfc_h2_valor"].config(text=f"{q_h2}\nmL/min")
+        self._labels["mfc_o2_valor"].config(text=f"{q_o2}\nL/min")
+        self._labels["mfc_co2_valor"].config(text=f"{q_co2}\nL/min")
+        self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nL/min")
+        self._labels["mfc_h2_valor"].config(text=f"{q_h2}\nL/min")
 
         self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
         self._vars["potencia_horno2"].set(f"P Tot: {p_horno2} W")
@@ -661,85 +662,172 @@ class VentanaPrincipal(tk.Frame):
         """Crea los indicadores de flecha para las válvulas de 4 vías"""
         self.flechas = {}
         
-        # Válvula 1 - Flecha posición A (hacia la derecha)
-        self.flechas["v1_a"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v1_a"], "right")
-        # Válvula 1 - Flecha posición B (hacia la izquierda)  
-        self.flechas["v1_b"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v1_b"], "left")
+        # VÁLVULA 1 - Dos flechas hacia la derecha (verde y azul)
+        self.flechas["v1_arriba"] = self._crear_flecha_derecha(
+            self.area_grafica, FLECHA_V1_ARRIBA_POS, "#ff0000"
+        )
+        self.flechas["v1_abajo"] = self._crear_flecha_derecha(
+            self.area_grafica, FLECHA_V1_ABAJO_POS, "#379E90"
+        )
         
-        # Válvula 2 - Flecha posición A (hacia la derecha)
-        self.flechas["v2_a"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v2_a"], "right")
-        # Válvula 2 - Flecha posición B (hacia la izquierda)
-        self.flechas["v2_b"] = self._crear_flecha(self.area_grafica, FLECHA_POS["v2_b"], "left")
+        # VÁLVULA 2 - POSICIÓN A (rosa hacia izquierda, violeta hacia abajo)
+        self.flechas["v2a_izq"] = self._crear_flecha_izquierda(
+            self.area_grafica, FLECHA_V2A_IZQ_POS, "#FF0000"
+        )
+        self.flechas["v2a_abajo"] = self._crear_flecha_abajo(
+            self.area_grafica, FLECHA_V2A_ABAJO_POS, "#379E90"
+        )
+        
+        # VÁLVULA 2 - POSICIÓN B (violeta hacia izquierda, rosa hacia abajo)
+        self.flechas["v2b_izq"] = self._crear_flecha_izquierda(
+            self.area_grafica, FLECHA_V2B_IZQ_POS, "#379E90"
+        )
+        self.flechas["v2b_abajo"] = self._crear_flecha_abajo(
+            self.area_grafica, FLECHA_V2B_ABAJO_POS, "#ff0000"
+        )
         
         # Inicialmente, ocultar todas las flechas
         for flecha in self.flechas.values():
             flecha.place_forget()
 
-    def _crear_flecha(self, parent, pos, direccion):
-        """
-        Flechas con reducción del 40% y cuerpo más corto para mejor proporción
-        """
-        # Canvas ajustado: 80x35 (reducción del 20% desde 100x40)
-        canvas = tk.Canvas(parent, width=82, height=35, bg="white", highlightthickness=0)
+    def _crear_flecha_derecha(self, parent, pos, color):
+        """Crea una flecha apuntando hacia la derecha"""
+        canvas = tk.Canvas(parent, width=60, height=20, bg="white", highlightthickness=0)
         x, y = pos
         
-        # Determinar texto y color
-        if "v1" in str(parent):
-            valve_text = "Flow"
-            color_fill = "#7dacc8"
-            color_line = "#7dacc8"
-        else:
-            valve_text = "Flow" 
-            color_fill = "#7dacc8"
-            color_line = "#7dacc8"
-        
-        if direccion == "right":
-            # Texto identificador
-            canvas.create_text(15, 17, text=valve_text, font=("Calibri", 11, "bold"), 
-                            fill=color_line)
-            # Flecha - cuerpo más corto (40% más corto que la original)
-            # Original: 35-85 (50px), Nuevo: 35-65 (30px) - reducción del 40%
-            points = [50, 17, 65, 17, 65, 12, 72, 17, 65, 22, 65, 17]  # Cabeza ajustada
-            canvas.create_line(35, 17, 65, 17, width=3, fill=color_line)
-            canvas.create_polygon(points, fill=color_fill, outline=color_line, width=1)
-            
-        elif direccion == "left":
-            # Texto identificador
-            canvas.create_text(65, 17, text=valve_text, font=("Calibri", 11, "bold"), 
-                            fill=color_line)
-            # Flecha - cuerpo más corto (40% más corto que la original)
-            # Original: 65-15 (50px), Nuevo: 45-15 (30px) - reducción del 40%
-            points = [30, 17, 15, 17, 15, 12, 8, 17, 15, 22, 15, 17]  # Cabeza ajustada
-            canvas.create_line(45, 17, 15, 17, width=3, fill=color_line)
-            canvas.create_polygon(points, fill=color_fill, outline=color_line, width=1)
+        # Cuerpo de la flecha - desde el inicio hasta justo antes de la punta
+        canvas.create_line(5, 10, 45, 10, width=3, fill=color)
+        # Punta de la flecha - triángulo que apunta a la derecha
+        # El vértice está a la derecha, la base a la izquierda
+        points = [45, 10, 55, 10, 50, 5, 50, 15, 55, 10]
+        canvas.create_polygon(points, fill=color, outline=color, width=1)
         
         canvas.place(x=x, y=y)
         return canvas
 
+    def _crear_flecha_izquierda(self, parent, pos, color):
+        """Crea una flecha apuntando hacia la izquierda"""
+        canvas = tk.Canvas(parent, width=60, height=20, bg="white", highlightthickness=0)
+        x, y = pos
+        
+        # Cuerpo de la flecha - desde el inicio hasta justo antes de la punta
+        canvas.create_line(55, 10, 15, 10, width=3, fill=color)
+        # Punta de la flecha - triángulo que apunta a la izquierda
+        # El vértice está a la izquierda, la base a la derecha
+        points = [15, 10, 5, 10, 10, 5, 10, 15, 5, 10]
+        canvas.create_polygon(points, fill=color, outline=color, width=1)
+        
+        canvas.place(x=x, y=y)
+        return canvas
+
+    def _crear_flecha_abajo(self, parent, pos, color):
+        """Crea una flecha apuntando hacia abajo"""
+        canvas = tk.Canvas(parent, width=20, height=60, bg="white", highlightthickness=0)
+        x, y = pos
+        
+        # Cuerpo de la flecha - desde el inicio hasta justo antes de la punta
+        canvas.create_line(10, 5, 10, 45, width=3, fill=color)
+        # Punta de la flecha - triángulo que apunta hacia abajo
+        # El vértice está abajo, la base arriba
+        points = [10, 45, 10, 55, 5, 50, 15, 50, 10, 55]
+        canvas.create_polygon(points, fill=color, outline=color, width=1)
+        
+        canvas.place(x=x, y=y)
+        return canvas
+    
+    
+
     def actualizar_flecha_valvula(self, valvula_id, pos):
         """
-        Actualiza la flecha de la válvula especificada.
+        Actualiza la flecha de la v�lvula especificada.
         valvula_id: 1 o 2
         pos: 'A' o 'B'
         """
+        equipo2_conectado = self.controlador.get_equipo2_conectado()
+        estado_modoAuto = self.controlador.auto_modo_activo
+        
         if not hasattr(self, 'flechas'):
             return
             
-        # Validar que la posición sea correcta
         if pos not in ('A', 'B'):
-            print(f"[WARN] Posición inválida para válvula {valvula_id}: {pos}")
             return
         
-        # Ocultar todas las flechas de esta válvula
-        for key in [f"v{valvula_id}_a", f"v{valvula_id}_b"]:
-            if key in self.flechas:
-                self.flechas[key].place_forget()
+        # En modo auto, obtener posici�n de V1 del controlador
+        v1_pos = pos if valvula_id == 1 else self._get_v1_pos_from_csv()
+        if estado_modoAuto and valvula_id == 1:
+            v1_pos = self.controlador.posicion_valvulas_auto
         
-        # Mostrar la flecha correspondiente
-        flecha_key = f"v{valvula_id}_{pos.lower()}"
-        if flecha_key in self.flechas:
-            x, y = FLECHA_POS[flecha_key]
-            self.flechas[flecha_key].place(x=x, y=y)
+        # Para V2, siempre usar CSV (aunque en modo auto ser� fijo)
+        v2_pos = pos if valvula_id == 2 else self._get_v2_pos_from_csv()
+        
+        # Ocultar todas las flechas de V2 primero
+        for flecha_key in ["v2a_izq", "v2a_abajo", "v2b_izq", "v2b_abajo"]:
+            self.flechas[flecha_key].place_forget()
+        
+        # L�gica basada en las condiciones
+        if not equipo2_conectado and not estado_modoAuto:
+            # Caso 1: equipo2_conectado = FALSE o estado_modoAuto = FALSE
+            if valvula_id == 1:
+                # V�LVULA 1
+                if v1_pos == 'A':
+                    # Posici�n A: rojo abajo, verde arriba
+                    self.flechas["v1_arriba"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
+                    self.flechas["v1_abajo"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
+                else:  # Posici�n B
+                    # Posici�n B: rojo arriba, verde abajo (intercambiar)
+                    self.flechas["v1_arriba"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
+                    self.flechas["v1_abajo"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
+                    
+            
+            # V�LVULA 2 - dependiente de V1
+            if v1_pos == 'A':
+                if v2_pos == 'A':
+                    # Conjunto: rojo abajo, verde izquierda
+                    self.flechas["v2b_abajo"].place(x=FLECHA_V2B_ABAJO_POS[0], y=FLECHA_V2B_ABAJO_POS[1])  # ROJO abajo
+                    self.flechas["v2b_izq"].place(x=FLECHA_V2B_IZQ_POS[0], y=FLECHA_V2B_IZQ_POS[1])  # VERDE izquierda
+                else:  # v2_pos == 'B'
+                    # Conjunto: rojo izquierda, verde abajo
+                    self.flechas["v2a_izq"].place(x=FLECHA_V2A_IZQ_POS[0], y=FLECHA_V2A_IZQ_POS[1])  # ROJO izquierda
+                    self.flechas["v2a_abajo"].place(x=FLECHA_V2A_ABAJO_POS[0], y=FLECHA_V2A_ABAJO_POS[1])  # VERDE abajo
+            else:  # v1_pos == 'B'
+                if v2_pos == 'A':
+                    # Conjunto: rojo izquierda, verde abajo
+                    self.flechas["v2a_izq"].place(x=FLECHA_V2A_IZQ_POS[0], y=FLECHA_V2A_IZQ_POS[1])  # ROJO izquierda
+                    self.flechas["v2a_abajo"].place(x=FLECHA_V2A_ABAJO_POS[0], y=FLECHA_V2A_ABAJO_POS[1])  # VERDE abajo
+                else:  # v2_pos == 'B'
+                    # Conjunto: rojo abajo, verde izquierda
+                    self.flechas["v2b_abajo"].place(x=FLECHA_V2B_ABAJO_POS[0], y=FLECHA_V2B_ABAJO_POS[1])  # ROJO abajo
+                    self.flechas["v2b_izq"].place(x=FLECHA_V2B_IZQ_POS[0], y=FLECHA_V2B_IZQ_POS[1])  # VERDE izquierda
+        
+        else:
+            # Caso 2: equipo2_conectado = TRUE o estado_modoAuto = TRUE
+            if valvula_id == 1:
+                # V�LVULA 1
+                if v1_pos == 'A':
+                    # Posici�n A: rojo ABAJO, verde arriba
+                    self.flechas["v1_arriba"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
+                    self.flechas["v1_abajo"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
+                else:  # Posici�n B
+                    # Posici�n B: rojo arriba, verde abajo (intercambiar)
+                    self.flechas["v1_arriba"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
+                    self.flechas["v1_abajo"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
+                    
+            
+            # V�LVULA 2 - Siempre el mismo conjunto (rojo abajo, verde izquierda)
+            self.flechas["v2b_abajo"].place(x=FLECHA_V2B_ABAJO_POS[0], y=FLECHA_V2B_ABAJO_POS[1])  # ROJO abajo
+            self.flechas["v2b_izq"].place(x=FLECHA_V2B_IZQ_POS[0], y=FLECHA_V2B_IZQ_POS[1])  # VERDE izquierda
+
+    # M�todos auxiliares para obtener posiciones desde CSV
+    def _get_v1_pos_from_csv(self):
+        """Obtiene la posici�n de V1 desde el CSV"""
+        posiciones = self._leer_posiciones_valvulas_desde_csv()
+        return posiciones.get("V1", "A")
+
+    def _get_v2_pos_from_csv(self):
+        """Obtiene la posici�n de V2 desde el CSV"""
+        posiciones = self._leer_posiciones_valvulas_desde_csv()
+        return posiciones.get("V2", "A")
+
 
     def _register_flechas_callbacks(self):
         """Registra callbacks para cambios de posición de las válvulas"""
@@ -748,17 +836,22 @@ class VentanaPrincipal(tk.Frame):
             self.controlador.registrar_callback_flecha_valvula(2, self.actualizar_flecha_valvula)
 
     def _solicitar_estado_actual_flechas(self):
-        """Obtiene el estado actual de las válvulas leyendo directamente del CSV"""
-        # Leer posiciones directamente del CSV
-        posiciones = self._leer_posiciones_valvulas_desde_csv()
-        v1_pos = posiciones.get("V1", "A")
-        v2_pos = posiciones.get("V2", "A")
+        """Obtiene el estado actual de las v�lvulas y aplica la l�gica completa"""
+        estado_modoAuto = self.controlador.auto_modo_activo
         
-        # Actualizar flechas inmediatamente
+        if estado_modoAuto:
+            # Modo auto: usar posici�n del controlador para V1
+            v1_pos = self.controlador.posicion_valvulas_auto
+            v2_pos = "A"  # V2 en modo auto no importa, se muestra fijo
+        else:
+            # Modo manual: leer del CSV
+            posiciones = self._leer_posiciones_valvulas_desde_csv()
+            v1_pos = posiciones.get("V1", "A")
+            v2_pos = posiciones.get("V2", "A")
+        
+        # Actualizar ambas v�lvulas
         self.actualizar_flecha_valvula(1, v1_pos)
         self.actualizar_flecha_valvula(2, v2_pos)
-        
-        print(f"[Flechas] Estado inicial desde CSV: V1={v1_pos}, V2={v2_pos}")
         
     def _leer_posiciones_valvulas_desde_csv(self):
         """
@@ -769,10 +862,10 @@ class VentanaPrincipal(tk.Frame):
         pos_file = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
         posiciones = {"V1": "A", "V2": "A"}  # Valores por defecto
         
-        print(f"[DEBUG] Buscando archivo en: {pos_file}")  # Para debug
+        
         
         if not os.path.exists(pos_file):
-            print(f"[INFO] Archivo {pos_file} no encontrado, usando valores por defecto")
+            
             return posiciones
         
         try:
@@ -784,11 +877,13 @@ class VentanaPrincipal(tk.Frame):
                         valor = row[1].strip().upper()
                         if clave in ["V1", "V2"] and valor in ["A", "B"]:
                             posiciones[clave] = valor
-            print(f"[INFO] Posiciones leídas del CSV: {posiciones}")
+            
         except Exception as e:
-            print(f"[ERROR] No se pudo leer {pos_file}: {e}")
+            pass
         
         return posiciones
+
+# ... (el resto de las clases VentanaDiagramas y VentanaManual permanecen igual)
     
 class VentanaDiagramas(tk.Toplevel):
     def __init__(self, master):

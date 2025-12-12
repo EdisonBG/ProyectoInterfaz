@@ -10,7 +10,8 @@ from .ventana_graph import VentanaGraph
 
 from .serial_manager import SerialManager
 import queue  # para Empty en el poll de RX
-
+import glob
+import os
 
 class Aplicacion(tk.Tk):
     def __init__(self, arduino=None, serial_port="/dev/ttyACM0", baud=115200, *args, **kwargs):
@@ -35,6 +36,21 @@ class Aplicacion(tk.Tk):
         # --- Callbacks para flechas de válvulas ---
         self._callbacks_flechas_valvulas = {1: [], 2: []}
 
+        # --- variable para verificar la conexion al equipo 2 ---
+        self.equipo2_conectado = False  # Variable nueva
+
+        # --- Variable para verificar si se encuentra en modo AUTO, y la posicion de ambas valvulas de 4 vas en este modo ---
+        self.auto_modo_activo = False  # Variable para modo auto on/off
+        self.posicion_valvulas_auto = "A"  # Posicion en modo auto (A o B)
+
+        if not os.path.exists(serial_port):
+            nuevo_puerto = self._buscar_puerto_arduino()
+            if nuevo_puerto is not None:
+                print(f"[INFO] Puerto serie detectado autom�ticamente: {nuevo_puerto}")
+                serial_port = nuevo_puerto
+            else:
+                print("[WARN] No se encontr� ning�n puerto serie disponible")
+
         try:
 
             self.serial = SerialManager(serial_port, baud)
@@ -44,13 +60,7 @@ class Aplicacion(tk.Tk):
         except Exception as e:
             print(f"[WARN] SerialManager no disponible: {e}")
             # Fallback a pyserial directo
-            try:
-                self.arduino = serial.Serial(
-                    serial_port, baudrate=baud, timeout=1)
-                print(
-                    f"[INFO] Conectado a Arduino en {serial_port} @ {baud} bps (pyserial)")
-            except Exception as e2:
-                print(f"[WARN] No se pudo abrir puerto serial: {e2}")
+            self._intentar_conectar_serialmanager(serial_port, baud)
 
         # Si se inyecta un objeto pyserial externo via parametro arduino, se respeta
         if arduino is not None:
@@ -82,6 +92,48 @@ class Aplicacion(tk.Tk):
 
         # Cierre limpio
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _intentar_conectar_serialmanager(self, serial_port, baud):
+        """Intenta crear y arrancar SerialManager. Si falla, reintenta hasta lograrlo."""
+        try:
+            self.serial = SerialManager(serial_port, baud)
+            self.serial.start()
+            print(f"[INFO] Serial abierto en {serial_port} @ {baud} bps (SerialManager)")
+        except Exception as e:
+            print(f"[WARN] SerialManager no disponible: {e}")
+            # Reintentar conexi�n m�s adelante
+            self.after(1000, lambda: self._intentar_conectar_serialmanager(serial_port, baud))
+
+    def _buscar_puerto_arduino(self):
+        """Busca un puerto /dev/ttyACM* o /dev/ttyUSB* disponible."""
+        candidatos = glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*")
+        for puerto in sorted(candidatos):
+            try:
+                s = serial.Serial(puerto, baudrate=9600, timeout=0.5)
+                s.close()
+                return puerto
+            except Exception:
+                continue
+        return None
+    
+    # -- metodo para saber la conexion al equipo 2 ---
+    def set_equipo2_conectado(self, estado):
+        """Cambia el estado de conexi�n del equipo 2"""
+        self.equipo2_conectado = estado
+        
+    def get_equipo2_conectado(self):
+        """Obtiene el estado actual de conexi�n del equipo 2"""
+        return self.equipo2_conectado
+    
+    # --- Metodos para cuando el equipo se encuentra en modo auto --
+    def set_auto_modo_activo(self, estado):
+        """Cambia el estado del modo auto"""
+        self.auto_modo_activo = estado
+        
+    def set_posicion_valvulas_auto(self, posicion):
+        """Cambia la posici�n de las v�lvulas en modo auto (A o B)"""
+        self.posicion_valvulas_auto = posicion
+        self.notificar_cambio_flecha_valvula(1, posicion)
 
     # --- Métodos para manejar callbacks de estado MFC ---
     def registrar_callback_estado_mfc(self, mfc_id, callback):
@@ -149,7 +201,6 @@ class Aplicacion(tk.Tk):
                 return vvalv.v2_pos.get()
         return None
         
-
     def enviar_a_arduino(self, mensaje: str):
         """
         Envia un mensaje al Arduino por serial si esta conectado.
@@ -333,8 +384,6 @@ class Aplicacion(tk.Tk):
 
         except Exception as e:
             print(f"[RX ERROR] {e}")
-
-
 
     def _on_close(self):
         """
