@@ -27,26 +27,18 @@ LABEL_POS = {
     "potencia_horno1":    (375, 100),
     "temp_omega1":       (375, 160),
     "temp_horno1":       (375, 210),
-    "temp_cond1":        (373,  310),
 
     "potencia_horno2":    (680, 100),
     "temp_omega2":       (680, 160),
     "temp_horno2":       (680, 210),
-    "temp_cond2":        (680, 310),
 
     "presion_mezcla":    (65, 160),
     "presion_h2":        (220, 165),
     "presion_salida":    (695, 490),
-    # Posiciones para nombres MFC
-    "mfc_o2_nombre":     (49, 440),
-    "mfc_co2_nombre":    (112, 440),
-    "mfc_n2_nombre":     (178, 440),
-    "mfc_h2_nombre":     (246, 440),
-    # Posiciones para valores MFC
-    "mfc_o2_valor":      (30, 500),
-    "mfc_co2_valor":     (102, 500),
-    "mfc_n2_valor":      (177, 500),
-    "mfc_h2_valor":      (252, 500), 
+    # Posiciones para nombres MFC - SOLO N2
+    "mfc_n2_nombre":     (112, 440),
+    # Posiciones para valores MFC - SOLO N2
+    "mfc_n2_valor":      (102, 500),
 }
 
 # ========================= COLORES DE FONDO =========================
@@ -55,43 +47,27 @@ COLOR_LABELS = {
     "temp_omega2":      "#fac689",
     "temp_horno1":      "#fac689",
     "temp_horno2":      "#fac689",
-    "temp_cond1":       "#fac689",
-    "temp_cond2":       "#fac689",
     "presion_mezcla":   "#dfe598",
     "presion_h2":       "#dfe598",
     "presion_salida":   "#dfe598",
-    "mfc_o2_nombre":    "#90c6e5",
-    "mfc_co2_nombre":   "#90c6e5",
     "mfc_n2_nombre":    "#90c6e5",
-    "mfc_h2_nombre":    "#90c6e5",
-    "mfc_o2_valor":     "#90c6e5",
-    "mfc_co2_valor":    "#90c6e5",
     "mfc_n2_valor":     "#90c6e5",
-    "mfc_h2_valor":     "#90c6e5",
     "potencia_horno1":   "#fce0bf",
     "potencia_horno2":   "#fce0bf",
 }
 
 # ========================= POSICIONES DE LOS INDICADORES MFC =========================
+# SOLO MFC3 (N2)
 INDICADOR_POS = {
-    "mfc_o2_abierto":   (73, 280),   # Posición para indicador abierto MFC1
-    "mfc_o2_cerrado":   (106, 280),   # Posición para indicador cerrado MFC1
-    "mfc_co2_abierto":  (155, 280),   # MFC2
-    "mfc_co2_cerrado":  (185, 280),
-    "mfc_n2_abierto":   (233, 280),   # MFC3
-    "mfc_n2_cerrado":   (263, 280),
-    "mfc_h2_abierto":   (313, 280),   # MFC4
-    "mfc_h2_cerrado":   (343, 280),
+    "mfc_n2_abierto":   (155, 280),   # MFC3
+    "mfc_n2_cerrado":   (185, 280),
 }
 
 # ========================= POSICIONES DE LOS INDICADORES VÁLVULAS/BOMBA =========================
+# SOLO VÁLVULA SOLENOIDE 1 (eliminada sol2 y per1)
 VALVULA_INDICADOR_POS = {
     "sol1_abierto":   (690, 443),   # Solenoide 1 - abierto
     "sol1_cerrado":   (718, 443),   # Solenoide 1 - cerrado
-    "sol2_abierto":   (360, 420),   # Solenoide 2 - abierto
-    "sol2_cerrado":   (388, 420),   # Solenoide 2 - cerrado
-    "per1_on":        (560, 258),   # Bomba peristáltica - encendida
-    "per1_off":       (588, 258),   # Bomba peristáltica - apagada
 }
 
 # ========================= POSICIONES FLECHAS VÁLVULAS 4VÍAS =========================
@@ -122,7 +98,7 @@ class VentanaPrincipal(tk.Frame):
     """
     Ventana principal de monitoreo:
       - Imagen de proceso como fondo (fija).
-      - 15 labels con fondo blanco, negrilla, tamaño medio, posicionados por .place() (coordenadas en LABEL_POS).
+      - Labels con fondo blanco, negrilla, tamaño medio, posicionados por .place() (coordenadas en LABEL_POS).
       - Actualización desde tramas CMD=5:
         $;5;Tomega1;Tomega2;Thorno1;Thorno2;Tcond1;Tcond2;Pmez*10;Ph2*10;Psal*10;
            Q_O2;Q_CO2;Q_N2;Q_H2;PotW;HorasOn;!
@@ -141,7 +117,7 @@ class VentanaPrincipal(tk.Frame):
         # cargar imágenes
         img_path = os.path.join(os.path.dirname(__file__), "..", "img")
         # Usa una sola imagen (fondo). Ajusta el nombre a tu archivo real.
-        fondo_file = os.path.join(img_path, "equipo_DFM.png")
+        fondo_file = os.path.join(img_path, "equipo_TDA.png")
         if not os.path.exists(fondo_file):
             # fallback por si no existe
             fondo_file = os.path.join(img_path, "equipo_off.png")
@@ -236,7 +212,7 @@ class VentanaPrincipal(tk.Frame):
         self._crear_indicadores_mfc()
         self._register_estado_callbacks()
 
-        # --- Crear indicadores de estado válvulas y bomba ---
+        # --- Crear indicadores de estado válvulas ---
         self._crear_indicadores_valvulas()
         self._register_valvulas_callbacks()
 
@@ -257,12 +233,9 @@ class VentanaPrincipal(tk.Frame):
 
     def _register_gas_callbacks(self):
         """Registra las funciones callback para cambios de gas"""
-        # Mapeo de MFC ID a clave de variable
+        # Mapeo de MFC ID a clave de variable - SOLO MFC3 (N2)
         mfc_mapping = {
-            1: "mfc_o2_nombre",
-            2: "mfc_co2_nombre", 
-            3: "mfc_n2_nombre",
-            4: "mfc_h2_nombre"
+            3: "mfc_n2_nombre"  # Solo MFC3
         }
         
         def actualizar_gas_label(mfc_id, nuevo_gas):
@@ -271,19 +244,16 @@ class VentanaPrincipal(tk.Frame):
             if variable_key and hasattr(self, '_vars') and variable_key in self._vars:
                 self._vars[variable_key].set(nuevo_gas)
         
-        # Registrar callbacks para los 4 MFCs
-        for mfc_id in range(1, 5):
-            mfc_gas_manager.register_callback_ejecucion(mfc_id, actualizar_gas_label)
+        # Registrar callback solo para MFC3
+        mfc_gas_manager.register_callback_ejecucion(3, actualizar_gas_label)
 
     def _create_all_labels(self):
-        # Definición para variables normales
+        # Definición para variables normales (sin temp_cond1 y temp_cond2)
         campos_normales = {
             "temp_omega1":      ("Ω1",      "°C"),
             "temp_omega2":      ("Ω2",      "°C"),
             "temp_horno1":      ("H1",      "°C"),
             "temp_horno2":      ("H2",      "°C"),
-            "temp_cond1":       ("Cond1",   "°C"),
-            "temp_cond2":       ("Cond2",   "°C"),
             "presion_mezcla":   ("P Mez",""),
             "presion_h2":       ("P H2",""),
             "presion_salida":   ("P Out",""),
@@ -306,20 +276,15 @@ class VentanaPrincipal(tk.Frame):
             lbl.place(x=x, y=y)
             self._labels[key] = lbl
 
-        # Crear labels separados para MFC
+        # Crear label solo para MFC3 (N2)
         mfc_gases = {
-            "mfc_o2": mfc_gas_manager.get_gas_en_ejecucion(1),  # Usar gases en ejecución
-            "mfc_co2": mfc_gas_manager.get_gas_en_ejecucion(2),
-            "mfc_n2": mfc_gas_manager.get_gas_en_ejecucion(3),
-            "mfc_h2": mfc_gas_manager.get_gas_en_ejecucion(4)
+            "mfc_n2": mfc_gas_manager.get_gas_en_ejecucion(3)  # Solo MFC3
         }
 
         for key, nombre_gas in mfc_gases.items():
             # Label para el nombre del gas
             v_nombre = tk.StringVar(value=nombre_gas)
             
-            # Determinar MFC ID basado en la clave
-            mfc_id = {"mfc_o2": 1, "mfc_co2": 2, "mfc_n2": 3, "mfc_h2": 4}[key]
             self._vars[f"{key}_nombre"] = v_nombre
             
             x_nombre, y_nombre = LABEL_POS.get(f"{key}_nombre", (10, 10))
@@ -333,9 +298,9 @@ class VentanaPrincipal(tk.Frame):
             lbl_nombre.place(x=x_nombre, y=y_nombre)
             self._labels[f"{key}_nombre"] = lbl_nombre
 
-            #Label para el VALOR del MFC (flujo)
+            # Label para el VALOR del MFC (flujo)
             texto_inicial = "--\nL/min"
-            x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (160, 10))
+            x_valor, y_valor = LABEL_POS.get(f"{key}_valor", (177, 500))
             color_valor = COLOR_LABELS.get(f"{key}_valor", "#90c6e5")
             
             lbl_valor = tk.Label(
@@ -366,46 +331,41 @@ class VentanaPrincipal(tk.Frame):
             except Exception:
                 return default
 
-        # Temps (°C)
+        # Temps (°C) - sin temp_cond1 y temp_cond2
         t_omega1 = to_int(partes[1])
         t_omega2 = to_int(partes[2])
         t_h1     = to_int(partes[3])
         t_h2     = to_int(partes[4])
-        t_c1     = to_int(partes[5])
-        t_c2     = to_int(partes[6])
+        # t_c1     = to_int(partes[5])   # Eliminado
+        # t_c2     = to_int(partes[6])   # Eliminado
 
         # Presiones llegan *10
         p_mez    = to_float(partes[7]) / 10.0
         p_h2     = to_float(partes[8]) / 10.0
         p_out    = to_float(partes[9]) / 10.0
 
-        # Flujos (L/min)
-        q_o2     = to_int(partes[10]) / 10.0
-        q_co2    = to_int(partes[11]) / 10.0
+        # Flujos (L/min) - solo N2
+        # q_o2     = to_int(partes[10]) / 10.0   # Eliminado
+        # q_co2    = to_int(partes[11]) / 10.0   # Eliminado
         q_n2     = to_int(partes[12]) / 10.0
-        q_h2     = to_int(partes[13]) / 10.0
+        # q_h2     = to_int(partes[13]) / 10.0   # Eliminado
 
         # Potencia (W)
         p_h1    = to_int(partes[14])
         p_horno2    = to_int(partes[15])
 
-        # Actualizar variables normales
+        # Actualizar variables normales (sin temp_cond1 y temp_cond2)
         self._vars["temp_omega1"].set(f"Ω1: {t_omega1} °C")
         self._vars["temp_omega2"].set(f"Ω2: {t_omega2} °C")
         self._vars["temp_horno1"].set(f"H1: {t_h1} °C")
         self._vars["temp_horno2"].set(f"H2: {t_h2} °C")
-        self._vars["temp_cond1"].set(f"Cond1: {t_c1} °C")
-        self._vars["temp_cond2"].set(f"Cond2: {t_c2} °C")
 
         self._vars["presion_mezcla"].set(f"P Mez: \n{p_mez:.1f} bar")
         self._vars["presion_h2"].set(f"P H2: \n{p_h2:.1f} bar")
         self._vars["presion_salida"].set(f"P Out: {p_out:.1f} bar")
 
-        # Actualizar MFC con formato vertical - directamente en el label
-        self._labels["mfc_o2_valor"].config(text=f"{q_o2}\nL/min")
-        self._labels["mfc_co2_valor"].config(text=f"{q_co2}\nL/min")
+        # Actualizar solo MFC N2 con formato vertical
         self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nL/min")
-        self._labels["mfc_h2_valor"].config(text=f"{q_h2}\nL/min")
 
         self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
         self._vars["potencia_horno2"].set(f"P Tot: {p_horno2} W")
@@ -416,7 +376,8 @@ class VentanaPrincipal(tk.Frame):
         """Crea los indicadores circulares para el estado de cada MFC"""
         self.indicadores = {}
         
-        for mfc_key in ["mfc_o2", "mfc_co2", "mfc_n2", "mfc_h2"]:
+        # Solo crear para mfc_n2
+        for mfc_key in ["mfc_n2"]:
             # Crear canvas para indicadores (uno para abierto, otro para cerrado)
             canvas_abierto = tk.Canvas(
                 self.area_grafica, 
@@ -455,12 +416,9 @@ class VentanaPrincipal(tk.Frame):
         Actualiza el indicador visual del MFC
         Estados: "open", "close", None
         """
-        # Mapeo de MFC ID a clave
+        # Mapeo de MFC ID a clave - SOLO MFC3 (N2)
         mfc_mapping = {
-            1: "mfc_o2",
-            2: "mfc_co2",
-            3: "mfc_n2", 
-            4: "mfc_h2"
+            3: "mfc_n2"  # Solo MFC3
         }
         
         mfc_key = mfc_mapping.get(mfc_id)
@@ -495,13 +453,13 @@ class VentanaPrincipal(tk.Frame):
         # Registrar para recibir actualizaciones de estado
         # Esto asume que el controlador puede notificar cambios de estado
         if hasattr(self.controlador, 'registrar_callback_estado_mfc'):
-            for mfc_id in range(1, 5):
-                self.controlador.registrar_callback_estado_mfc(mfc_id, actualizar_estado_indicador)
+            # Solo registrar para MFC3
+            self.controlador.registrar_callback_estado_mfc(3, actualizar_estado_indicador)
 
     # ======= MÉTODOS PARA INDICADORES DE VÁLVULAS BACKP/BOMBA PERISTÁLTICA =========================
 
     def _crear_indicadores_valvulas(self):
-        """Crea los indicadores circulares para válvulas y bomba"""
+        """Crea los indicadores circulares para válvulas (solo sol1)"""
         self.indicadores_valvulas = {}
         
         # Solenoide 1 - INICIALMENTE CERRADO (ROJO)
@@ -529,85 +487,26 @@ class VentanaPrincipal(tk.Frame):
             "circle": canvas_sol1_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
         }
         
-        # Solenoide 2 - INICIALMENTE CERRADO (ROJO)
-        canvas_sol2_abierto = tk.Canvas(
-            self.area_grafica, 
-            width=12, 
-            height=12, 
-            bg="white", 
-            highlightthickness=0
-        )
-        canvas_sol2_cerrado = tk.Canvas(
-            self.area_grafica, 
-            width=12, 
-            height=12, 
-            bg="white", 
-            highlightthickness=0
-        )
-        
-        self.indicadores_valvulas["sol2_abierto"] = {
-            "canvas": canvas_sol2_abierto,
-            "circle": canvas_sol2_abierto.create_oval(2, 2, 10, 10, fill="", outline="")
-        }
-        self.indicadores_valvulas["sol2_cerrado"] = {
-            "canvas": canvas_sol2_cerrado,
-            "circle": canvas_sol2_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
-        }
-        
-        # Bomba peristáltica - INICIALMENTE APAGADA (ROJO)
-        canvas_per1_on = tk.Canvas(
-            self.area_grafica, 
-            width=12, 
-            height=12, 
-            bg="white", 
-            highlightthickness=0
-        )
-        canvas_per1_off = tk.Canvas(
-            self.area_grafica, 
-            width=12, 
-            height=12, 
-            bg="white", 
-            highlightthickness=0
-        )
-        
-        self.indicadores_valvulas["per1_on"] = {
-            "canvas": canvas_per1_on,
-            "circle": canvas_per1_on.create_oval(2, 2, 10, 10, fill="", outline="")
-        }
-        self.indicadores_valvulas["per1_off"] = {
-            "canvas": canvas_per1_off,
-            "circle": canvas_per1_off.create_oval(2, 2, 10, 10, fill="red", outline="black")
-        }
-        
-        # Posicionar todos los indicadores
+        # Posicionar solo el indicador de sol1
         for key, pos in VALVULA_INDICADOR_POS.items():
             if key in self.indicadores_valvulas:
                 self.indicadores_valvulas[key]["canvas"].place(x=pos[0], y=pos[1])
    
     def actualizar_indicador_valvula(self, clave: str, estado: bool, modo_auto: bool = False):
         """
-        Actualiza el indicador visual de válvulas/bomba
+        Actualiza el indicador visual de válvulas (solo sol1)
         Estados: 
-        - sol1/sol2: True=abierto, False=cerrado
-        - per1: True=encendida, False=apagada
+        - sol1: True=abierto, False=cerrado
         - modo_auto: True=control automático, False=manual
         """
         if not hasattr(self, 'indicadores_valvulas'):
             return
         
-        # Mapeo de claves a indicadores
+        # Mapeo de claves a indicadores - solo sol1
         indicadores_map = {
             "sol1": {
                 True: "sol1_abierto",   # Abierto -> verde o amarillo
                 False: "sol1_cerrado"   # Cerrado -> rojo
-            },
-            "sol2": {
-                True: "sol2_abierto",
-                False: "sol2_cerrado"
-            },
-            "per1": {
-                True: "per1_on",        # Encendida -> verde
-                False: "per1_off"       # Apagada -> rojo
             }
         }
         
@@ -625,8 +524,8 @@ class VentanaPrincipal(tk.Frame):
                 circle = self.indicadores_valvulas[indicador_key]["circle"]
                 canvas.itemconfig(circle, fill="", outline="")
         
-        # Si es modo automático para solenoides
-        if clave in ["sol1", "sol2"] and modo_auto:
+        # Si es modo automático para solenoide
+        if clave in ["sol1"] and modo_auto:
             # En modo automático: mostrar SOLO el indicador verde en AMARILLO, apagar el rojo
             if indicador_abierto in self.indicadores_valvulas:
                 canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]
@@ -640,21 +539,21 @@ class VentanaPrincipal(tk.Frame):
                 canvas = self.indicadores_valvulas[indicador_activo]["canvas"]
                 circle = self.indicadores_valvulas[indicador_activo]["circle"]
                 
-                if "abierto" in indicador_activo or "on" in indicador_activo:
+                if "abierto" in indicador_activo:
                     canvas.itemconfig(circle, fill="green", outline="black")
                 else:
                     canvas.itemconfig(circle, fill="red", outline="black")
 
     def _register_valvulas_callbacks(self):
-        """Registra callbacks para cambios de estado de válvulas y bomba"""
+        """Registra callbacks para cambios de estado de válvulas (solo sol1)"""
         def actualizar_estado_valvula(clave, estado, modo_auto=False):
             """Callback que actualiza el indicador cuando cambia el estado"""
             self.actualizar_indicador_valvula(clave, estado, modo_auto)
         
         # Registrar para recibir actualizaciones de estado
         if hasattr(self.controlador, 'registrar_callback_estado_valvula'):
-            for clave in ["sol1", "sol2", "per1"]:
-                self.controlador.registrar_callback_estado_valvula(clave, actualizar_estado_valvula)
+            # Solo registrar para sol1
+            self.controlador.registrar_callback_estado_valvula("sol1", actualizar_estado_valvula)
                 
     # =========== MÉTODOS PARA INDICADORES DE FLUJO VÁLVULAS 4 VÍAS ===========
 
@@ -739,7 +638,7 @@ class VentanaPrincipal(tk.Frame):
 
     def actualizar_flecha_valvula(self, valvula_id, pos):
         """
-        Actualiza la flecha de la v�lvula especificada.
+        Actualiza la flecha de la válvula especificada.
         valvula_id: 1 o 2
         pos: 'A' o 'B'
         """
@@ -752,34 +651,34 @@ class VentanaPrincipal(tk.Frame):
         if pos not in ('A', 'B'):
             return
         
-        # En modo auto, obtener posici�n de V1 del controlador
+        # En modo auto, obtener posición de V1 del controlador
         v1_pos = pos if valvula_id == 1 else self._get_v1_pos_from_csv()
         if estado_modoAuto and valvula_id == 1:
             v1_pos = self.controlador.posicion_valvulas_auto
         
-        # Para V2, siempre usar CSV (aunque en modo auto ser� fijo)
+        # Para V2, siempre usar CSV (aunque en modo auto será fijo)
         v2_pos = pos if valvula_id == 2 else self._get_v2_pos_from_csv()
         
         # Ocultar todas las flechas de V2 primero
         for flecha_key in ["v2a_izq", "v2a_abajo", "v2b_izq", "v2b_abajo"]:
             self.flechas[flecha_key].place_forget()
         
-        # L�gica basada en las condiciones
+        # Lógica basada en las condiciones
         if not equipo2_conectado and not estado_modoAuto:
             # Caso 1: equipo2_conectado = FALSE o estado_modoAuto = FALSE
             if valvula_id == 1:
-                # V�LVULA 1
+                # VÁLVULA 1
                 if v1_pos == 'A':
-                    # Posici�n A: rojo abajo, verde arriba
+                    # Posición A: rojo abajo, verde arriba
                     self.flechas["v1_arriba"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
                     self.flechas["v1_abajo"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
-                else:  # Posici�n B
-                    # Posici�n B: rojo arriba, verde abajo (intercambiar)
+                else:  # Posición B
+                    # Posición B: rojo arriba, verde abajo (intercambiar)
                     self.flechas["v1_arriba"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
                     self.flechas["v1_abajo"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
                     
             
-            # V�LVULA 2 - dependiente de V1
+            # VÁLVULA 2 - dependiente de V1
             if v1_pos == 'A':
                 if v2_pos == 'A':
                     # Conjunto: rojo abajo, verde izquierda
@@ -802,29 +701,29 @@ class VentanaPrincipal(tk.Frame):
         else:
             # Caso 2: equipo2_conectado = TRUE o estado_modoAuto = TRUE
             if valvula_id == 1:
-                # V�LVULA 1
+                # VÁLVULA 1
                 if v1_pos == 'A':
-                    # Posici�n A: rojo ABAJO, verde arriba
+                    # Posición A: rojo ABAJO, verde arriba
                     self.flechas["v1_arriba"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
                     self.flechas["v1_abajo"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
-                else:  # Posici�n B
-                    # Posici�n B: rojo arriba, verde abajo (intercambiar)
+                else:  # Posición B
+                    # Posición B: rojo arriba, verde abajo (intercambiar)
                     self.flechas["v1_arriba"].place(x=FLECHA_V1_ARRIBA_POS[0], y=FLECHA_V1_ARRIBA_POS[1])
                     self.flechas["v1_abajo"].place(x=FLECHA_V1_ABAJO_POS[0], y=FLECHA_V1_ABAJO_POS[1])
                     
             
-            # V�LVULA 2 - Siempre el mismo conjunto (rojo abajo, verde izquierda)
+            # VÁLVULA 2 - Siempre el mismo conjunto (rojo abajo, verde izquierda)
             self.flechas["v2b_abajo"].place(x=FLECHA_V2B_ABAJO_POS[0], y=FLECHA_V2B_ABAJO_POS[1])  # ROJO abajo
             self.flechas["v2b_izq"].place(x=FLECHA_V2B_IZQ_POS[0], y=FLECHA_V2B_IZQ_POS[1])  # VERDE izquierda
 
-    # M�todos auxiliares para obtener posiciones desde CSV
+    # Métodos auxiliares para obtener posiciones desde CSV
     def _get_v1_pos_from_csv(self):
-        """Obtiene la posici�n de V1 desde el CSV"""
+        """Obtiene la posición de V1 desde el CSV"""
         posiciones = self._leer_posiciones_valvulas_desde_csv()
         return posiciones.get("V1", "A")
 
     def _get_v2_pos_from_csv(self):
-        """Obtiene la posici�n de V2 desde el CSV"""
+        """Obtiene la posición de V2 desde el CSV"""
         posiciones = self._leer_posiciones_valvulas_desde_csv()
         return posiciones.get("V2", "A")
 
@@ -836,11 +735,11 @@ class VentanaPrincipal(tk.Frame):
             self.controlador.registrar_callback_flecha_valvula(2, self.actualizar_flecha_valvula)
 
     def _solicitar_estado_actual_flechas(self):
-        """Obtiene el estado actual de las v�lvulas y aplica la l�gica completa"""
+        """Obtiene el estado actual de las válvulas y aplica la lógica completa"""
         estado_modoAuto = self.controlador.auto_modo_activo
         
         if estado_modoAuto:
-            # Modo auto: usar posici�n del controlador para V1
+            # Modo auto: usar posición del controlador para V1
             v1_pos = self.controlador.posicion_valvulas_auto
             v2_pos = "A"  # V2 en modo auto no importa, se muestra fijo
         else:
@@ -849,7 +748,7 @@ class VentanaPrincipal(tk.Frame):
             v1_pos = posiciones.get("V1", "A")
             v2_pos = posiciones.get("V2", "A")
         
-        # Actualizar ambas v�lvulas
+        # Actualizar ambas válvulas
         self.actualizar_flecha_valvula(1, v1_pos)
         self.actualizar_flecha_valvula(2, v2_pos)
         

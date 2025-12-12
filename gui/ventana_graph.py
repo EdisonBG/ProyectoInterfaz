@@ -22,19 +22,19 @@ SERIES_DEF = {
     "T_horno2": ("Temp. horno 2", "°C", 4, 1.0),
     "T_omega1": ("Temp. omega 1", "°C", 1, 1.0),
     "T_omega2": ("Temp. omega 2", "°C", 2, 1.0),
-    "T_cond1":  ("Temp. cond. 1", "°C", 5, 1.0),
-    "T_cond2":  ("Temp. cond. 2", "°C", 6, 1.0),
+    # Quitadas: "T_cond1":  ("Temp. cond. 1", "°C", 5, 1.0),
+    # Quitadas: "T_cond2":  ("Temp. cond. 2", "°C", 6, 1.0),
     "P_mezcla": ("Presión mezcla", "bar", 7, 0.1),
     "P_H2":     ("Presión H2", "bar", 8, 0.1),
     "P_salida": ("Presión salida", "bar", 9, 0.1),
-    "MFC_O2":   ("MFC O2", "mL/min", 10, 0.1),
-    "MFC_CO2":  ("MFC CO2", "mL/min", 11, 0.1),
+    # Quitadas: "MFC_O2":   ("MFC O2", "mL/min", 10, 0.1),
+    # Quitadas: "MFC_CO2":  ("MFC CO2", "mL/min", 11, 0.1),
     "MFC_N2":   ("MFC N2", "mL/min", 12, 0.1),
-    "MFC_H2":   ("MFC H2", "mL/min", 13, 0.1),
+    # Quitadas: "MFC_H2":   ("MFC H2", "mL/min", 13, 0.1),
 }
 SERIES_ORDER = [
-    "T_horno1","T_horno2","T_omega1","T_omega2","T_cond1","T_cond2",
-    "P_mezcla","P_H2","P_salida","MFC_O2","MFC_CO2","MFC_N2","MFC_H2",
+    "T_horno1","T_horno2","T_omega1","T_omega2",
+    "P_mezcla","P_H2","P_salida","MFC_N2",
 ]
 
 
@@ -59,7 +59,7 @@ POS = {
         "btn_log":   (0,  90), 
         "lbl_period":     (5, 140),  "ent_period":  (100,  140),
         "btn_select_todo": (15, 0),   "btn_desselect": (105, 0),
-        "lbl_status": (43, 380),
+        "lbl_status": (43, 280),  # Ajustada posición debido a menos series
     },
 }
 
@@ -306,7 +306,7 @@ class VentanaGraph(tk.Frame):
 
         # Selección de series
         # Frame con tamaño fijo y mismo estilo que "acciones"
-        selbox = ttk.Frame(left, width=205, height=415, borderwidth=2, relief="groove", padding=(6, 2))
+        selbox = ttk.Frame(left, width=205, height=330, borderwidth=2, relief="groove", padding=(6, 2))  # Altura reducida
         selbox.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
         selbox.grid_propagate(False)
 

@@ -1,6 +1,4 @@
 # gui/ventana_mfc.py
-from __future__ import annotations
-
 import os
 import csv
 import tkinter as tk
@@ -29,47 +27,17 @@ USE_ABS_LAYOUT = True
 # --- Título movible por píxeles y con fuente configurable (solo en modo absoluto) ---
 # Posición del "título" dibujado manualmente dentro de cada sección (x, y).
 TITLE_POS = {
-    1: (6, 2),
-    2: (6, 2),
-    3: (6, 2),
-    4: (6, 2),
+    1: (6, 2),  # Ahora para MFC de N2
 }
 # Fuente (familia, tamaño, estilo) por sección para el título.
 TITLE_FONT = {
-    1: ("Calibri", 14, "bold"),
-    2: ("Calibri", 14, "bold"),
-    3: ("Calibri", 14, "bold"),
-    4: ("Calibri", 14, "bold"),
+    1: ("Calibri", 14, "bold"),  # Ahora para MFC de N2
 }
 
 # Coordenadas por MFC (horizontal, vertical) para cada control dentro de su LabelFrame.
 # Nota: "entry" posiciona el contenedor LabeledEntryNum completo (label+entry).
 POS = {
-    1: {
-        "mix_lbl":   (250, 2),
-        "rango_lbl": (42, 39),  "legend":    (194, 39),
-        "gas_lbl":   (112,  79), "combo":    (214, 79),
-        "entry":     (66, 112),
-        "btn_open":  (30,  173), "btn_close": (230, 173),
-        "btn_send":  (123,  226),
-    },
-    2: {
-        "mix_lbl":   (250, 2),
-        "rango_lbl": (42, 39),  "legend":    (194, 39),
-        "gas_lbl":   (112,  79), "combo":    (214, 79),
-        "entry":     (66, 112),
-        "btn_open":  (30,  173), "btn_close": (230, 173),
-        "btn_send":  (123,  226),
-    },
-    3: {
-        "mix_lbl":   (250, 2),
-        "rango_lbl": (42, 39),  "legend":    (194, 39),
-        "gas_lbl":   (112,  79), "combo":    (214, 79),
-        "entry":     (66, 112),
-        "btn_open":  (30,  173), "btn_close": (230, 173),
-        "btn_send":  (123,  226),
-    },
-    4: {
+    1: {  # Ahora para MFC de N2 (originalmente MFC3)
         "mix_lbl":   (250, 2),
         "rango_lbl": (42, 39),  "legend":    (194, 39),
         "gas_lbl":   (112,  79), "combo":    (214, 79),
@@ -78,17 +46,18 @@ POS = {
         "btn_send":  (123,  226),
     },
 }
+
 # ---------------------------------------------------------------------------
 
 
 class VentanaMfc(tk.Frame):
     """
-    Control de 4 MFC con:
-      - Combobox de gas por MFC (O2, N2, H2, CO2, CO, Aire)
+    Control de MFC con:
+      - Combobox de gas por MFC (N2, O2, H2, CO2, CO, Aire)
       - Entry de flujo (capado 0..MAX según gas/MFC), leyenda min/max
       - Botones 'Abrir MFC' / 'Cerrar MFC' (mutuamente excluyentes) -> $;1;ID;2;1/2;!
       - Botón 'Enviar flujo' (excluyente con Abrir/Cerrar) -> $;1;ID;1;PWM;!  (PWM: 0..255)
-      - Etiqueta “% de mezcla” por MFC (esquina superior derecha)
+      - Etiqueta "% de mezcla" por MFC (esquina superior derecha)
 
     Reglas de % mezcla (se basa en el BYPASS persistido por VentanaValv en valv_pos.csv):
       BYPASS 1:
@@ -114,24 +83,18 @@ class VentanaMfc(tk.Frame):
         "Aire": 10060,
     }
 
-    # Máximos específicos por MFC
+    # Máximos específicos por MFC - SOLO MFC3 (N2)
     MFC_MAX = {
-        1: {"O2": 10000, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060},
-        2: {"O2": 9920,  "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060},
-        3: {"O2": 9920,  "N2": 10000, "H2": 10100, "CO2": 7370,  "CO": 10000, "Aire": 10060},
-        4: {"O2": 9920,  "N2": 10000, "H2": 10000, "CO2": 7370,  "CO": 10000, "Aire": 10060},
+        1: {"O2": 9920,  "N2": 10000, "H2": 10100, "CO2": 7370,  "CO": 10000, "Aire": 10060},  # MFC N2 (original MFC3)
     }
 
-    # Factores de calibración por MFC y gas
+    # Factores de calibración por MFC y gas - SOLO MFC3 (N2)
     FACTORES_CALIBRACION = {
-        1: {"O2": 1.00, "N2": 0.992, "H2": 0.982, "CO2": 1.346, "CO": 0.992, "Aire": 0.986},  # MFC O2 original
-        2: {"O2": 0.743, "N2": 0.737, "H2": 0.730, "CO2": 1.00, "CO": 0.737, "Aire": 0.733},  # MFC CO2 original
-        3: {"O2": 1.008, "N2": 1.00, "H2": 0.990, "CO2": 1.357, "CO": 1.00, "Aire": 0.994},  # MFC N2 original
-        4: {"O2": 1.018, "N2": 1.010, "H2": 1.00, "CO2": 1.370, "CO": 1.010, "Aire": 1.004},  # MFC H2 original
+        1: {"O2": 1.008, "N2": 1.00, "H2": 0.990, "CO2": 1.357, "CO": 1.00, "Aire": 0.994},  # MFC N2 original
     }
 
     GAS_LIST = ["O2", "N2", "H2", "CO2", "CO", "Aire"]
-    DEFAULT_GAS = {1: "O2", 2: "CO2", 3: "N2", 4: "H2"}
+    DEFAULT_GAS = {1: "N2"}  # Solo MFC N2
 
     def __init__(self, master, controlador, arduino):
         super().__init__(master)
@@ -150,7 +113,7 @@ class VentanaMfc(tk.Frame):
             os.path.dirname(__file__), "valv_pos.csv")
         self._bypass = self._leer_bypass_desde_csv()  # 1 o 2
 
-        # 🔧 IMPORTANTE: inicializar bandera ANTES de crear la UI
+        # 🚨 IMPORTANTE: inicializar bandera ANTES de crear la UI
         self._syncing_gas = False  # evita recursión cuando sincronizamos 1<->3
 
         self._configurar_estilos()
@@ -179,9 +142,8 @@ class VentanaMfc(tk.Frame):
                     # Actualizar también la leyenda
                     self._on_cambio_gas(mfc_id)
         
-        # Registrar callbacks para los 4 MFCs
-        for mfc_id in range(1, 5):
-            mfc_gas_manager.register_callback_ejecucion(mfc_id, actualizar_combobox_y_leyenda)
+        # Registrar callback solo para MFC N2 (ahora en posición 1)
+        mfc_gas_manager.register_callback_ejecucion(3, actualizar_combobox_y_leyenda)
 
 
     def set_controles_habilitados(self, habilitado: bool):
@@ -189,61 +151,63 @@ class VentanaMfc(tk.Frame):
         estado = "normal" if habilitado else "disabled"
         estado_combo = "readonly" if habilitado else "disabled"  # Estado especial para combobox
 
-        for mfc_id in range(1, 5):
-            # Deshabilitar/habilitar el entry de flujo
-            entry = self.refs[mfc_id].get("entry")
-            if entry:
-                try:
-                    entry.configure(state=estado)
-                except Exception:
-                    pass
-            
-            # Deshabilitar/habilitar el botón de enviar flujo
-            btn_send = self.refs[mfc_id].get("btn_send")
-            if btn_send:
-                try:
-                    btn_send.configure(state=estado)
-                except Exception:
-                    pass
+        # Solo MFC N2 (ahora en posición 1)
+        mfc_id = 1
+        # Deshabilitar/habilitar el entry de flujo
+        entry = self.refs[mfc_id].get("entry")
+        if entry:
+            try:
+                entry.configure(state=estado)
+            except Exception:
+                pass
+        
+        # Deshabilitar/habilitar el botón de enviar flujo
+        btn_send = self.refs[mfc_id].get("btn_send")
+        if btn_send:
+            try:
+                btn_send.configure(state=estado)
+            except Exception:
+                pass
 
-             # Deshabilitar/habilitar el combobox de gas
-            combo = self.refs[mfc_id].get("combo")
-            if combo:
-                try:
-                    combo.configure(state=estado_combo)
-                except Exception:
-                    pass
+         # Deshabilitar/habilitar el combobox de gas
+        combo = self.refs[mfc_id].get("combo")
+        if combo:
+            try:
+                combo.configure(state=estado_combo)
+            except Exception:
+                pass
 
     def set_todo_habilitado(self, habilitado: bool):
         """Habilita o deshabilita TODOS los controles incluyendo abrir/cerrar"""
         estado = "normal" if habilitado else "disabled"
         estado_combo = "readonly" if habilitado else "disabled"
         
-        for mfc_id in range(1, 5):
-            # Deshabilitar/habilitar el entry de flujo
-            entry = self.refs[mfc_id].get("entry")
-            if entry:
+        # Solo MFC N2 (ahora en posición 1)
+        mfc_id = 1
+        # Deshabilitar/habilitar el entry de flujo
+        entry = self.refs[mfc_id].get("entry")
+        if entry:
+            try:
+                entry.configure(state=estado)
+            except Exception:
+                pass
+        
+        # Deshabilitar/habilitar el combobox de gas
+        combo = self.refs[mfc_id].get("combo")
+        if combo:
+            try:
+                combo.configure(state=estado_combo)
+            except Exception:
+                pass
+        
+        # Deshabilitar/habilitar todos los botones
+        for btn_key in ["btn_send", "btn_open", "btn_close"]:
+            btn = self.refs[mfc_id].get(btn_key)
+            if btn:
                 try:
-                    entry.configure(state=estado)
+                    btn.configure(state=estado)
                 except Exception:
                     pass
-            
-            # Deshabilitar/habilitar el combobox de gas
-            combo = self.refs[mfc_id].get("combo")
-            if combo:
-                try:
-                    combo.configure(state=estado_combo)
-                except Exception:
-                    pass
-            
-            # Deshabilitar/habilitar todos los botones
-            for btn_key in ["btn_send", "btn_open", "btn_close"]:
-                btn = self.refs[mfc_id].get(btn_key)
-                if btn:
-                    try:
-                        btn.configure(state=estado)
-                    except Exception:
-                        pass
 
     # ------------------------ Estilos ------------------------
     def _configurar_estilos(self):
@@ -290,13 +254,12 @@ class VentanaMfc(tk.Frame):
                ("!disabled", RED_D), ("pressed", RED)])
 
     def _reset_send_button_on_show(self, _e=None):
-        # Sólo resetea el estilo del botón "Enviar flujo" para cada MFC
-        for i in range(1, 5):
-            btn = self.refs[i].get("btn_send")
-            if btn:
-                # fallback si no se guardó
-                base = getattr(btn, "_base_style", "SelBtn.TButton")
-                btn.configure(style=base)
+        # Sólo resetea el estilo del botón "Enviar flujo" para MFC N2
+        btn = self.refs[1].get("btn_send")
+        if btn:
+            # fallback si no se guardó
+            base = getattr(btn, "_base_style", "SelBtn.TButton")
+            btn.configure(style=base)
         
         # VERIFICAR ESTADO DE EJECUCIÓN AL MOSTRARSE
         # Si VentanaAuto está en ejecución, deshabilitar controles
@@ -324,11 +287,12 @@ class VentanaMfc(tk.Frame):
         for r in range(2):
             cont.grid_rowconfigure(r, weight=1, uniform="mfc")
 
+        # Solo MFC N2 (originalmente MFC3) en sección 1, otras vacías
         secciones = [
-            (1, "MFC 1 (O2)"),
-            (2, "MFC 2 (CO2)"),
-            (3, "MFC 3 (N2)"),
-            (4, "MFC 4 (H2)"),
+            (1, "MFC N2"),  # Sección 1: MFC de N2
+            (None, ""),     # Sección 2: Vacía
+            (None, ""),     # Sección 3: Vacía
+            (None, ""),     # Sección 4: Vacía
         ]
         for idx, (mfc_id, titulo) in enumerate(secciones, start=1):
             fila = (idx - 1) // 2
@@ -339,6 +303,11 @@ class VentanaMfc(tk.Frame):
     def _crear_seccion_mfc(self, parent, mfc_id: int, titulo: str) -> ttk.LabelFrame:
         # En modo ABS colocamos un título movible manual y dejamos vacío el label nativo
         frame = ttk.Frame(parent, borderwidth=2, relief="groove")
+
+        # Solo crear contenido para MFC N2 (mfc_id = 1)
+        if mfc_id != 1:
+            # Para secciones vacías, solo retornar frame sin contenido
+            return frame
 
         # ---- MODO ABSOLUTO: por píxeles con .place() dentro de cada sección ----
         # Sin fijar ancho/alto: el frame se expande para llenar su celda (sticky="nsew")
@@ -376,7 +345,7 @@ class VentanaMfc(tk.Frame):
             height=130,
             font=getattr(C, "FONT_BASE", ("Calibri", 14)),
         )
-        combo.set(mfc_gas_manager.get_gas_en_ejecucion(mfc_id))  # Usar gases en ejecución
+        combo.set(mfc_gas_manager.get_gas_en_ejecucion(3))  # Usar gas del MFC3 original
         combo.place(x=POS[mfc_id]["combo"][0], y=POS[mfc_id]["combo"][1])
         combo.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
         self.refs[mfc_id]["combo"] = combo
@@ -386,8 +355,8 @@ class VentanaMfc(tk.Frame):
             nuevo_gas = combo.get()
             
             # Notificar al manager del cambio (esto propagará a todas las ventanas)
-            mfc_gas_manager.set_gas(mfc_id, nuevo_gas)
-            mfc_gas_manager.set_gas_en_ejecucion(mfc_id, nuevo_gas)  # Para VentanaPrincipal
+            mfc_gas_manager.set_gas(3, nuevo_gas)  # MFC3 original
+            mfc_gas_manager.set_gas_en_ejecucion(3, nuevo_gas)  # Para VentanaPrincipal
             
             # Llamar a la función existente para actualizar leyenda
             self._on_cambio_gas(mfc_id)
@@ -473,7 +442,7 @@ class VentanaMfc(tk.Frame):
 
     # ------------------------ Lógica de máximos ------------------------
     def _maximo_mfc_por_gas(self, mfc_id: int, gas: str) -> int:
-        gas = gas if gas in self.BASE_MAX else "O2"
+        gas = gas if gas in self.BASE_MAX else "N2"
         if mfc_id in self.MFC_MAX and gas in self.MFC_MAX[mfc_id]:
             return self.MFC_MAX[mfc_id][gas]
         return self.BASE_MAX[gas]
@@ -529,18 +498,18 @@ class VentanaMfc(tk.Frame):
 
         # Notificar cambio de estado a la ventana principal ---
         if hasattr(self.controlador, 'notificar_cambio_estado_mfc'):
-            self.controlador.notificar_cambio_estado_mfc(mfc_id, est)
+            self.controlador.notificar_cambio_estado_mfc(3, est)  # MFC3 original
 
-    # ------------------------ Abrir/Cerrar MFCS------------------------
+    # ------------------------ Abrir/Cerrar MFC ------------------------
     def _btn_open(self, mfc_id: int) -> None:
         self.estado_mfc[mfc_id] = "open"
         self._actualizar_estilos_on_off(mfc_id)
-        self._enviar_mensaje(f"$;1;{mfc_id};2;1;!")
+        self._enviar_mensaje(f"$;1;{3};2;1;!")  # Enviar para MFC3 original
 
     def _btn_close(self, mfc_id: int) -> None:
         self.estado_mfc[mfc_id] = "close"
         self._actualizar_estilos_on_off(mfc_id)
-        self._enviar_mensaje(f"$;1;{mfc_id};2;2;!")
+        self._enviar_mensaje(f"$;1;{3};2;2;!")  # Enviar para MFC3 original
 
     # ------------------------ Enviar flujo (SP -> PWM) ------------------------
     def _enviar_flujo(self, mfc_id: int):
@@ -563,10 +532,10 @@ class VentanaMfc(tk.Frame):
         # Aplicar factor de calibración ---
         factor = self.FACTORES_CALIBRACION[mfc_id][gas]
         f_calibrado = f * factor
-        print(f"[CALIBRACIÓN] MFC{mfc_id}: {f} mL/min × {factor} = {f_calibrado} mL/min")
+        print(f"[CALIBRACIÓN] MFC{3}: {f} mL/min × {factor} = {f_calibrado} mL/min")
 
         pwm = self._flujo_a_pwm(f_calibrado, maxv)
-        msg = f"$;1;{mfc_id};1;{pwm};!"
+        msg = f"$;1;{3};1;{pwm};!"  # Enviar para MFC3 original
         self._enviar_mensaje(msg)
 
         # Desmarcar Abrir/Cerrar
@@ -596,9 +565,9 @@ class VentanaMfc(tk.Frame):
         bypass = self._bypass or 1
 
         sp1 = self._sp_val(1)
-        sp2 = self._sp_val(2)
-        sp3 = self._sp_val(3)
-        sp4 = self._sp_val(4)
+        sp2 = 0.0  # MFC2 no existe
+        sp3 = 0.0  # MFC3 no existe
+        sp4 = 0.0  # MFC4 no existe
 
         if bypass == 1:
             # Mezcla de 1-2-3
@@ -613,9 +582,6 @@ class VentanaMfc(tk.Frame):
             p4 = 100.0 if sp4 > 0 else 0.0
 
             self._set_mix_percent(1, p1)
-            self._set_mix_percent(2, p2)
-            self._set_mix_percent(3, p3)
-            self._set_mix_percent(4, p4)
 
         else:
             # BYPASS 2: pares (1,4) y (2,3)
@@ -634,9 +600,6 @@ class VentanaMfc(tk.Frame):
                 p2 = p3 = 0.0
 
             self._set_mix_percent(1, p1)
-            self._set_mix_percent(2, p2)
-            self._set_mix_percent(3, p3)
-            self._set_mix_percent(4, p4)
 
     # ------------------------ Utilidades ------------------------
     def _flujo_a_pwm(self, flujo: float, max_flujo: float) -> int:
@@ -671,9 +634,11 @@ class VentanaMfc(tk.Frame):
         # Sincronizar el combobox del otro MFC
         try:
             self._syncing_gas = True
-            #self.refs[other]["combo"].set(gas)
-            mfc_gas_manager.set_gas(other, gas)
-            mfc_gas_manager.set_gas_en_ejecucion(other, gas)  # Para VentanaPrincipal
+            # Solo sincronizar si el otro MFC existe en la interfaz
+            if other in self.refs and "combo" in self.refs[other]:
+                self.refs[other]["combo"].set(gas)
+                mfc_gas_manager.set_gas(other, gas)
+                mfc_gas_manager.set_gas_en_ejecucion(other, gas)  # Para VentanaPrincipal
         finally:
             self._syncing_gas = False
 
@@ -682,10 +647,10 @@ class VentanaMfc(tk.Frame):
         Pone en '0' los entries de flujo de los 4 MFC SIN enviar ningún mensaje.
         """
         try:
-            for mid in (1, 2, 3, 4):
-                ent = self.refs[mid]["entry"] if "entry" in self.refs[mid] else self.refs[mid]["ent"]
-                ent.delete(0, tk.END)
-                ent.insert(0, "0")
+            # Solo MFC N2 (posición 1)
+            ent = self.refs[1]["entry"] if "entry" in self.refs[1] else self.refs[1]["ent"]
+            ent.delete(0, tk.END)
+            ent.insert(0, "0")
         except Exception as e:
             print(f"[MFC] No se pudieron poner en 0 los flujos: {e}")
 
@@ -697,14 +662,13 @@ class VentanaMfc(tk.Frame):
 
     def reset_flujos_a_cero(self):
         """
-        Pone los 4 entries de flujo en '0' sin enviar nada al Arduino.
+        Pone los entries de flujo en '0' sin enviar nada al Arduino.
         """
         try:
-            for i in range(1, 5):
-                ent = self.refs[i].get("entry")
-                if ent is not None:
-                    ent.delete(0, tk.END)
-                    ent.insert(0, "0")
+            # Solo MFC N2 (posición 1)
+            ent = self.refs[1].get("entry")
+            if ent is not None:
+                ent.delete(0, tk.END)
+                ent.insert(0, "0")
         except Exception as e:
             print(f"[MFC] No se pudieron resetear los flujos: {e}")
-            

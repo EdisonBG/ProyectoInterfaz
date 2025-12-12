@@ -63,19 +63,19 @@ def mmss(seg):
 
 GASES = ("O2", "N2", "H2", "CO2", "CO", "Aire")
 
-# MFC1 (por defecto O2)
+# MFC1 (por defecto O2) - ELIMINADO VISUALMENTE
 MFC1_LIMITS = {
     "O2": 10000, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
 }
-# MFC2 (por defecto CO2)
+# MFC2 (por defecto CO2) - ELIMINADO VISUALMENTE
 MFC2_LIMITS = {
     "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 10000, "CO": 10000, "Aire": 10060
 }
-# MFC3 (por defecto N2)
+# MFC3 (por defecto N2) - MANTENIDO
 MFC3_LIMITS = {
     "O2": 9920, "N2": 10000, "H2": 10100, "CO2": 7370, "CO": 10000, "Aire": 10060
 }
-# MFC4 (por defecto H2)
+# MFC4 (por defecto H2) - ELIMINADO VISUALMENTE
 MFC4_LIMITS = {
     "O2": 9920, "N2": 10000, "H2": 10000, "CO2": 7370, "CO": 10000, "Aire": 10060
 }
@@ -124,14 +124,15 @@ class VentanaAuto(tk.Frame):
           Columna 1 = categorías (etiquetas)
           Columnas 2..9 = Etapas 1..8 (editables)
     Ejecución:
-      - Se consideran “activas” las columnas cuyo “Tiempo de etapa” > 0.
+      - Se consideran "activas" las columnas cuyo "Tiempo de etapa" > 0.
       - Al iniciar una etapa envía:
         $;4;POS_INI;PS*10;P1_ON;BYPASS(1-OFF-Normal/2-ON-Secundaria);MFC1_PWM;MFC2_PWM;MFC3_PWM;MFC4_PWM;T1_SP;T2_SP;!
-      - Alterna A↔B según “Tiempo en A/B (min)”, y en cada cambio de posición envía:
+      - Alterna A↔B según "Tiempo en A/B (min)", y en cada cambio de posición envía:
         $;3;1;0;{1|2};!   (1=A, 2=B)
     """
 
     # ------------- filas (categorías) del grid -------------
+    # FILAS MODIFICADAS: eliminadas visualmente CoPu, ByPa, GS-O2, GS-CO2, GS-H2, FW-O2, FW-CO2, FW-H2
     ROWS = [
         ("StNu", "label"),
         ("TiSt (min)", "int"),
@@ -141,17 +142,8 @@ class VentanaAuto(tk.Frame):
         ("TiPo-B (min)", "int"),
         ("WoPr (bar)", "decimal1"),
         ("", "spacer"),
-        ("CoPu", "combo_onoff"),
-        ("ByPa", "combo_onoff"),
-        ("", "spacer"),
-        ("GS-O₂", "combo_gas"),
-        ("FW-O₂ (mL/min)", "flow_mfc1"),
-        ("GS-CO₂", "combo_gas"),
-        ("FW-CO₂ (mL/min)", "flow_mfc2"),
-        ("GS-N₂", "combo_gas"),
-        ("FW-N₂ (mL/min)", "flow_mfc3"),
-        ("GS-H₂", "combo_gas"),
-        ("FW-H₂ (mL/min)", "flow_mfc4"),
+        ("GS-N₂", "combo_gas"),           # Solo N2 (MFC3)
+        ("FW-N₂ (mL/min)", "flow_mfc3"),  # Solo N2 (MFC3)
         ("", "spacer"),
         ("WoTe 1 (°C)", "sp_temp"),
         ("WoTe 2 (°C)", "sp_temp"),
@@ -311,9 +303,6 @@ class VentanaAuto(tk.Frame):
         parent.grid_columnconfigure(0, weight=1)
 
         # --- UNA SOLA FILA ---
-        # Col 0: título dentro del frame
-        # ttk.Label(box, text="Monitor", font=FONT_B).grid(row=0, column=0, padx=(6, 8), pady=1, sticky="w")
-
         # Vars (valores que tú actualizas luego)
         self.var_mon_etapa = tk.StringVar(value="-")  # "1/8"
         self.var_mon_pos = tk.StringVar(value="-")  # "A"/"B"
@@ -351,9 +340,6 @@ class VentanaAuto(tk.Frame):
         for c in range(0, 10):
             box.grid_columnconfigure(c, weight=0)
 
-        # Una sola columna elástica (espaciador) antes del botón "?"
-        # box.grid_columnconfigure(10, weight=0)
-
         # Botón "?" a la derecha
         self.btn_info_con = TouchButton(box, text="?", width=10)
         self.btn_info_con.grid(
@@ -362,9 +348,8 @@ class VentanaAuto(tk.Frame):
             command=lambda: messagebox.showinfo(
                 "Información de variables",
                 " StNu: Número de etapa\n TiSt: Tiempo de la etapa\n VaPo: Posición válvulas 4 vías\n TiPo-A: Tiempo en posición A\n"
-                " TiPo-B: Tiempo en posición B\n WoPr: Presión de trabajo\n CoPu: Bomba peristáltica\n ByPa: Bypass\n"
-                " GS-O₂: Gas para MFC de O₂\n FW-O₂: Flujo MFC de O₂\n GS-CO₂: Gas para MFC de CO₂\n FW-CO₂: Flujo MFC de CO₂\n"
-                " GS-N₂: Gas para MFC de N₂\n FW-N₂: Flujo MFC de N₂\n GS-H₂: Gas para MFC de H₂\n FW-H₂: Flujo MFC de H₂\n"
+                " TiPo-B: Tiempo en posición B\n WoPr: Presión de trabajo\n\n"
+                " GS-N₂: Gas para MFC de N₂\n FW-N₂: Flujo MFC de N₂\n\n"
                 " WoTe 1: Temperatura de trabajo horno 1\n WoTe 2: Temperatura de trabajo horno 2\n"
             )
         )
@@ -469,25 +454,7 @@ class VentanaAuto(tk.Frame):
 
             # (espacio)
 
-            # Bomba peristáltica
-            cmb_p1 = ttk.Combobox(self.grid_frame, values=(
-                "OFF", "ON"), state="readonly", width=6)
-            cmb_p1.configure(font=FONT)
-            cmb_p1.set("OFF")
-            cmb_p1.grid(row=8, column=c, sticky="ew", **cell_pad)
-            cmb_p1.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
-
-            # Bypass
-            cmb_bypass = ttk.Combobox(self.grid_frame, values=(
-                "O2/N2", "N2/N2"), state="readonly", width=6)
-            cmb_bypass.configure(font=FONT)
-            cmb_bypass.set("O2/N2")
-            cmb_bypass.grid(row=9, column=c, sticky="ew", **cell_pad)
-            cmb_bypass.option_add("*TCombobox*Listbox*Font", ("Calibri", 14))
-
-            # (espacio)
-
-            # MFC1..4: gas + flujo con límites
+            # MFC3 (N2) solamente: gas + flujo con límites
             def make_gas_flow(row_gas, row_flow, mfc_id):
                 gas_default = MFC_DEFAULTS[mfc_id][0]
                 cmb = ttk.Combobox(
@@ -506,36 +473,29 @@ class VentanaAuto(tk.Frame):
 
                 return cmb, ent
 
-            cmb_m1, ent_m1 = make_gas_flow(11, 12, 1)
-            cmb_m2, ent_m2 = make_gas_flow(13, 14, 2)
-            cmb_m3, ent_m3 = make_gas_flow(15, 16, 3)
-            cmb_m4, ent_m4 = make_gas_flow(17, 18, 4)
+            # Solo MFC3 (N2) - filas 8 y 9 (originalmente 15 y 16)
+            cmb_m3, ent_m3 = make_gas_flow(8, 9, 3)
 
             # (espacio)
 
             ent_t1 = self._make_entry_int(
                 self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t1.configure(font=FONT)
-            ent_t1.grid(row=20, column=c, sticky="ew", **cell_pad)
+            ent_t1.grid(row=11, column=c, sticky="ew", **cell_pad)
 
             ent_t2 = self._make_entry_int(
                 self.grid_frame, default="0", cap_max=MAX_SP)
             ent_t2.configure(font=FONT)
-            ent_t2.grid(row=21, column=c, sticky="ew", **cell_pad)
+            ent_t2.grid(row=12, column=c, sticky="ew", **cell_pad)
 
-            # Guardar referencias por columna
+            # Guardar referencias por columna - SOLO MFC3
             self.cells[c] = {
                 "t_etapa": ent_t_etapa,
                 "pos_ini": cmb_pos,
                 "t_a": ent_ta,
                 "t_b": ent_tb,
                 "pres": ent_pres,
-                "p1": cmb_p1,
-                "bypass": cmb_bypass,
-                "m1_gas": cmb_m1, "m1_f": ent_m1,
-                "m2_gas": cmb_m2, "m2_f": ent_m2,
                 "m3_gas": cmb_m3, "m3_f": ent_m3,
-                "m4_gas": cmb_m4, "m4_f": ent_m4,
                 "t1": ent_t1, "t2": ent_t2,
             }
 
@@ -562,7 +522,6 @@ class VentanaAuto(tk.Frame):
             e.insert(0, str(v))
 
         # teclado y normalización
-        # e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
         e.bind("<Button-1>", lambda _ev, w=e,
                norm=_norm: self._open_kbd_if_enabled(w, norm))
         e.bind("<FocusOut>", lambda _e: _norm())
@@ -586,7 +545,6 @@ class VentanaAuto(tk.Frame):
             e.delete(0, tk.END)
             e.insert(0, f"{v:.{max_dec}f}")
 
-        # e.bind("<Button-1>", lambda _ev: TecladoNumerico(self, e, on_submit=lambda v: (e.delete(0, tk.END), e.insert(0, str(v)), _norm())))
         e.bind("<Button-1>", lambda _ev, w=e,
                norm=_norm: self._open_kbd_if_enabled(w, norm))
         e.bind("<FocusOut>", lambda _e: _norm())
@@ -610,7 +568,6 @@ class VentanaAuto(tk.Frame):
             entry.delete(0, tk.END)
             entry.insert(0, str(n))
 
-        # entry.bind("<Button-1>", lambda _ev: TecladoNumerico(self, entry, on_submit=lambda v: (entry.delete(0, tk.END), entry.insert(0, str(v)), _norm_flow())))
         entry.bind("<Button-1>", lambda _ev,
                    w=entry: self._open_kbd_if_enabled(w, _norm_flow))
         entry.bind("<FocusOut>", lambda _e: _norm_flow())
@@ -708,7 +665,7 @@ class VentanaAuto(tk.Frame):
         current_bypass = self._read_bypass_from_csv()
         if current_bypass is not None:
             self._last_bypass = current_bypass
-            print(f"[INFO] Bypass actual le�do desde CSV: {self._last_bypass}")
+            print(f"[INFO] Bypass actual leído desde CSV: {self._last_bypass}")
         else:
             # Si no se puede leer, inicializamos como None
             self._last_bypass = None
@@ -904,7 +861,7 @@ class VentanaAuto(tk.Frame):
         cells = self.cells.get(c, {})
 
         # Entradas numéricas
-        for key in ("t_etapa", "t_a", "t_b", "pres", "m1_f", "m2_f", "m3_f", "m4_f", "t1", "t2"):
+        for key in ("t_etapa", "t_a", "t_b", "pres", "m3_f", "t1", "t2"):
             w = cells.get(key)
             if w:
                 try:
@@ -913,7 +870,7 @@ class VentanaAuto(tk.Frame):
                     pass
 
         # Comboboxes
-        for key in ("pos_ini", "p1", "bypass", "m1_gas", "m2_gas", "m3_gas", "m4_gas"):
+        for key in ("pos_ini", "m3_gas"):
             w = cells.get(key)
             if w:
                 try:
@@ -1021,36 +978,31 @@ class VentanaAuto(tk.Frame):
 
     def _tx_etapa(self, d: dict):
         """
-        $;4;POS_INI;PS*10;P1_ON;BYPASS;M1_PWM;M2_PWM;M3_PWM;M4_PWM;T1_SP;T2_SP;!
+        $;4;POS_INI;PS*10;0;0;0;0;M3_PWM;0;T1_SP;T2_SP;!
         """
-
-        # Si la posicion actual es igual a la anterior, envoa 3 en lugar de 1 o 2
-        bypass_to_send = str(d["bypass_on"])
-    
-        if self._last_bypass is not None and bypass_to_send == self._last_bypass:
-            bypass_to_send = "3"  # C�digo especial: "no mover"
-           
-        # Actualiza el �ltimo bypass con el valor REAL (1 o 2, no 3)
-        self._last_bypass = str(d["bypass_on"])
+        # Valores fijos para controles eliminados visualmente
+        p1_on = 0  # Bomba peristáltica
+        bypass_to_send = 0  # Bypass
+        m1_pwm = 0  # MFC1 (O2)
+        m2_pwm = 0  # MFC2 (CO2)
+        m4_pwm = 0  # MFC4 (H2)
 
         partes = [
             "$;4",
             str(d["pos_ini"]), str(d["ps10"]),
-            str(d["p1_on"]),
-            bypass_to_send,
-            str(d["m1_pwm"]), str(d["m2_pwm"]), str(
-                d["m3_pwm"]), str(d["m4_pwm"]),
+            str(p1_on),
+            str(bypass_to_send),
+            str(m1_pwm), str(m2_pwm), str(d["m3_pwm"]), str(m4_pwm),
             str(d["t1_sp"]), str(d["t2_sp"]),
         ]
 
         # se envía el mensaje al arduino
         estado_mensaje = self._tx(";".join(partes) + ";!")
 
-        # 2) Persistencia (modo auto): V1 = V2 = pos_ini; BYP de la etapa
+        # 2) Persistencia (modo auto): V1 = V2 = pos_ini; BYP se mantiene como está
         pos_ini_char = "A" if int(d.get("pos_ini", 1)) == 1 else "B"
         if estado_mensaje:
-            self._write_valv_pos(v_pos=pos_ini_char,
-                                 bypass_on=int(d.get("bypass_on", 1)))
+            self._write_valv_pos(v_pos=pos_ini_char, bypass_on=None)
 
     def _send_valve_position(self, pos: str):
         """Cambio de posición automático durante la etapa."""
@@ -1084,7 +1036,7 @@ class VentanaAuto(tk.Frame):
     def _collect_col_payload(self, c: int) -> dict:
         """
         Extrae y normaliza todos los datos de la columna c (1..8) y
-        calcula PWM de MFC según límites del gas seleccionado.
+        calcula PWM de MFC3 según límites del gas seleccionado.
         """
         # tiempos
         t_etapa = max(0, self._get_int(self.cells[c]["t_etapa"]))
@@ -1114,27 +1066,16 @@ class VentanaAuto(tk.Frame):
         
         ps10 = int(round(pres_bar * 10))
 
-        # peristálticas
-        p1_on = 1 if (self.cells[c]["p1"].get() == "ON") else 2
-
-        # Bypass: 1 - OFF, 2 - ON
-        bypass_visual = self.cells[c]["bypass"].get()
-        bypass_on = 1 if bypass_visual == "O2/N2" else 2
-
-        # MFCs -> PWM
-
-        def mfc_pwm(mid_key_g, mid_key_f, mfc_id):
-            gas = self.cells[c][mid_key_g].get()
+        # MFC3 (N2) solamente -> PWM
+        def mfc3_pwm():
+            gas = self.cells[c]["m3_gas"].get()
             if gas not in GASES:
-                gas = MFC_DEFAULTS[mfc_id][0]
-            lim = MFC_DEFAULTS[mfc_id][1][gas]
-            flujo = clamp(self._get_int(self.cells[c][mid_key_f]), 0, lim)
+                gas = MFC_DEFAULTS[3][0]
+            lim = MFC_DEFAULTS[3][1][gas]
+            flujo = clamp(self._get_int(self.cells[c]["m3_f"]), 0, lim)
             return flujo_a_pwm(flujo, lim)
 
-        m1_pwm = mfc_pwm("m1_gas", "m1_f", 1)
-        m2_pwm = mfc_pwm("m2_gas", "m2_f", 2)
-        m3_pwm = mfc_pwm("m3_gas", "m3_f", 3)
-        m4_pwm = mfc_pwm("m4_gas", "m4_f", 4)
+        m3_pwm = mfc3_pwm()
 
         # Temperaturas
         t1_sp = clamp(self._get_int(self.cells[c]["t1"]), 0, MAX_SP)
@@ -1148,12 +1089,7 @@ class VentanaAuto(tk.Frame):
             "pos_ini": pos_ini,
             "pres_bar": pres_bar,
             "ps10": ps10,
-            "p1_on": p1_on,
-            "bypass_on": bypass_on,
-            "m1_pwm": m1_pwm,
-            "m2_pwm": m2_pwm,
             "m3_pwm": m3_pwm,
-            "m4_pwm": m4_pwm,
             "t1_sp": t1_sp,
             "t2_sp": t2_sp,
         }
@@ -1169,7 +1105,6 @@ class VentanaAuto(tk.Frame):
     def _cmd_guardar_preset(self):
         # Crear instancia de la clase anidada
         popup = self._GuardarPresetPopup(self)
-    # No necesitamos hacer más aquí, la clase se encarga de todo
 
     # Definir la clase anidada para el popup de guardar preset
     class _GuardarPresetPopup(tk.Toplevel):
@@ -1327,9 +1262,9 @@ class VentanaAuto(tk.Frame):
             os.makedirs(carpeta_destino, exist_ok=True)
             path = os.path.join(carpeta_destino, f"{nombre}.csv")
 
+            # Headers modificados: solo campos visibles + campos fijos con valor 0
             headers = ["StNu", "TiSt", "VaPo", "TiPo_A", "TiPo_B", "WoPr10",
-                       "CoPu", "ByPa", "GS_O2", "FW_O2", "GS_CO2", "FW_CO2",
-                       "GS_N2", "FW_N2", "GS_H2", "FW_H2", "WoTe1", "WoTe2"]
+                       "GS_N2", "FW_N2", "WoTe1", "WoTe2"]
 
             try:
                 with open(path, "w", newline="", encoding="utf-8") as f:
@@ -1365,10 +1300,6 @@ class VentanaAuto(tk.Frame):
         p = clamp(round(p, 1), 0.0, MAX_PRES)
         ps10 = str(int(round(p * 10)))
 
-        # Bypass: convertir visual (O2/N2, N2/N2) a l�gico (1, 2)
-        bypass_visual = self.cells[c]["bypass"].get()
-        bypass_logico = "1" if bypass_visual == "O2/N2" else "2"
-
         return [
             str(c),  # StNu
             ent_str(self.cells[c]["t_etapa"], "0"),  # TiSt
@@ -1376,12 +1307,7 @@ class VentanaAuto(tk.Frame):
             ent_str(self.cells[c]["t_a"], "0"),  # TiPo_A
             ent_str(self.cells[c]["t_b"], "0"),  # TiPo_B
             ps10,  # WoPr10
-            "1" if self.cells[c]["p1"].get() == "ON" else "2",  # CoPu
-            bypass_logico,  # ByPa
-            self.cells[c]["m1_gas"].get(), ent_str(self.cells[c]["m1_f"], "0"),  # GS_O2, FW_O2
-            self.cells[c]["m2_gas"].get(), ent_str(self.cells[c]["m2_f"], "0"),  # GS_CO2, FW_CO2
             self.cells[c]["m3_gas"].get(), ent_str(self.cells[c]["m3_f"], "0"),  # GS_N2, FW_N2
-            self.cells[c]["m4_gas"].get(), ent_str(self.cells[c]["m4_f"], "0"),  # GS_H2, FW_H2
             ent_str(self.cells[c]["t1"], "0"),  # WoTe1
             ent_str(self.cells[c]["t2"], "0"),  # WoTe2
         ]
@@ -1424,7 +1350,7 @@ class VentanaAuto(tk.Frame):
                     try:
                         col = int(row.get("StNu", "0").strip())
                         if 1 <= col <= 8:
-                            self._apply_csv_row_to_col (col, row)
+                            self._apply_csv_row_to_col(col, row)
                     except Exception as e:
                         print(f"DEBUG: Error procesando fila: {e}")
                         continue
@@ -1454,38 +1380,16 @@ class VentanaAuto(tk.Frame):
         except Exception:
             set_e(self.cells[c]["pres"], "0.0")
 
-        # peristálticas
-        self.cells[c]["p1"].set("ON" if row.get(
-            "CoPu", "2") == "1" else "OFF")
-        
-        bypass_csv_val = row.get("ByPa", "1")
-        if bypass_csv_val == "1":
-            self.cells[c]["bypass"].set("O2/N2")
-        else:
-            self.cells[c]["bypass"].set("N2/N2")
-
-        # MFCs - usando los nombres exactos del CSV
-        self.cells[c]["m1_gas"].set(row.get("GS_O2", "O2"))
-        set_e(self.cells[c]["m1_f"], row.get("FW_O2", "0"))
-    
-        self.cells[c]["m2_gas"].set(row.get("GS_CO2", "CO2"))
-        set_e(self.cells[c]["m2_f"], row.get("FW_CO2", "0"))
-    
+        # MFC3 (N2) solamente
         self.cells[c]["m3_gas"].set(row.get("GS_N2", "N2"))
         set_e(self.cells[c]["m3_f"], row.get("FW_N2", "0"))
-    
-        self.cells[c]["m4_gas"].set(row.get("GS_H2", "H2"))
-        set_e(self.cells[c]["m4_f"], row.get("FW_H2", "0"))
 
-        # Aplicar clamp para cada MFC después de cargar los valores
-        self._apply_flow_clamp(c, 1)
-        self._apply_flow_clamp(c, 2)
+        # Aplicar clamp para MFC3 después de cargar los valores
         self._apply_flow_clamp(c, 3)
-        self._apply_flow_clamp(c, 4)
 
-        # SPs - usando los nuevos nombres
+        # SPs
         set_e(self.cells[c]["t1"], row.get("WoTe1", "0"))
-        set_e(self.cells[c]["t2"], row.get("WoTe2", "0"))  # Corregido a "WoTe2"
+        set_e(self.cells[c]["t2"], row.get("WoTe2", "0"))
 
     def _apply_flow_clamp(self, c: int, mfc_id: int):
         gas = self.cells[c][f"m{mfc_id}_gas"].get()
@@ -1500,3 +1404,4 @@ class VentanaAuto(tk.Frame):
         v = clamp(v, 0, lim)
         ent.delete(0, tk.END)
         ent.insert(0, str(v))
+    
