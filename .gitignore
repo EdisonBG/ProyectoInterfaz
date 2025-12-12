@@ -9,3 +9,8 @@ __pycache__/
 
 # Archivos de entorno
 .env
+
+# Build artifacts
+/dist/
+/build/
+*.pkg
