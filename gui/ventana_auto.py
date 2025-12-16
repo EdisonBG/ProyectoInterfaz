@@ -783,7 +783,7 @@ class VentanaAuto(tk.Frame):
         self._tick()
 
     def _cmd_detener(self):
-        self._tx("$;4;2;!")
+        self._tx("$;4;5;!")
         self._stop_all("Proceso detenido por el usuario.")
         self.controlador.set_auto_modo_activo(False)  # Modo auto inactivo
 
