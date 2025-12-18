@@ -407,8 +407,8 @@ class VentanaPrincipal(tk.Frame):
         self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nL/min")
         self._labels["mfc_h2_valor"].config(text=f"{q_h2}\nL/min")
 
-        self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
-        self._vars["potencia_horno2"].set(f"P Tot: {p_horno2} W")
+        self._vars["potencia_horno1"].set(f"E Tot: {p_h1} Wh")
+        self._vars["potencia_horno2"].set(f"E Tot: {p_horno2} Wh")
 
     # ======= MÉTODOS PARA INDICADORES DE MFCS =========================
 
