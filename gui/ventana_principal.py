@@ -255,7 +255,6 @@ class VentanaPrincipal(tk.Frame):
             "temp_horno1":      ("H1",      "°C"),
             "temp_horno2":      ("H2",      "°C"),
             "presion_mezcla":   ("P Mez",""),
-            "presion_h2":       ("P H2",""),
             "presion_salida":   ("P Out",""),
             "potencia_horno1":   ("P h1",   "W"),
             "potencia_horno2":   ("P h2",   "W"),
@@ -361,14 +360,13 @@ class VentanaPrincipal(tk.Frame):
         self._vars["temp_horno2"].set(f"H2: {t_h2} °C")
 
         self._vars["presion_mezcla"].set(f"P Mez: \n{p_mez:.1f} bar")
-        self._vars["presion_h2"].set(f"P H2: \n{p_h2:.1f} bar")
         self._vars["presion_salida"].set(f"P Out: {p_out:.1f} bar")
 
         # Actualizar solo MFC N2 con formato vertical
         self._labels["mfc_n2_valor"].config(text=f"{q_n2}\nL/min")
 
-        self._vars["potencia_horno1"].set(f"P Tot: {p_h1} W")
-        self._vars["potencia_horno2"].set(f"P Tot: {p_horno2} W")
+        self._vars["potencia_horno1"].set(f"E Tot: {p_h1} Wh")
+        self._vars["potencia_horno2"].set(f"E Tot: {p_horno2} Wh")
 
     # ======= MÉTODOS PARA INDICADORES DE MFCS =========================
 

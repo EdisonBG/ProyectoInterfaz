@@ -1,4 +1,4 @@
-#!/home/eia/Encrypted/.ProyectoInterfaz_descifrado/.ProyectoInterfaz/ProyectoInterfaz/.venv/bin/python
+#!/home/tda/Desktop/proyectos/ProyectoInterfaz/.venv/bin/python3.11
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -45,18 +45,20 @@ POS = {
         "btn_v2_b": (225,  80),    
     },
     "con": {
-        # Sección vacía - sin elementos
+        # Sección vacía - solo se mantiene el frame
     },
     "bp": {
-        # Sección vacía - sin elementos
+        # Sección vacía - solo se mantiene el frame
     },
     "sol": {
         "campo_presion_seguridad": (5,  38), 
+        "presion_manual_lbl": (150,  88), 
         "btn_sol_toggle":   (10, 123),    
+        "btn_sol2_toggle":  (215, 123),   
     },
     "per": {
-        "campo_presion_limite": (5, 7),
-        "btn_enviar_presiones": (150, 60),
+        "campo_presion_limite": (5, 40),      # Movido a sección per
+        "btn_enviar_presiones": (150, 100),    # Movido a sección per
     },
 }
 
@@ -85,8 +87,6 @@ class VentanaValv(tk.Frame):
     - Solenoide 2 (ID 8):
       * Manual: $;3;8;1;{1|2};P;!
       * Usa la misma presión que Solenoide 1
-
-    - Peristáltica 1 (ID 6): $;3;6;1;{1|2};! (ON/OFF)
 
     Persistencia: V1/V2/BYP en valv_pos.csv (formato clave,valor)
     """
@@ -117,9 +117,6 @@ class VentanaValv(tk.Frame):
         # Nueva variable para presión límite
         self.sol_presion_limite = 20.0  # bar
 
-        # Peristáltica 1 (solo una ahora)
-        self.per1_on = tk.BooleanVar(value=False)
-
         # Bypass (1 o 2) – ahora también persiste (clave BYP)
         self.bypass_sel = tk.IntVar(value=1)  # 1=Bypass 1, 2=Bypass 2
 
@@ -131,9 +128,6 @@ class VentanaValv(tk.Frame):
         self._cargar_posiciones()
         self._refrescar_botones("v1")
         self._refrescar_botones("v2")
-        # Refrescar texto del botón BYP según persistencia
-        if hasattr(self, 'btn_bypass'):
-            self.btn_bypass.configure(text=self._texto_bypass())
 
         # --- Notificar estado inicial de las flechas ---
         self._notificar_estado_actual_flechas()
@@ -191,10 +185,10 @@ class VentanaValv(tk.Frame):
         secciones = [
             ("v1", "Válvula de 4 vías 1 (Entrada)"),
             ("v2", "Válvula de 4 vías 2 (Salida)"),
-            ("con", ""),  # Sección vacía
-            ("bp",  ""),  # Sección vacía
+            ("con", "Conexión equipo 2"),
+            ("bp",  "Bypass"),
             ("sol", "Control Backpressure"),
-            ("per", "Configuración Presiones"),
+            ("per", "Presión Límite"),
         ]
 
         for idx, (sec_id, titulo) in enumerate(secciones, start=1):
@@ -208,13 +202,12 @@ class VentanaValv(tk.Frame):
 
     def _crear_seccion_valv(self, parent, sec_id: str, titulo: str) -> ttk.LabelFrame:
         """Crea una sección (tarjeta) según el identificador sec_id."""
+        # Padding interno coherente con tu versión original
+
         frame = ttk.Frame(parent, borderwidth=2, relief="groove")
-        
-        # Solo crear título si no está vacío
-        if titulo:
-            title_lbl = ttk.Label(frame, text=titulo, font=TITLE_FONT.get(sec_id, ("Calibri", 20, "bold")))
-            title_x, title_y = TITLE_POS.get(sec_id, (10, 8))
-            title_lbl.place(x=title_x, y=title_y)
+        title_lbl = ttk.Label(frame, text=titulo, font=TITLE_FONT.get(sec_id, ("Calibri", 20, "bold")))
+        title_x, title_y = TITLE_POS.get(sec_id, (10, 8))
+        title_lbl.place(x=title_x, y=title_y)
 
         if sec_id == "v1":
             # --- Tarjeta: Válvula 1 (Entrada) ---
@@ -233,19 +226,29 @@ class VentanaValv(tk.Frame):
             self.btn_v2_b.place(x=POS[sec_id]["btn_v2_b"][0], y=POS[sec_id]["btn_v2_b"][1])
 
         elif sec_id == "con":
-            # --- Tarjeta: Conexión equipo 2 - VACÍA ---
+            # --- Tarjeta: Conexión equipo 2 ---
+            # Sección vacía - solo título
             pass
 
         elif sec_id == "bp":
-            # --- Tarjeta: Bypass - VACÍA ---
+            # --- Tarjeta: Bypass ---
+            # Sección vacía - solo título
             pass
 
         elif sec_id == "sol":
             # --- Tarjeta: Solenoide (seguridad) ---
-            # Solo Solenoide 1 (sin Solenoide 2)
+            # Solenoide 1
             initial_style = "CerrarBtn.TButton" if self.sol_abierta.get() else "AbrirBtn.TButton"
             self.btn_sol_toggle = TouchButton(frame, text=self._texto_sol(), style=initial_style, command=self._toggle_sol)
             self.btn_sol_toggle.place(x=POS[sec_id]["btn_sol_toggle"][0], y=POS[sec_id]["btn_sol_toggle"][1])
+            
+            # Solenoide 2
+            initial_style2 = "CerrarBtn.TButton" if self.sol2_abierta.get() else "AbrirBtn.TButton"
+            self.btn_sol2_toggle = TouchButton(frame, text=self._texto_sol2(), style=initial_style2, command=self._toggle_sol2)
+            self.btn_sol2_toggle.place(x=POS[sec_id]["btn_sol2_toggle"][0], y=POS[sec_id]["btn_sol2_toggle"][1])
+            
+            presion_manual_lbl = ttk.Label(frame, text="Modo manual", font=getattr(C, "FONT_BASE", ("Calibri", 14)))
+            presion_manual_lbl.place(x=POS[sec_id]["presion_manual_lbl"][0], y=POS[sec_id]["presion_manual_lbl"][1])
 
             # Presion de seguridad (maximo 20.0bar) - AHORA SIN ENVÍO AUTOMÁTICO
             campo_presion_seguridad = LabeledEntryNum(frame, "Presión deseada (bar):",
@@ -263,7 +266,7 @@ class VentanaValv(tk.Frame):
             )
 
         elif sec_id == "per":
-            # --- Tarjeta: Configuración Presiones ---
+            # --- Tarjeta: Presión Límite ---
             # Campo para presión límite en sección per
             campo_presion_limite = LabeledEntryNum(frame, "Presión límite (bar):",
             width=18,
@@ -367,22 +370,6 @@ class VentanaValv(tk.Frame):
         except Exception:
             pass
         return txt
-    
-    def _texto_per1(self) -> str:
-        txt1 = "Encender" if not self.per1_on.get() else "Apagar"
-        # Estilo según el texto (se aplica al final del ciclo actual)
-        try:
-            style = "AbrirBtn.TButton" if txt1 == "Encender" else "CerrarBtn.TButton"
-            self.after(0, lambda: self.btn_per1.configure(style=style))
-        except Exception:
-            pass
-        return txt1
-
-    def _texto_conexion(self) -> str:
-        return "Activar conexión" if not self.conexion_equipo2.get() else "Desactivar conexión"
-
-    def _texto_bypass(self) -> str:
-        return "Estado actual: Bypass O2/N2" if self.bypass_sel.get() == 1 else "Estado actual: Bypass N2/N2"
 
     # ------------- Handlers V1/V2 -------------
     def _seleccionar_posicion(self, cual: str, pos: str):
@@ -428,7 +415,6 @@ class VentanaValv(tk.Frame):
     def _toggle_conexion(self):
         nuevo = not self.conexion_equipo2.get()
         self.conexion_equipo2.set(nuevo)
-        self.btn_con_eq2.configure(text=self._texto_conexion())
 
         if nuevo:
             # 1. Al activar conexión: ambas válvulas en posición A
@@ -594,9 +580,9 @@ class VentanaValv(tk.Frame):
         self.sol2_abierta.set(False)
         
         # Actualizar textos y estilos de los botones
-        if hasattr(self, 'btn_sol_toggle'):
-            self.btn_sol_toggle.configure(text="Abrir válvula 1", style="AbrirBtn.TButton")
-
+        self.btn_sol_toggle.configure(text="Abrir válvula 1", style="AbrirBtn.TButton")
+        self.btn_sol2_toggle.configure(text="Abrir válvula 2", style="AbrirBtn.TButton")
+        
     def _activar_control_presion_automatico(self, activar: bool):
         """
         Activa o desactiva el modo automático de control de presión
@@ -617,8 +603,11 @@ class VentanaValv(tk.Frame):
                 estado_a_mostrar_sol1, 
                 activar  # modo_auto = True cuando está en control automático
             )
-            if hasattr(self.controlador, '_ventana_principal') and hasattr(self.controlador._ventana_principal, 'actualizar_indicador_valvula'):
-                self.controlador._ventana_principal.actualizar_indicador_valvula("sol2", estado_a_mostrar_sol2, activar)
+            self.controlador.notificar_cambio_estado_valvula(
+                "sol2", 
+                estado_a_mostrar_sol2, 
+                activar  # modo_auto = True cuando está en control automático
+            )
 
     def _toggle_sol(self):
         # Leer directamente de los campos de entrada
@@ -663,6 +652,7 @@ class VentanaValv(tk.Frame):
         
         nuevo = not self.sol2_abierta.get()
         self.sol2_abierta.set(nuevo)
+        self.btn_sol2_toggle.configure(text=self._texto_sol2())
         estado = "1" if nuevo else "2"
         p10 = int(round(p_seg * 10))
         p10_lim = int(round(self.sol_presion_limite * 10))  # Convertir límite a decibares
@@ -676,8 +666,8 @@ class VentanaValv(tk.Frame):
         self._activar_control_presion_automatico(False)
 
         # --- Notificar cambio de estado del solenoide 2 ---
-        if hasattr(self.controlador, '_ventana_principal') and hasattr(self.controlador._ventana_principal, 'actualizar_indicador_valvula'):
-            self.controlador._ventana_principal.actualizar_indicador_valvula("sol2", nuevo, False)
+        if hasattr(self.controlador, 'notificar_cambio_estado_valvula'):
+            self.controlador.notificar_cambio_estado_valvula("sol2", nuevo, False)
 
     # ------------- Bypass (CMD 3; Valvs motor; manual; 1/2) -------------
     def _toggle_bypass(self):
@@ -685,7 +675,6 @@ class VentanaValv(tk.Frame):
         if nuevo == self.bypass_sel.get():
             return  # sin cambio
         self.bypass_sel.set(nuevo)
-        self.btn_bypass.configure(text=self._texto_bypass())
 
         # Persistir BYP junto con V1/V2
         self._guardar_posiciones()
@@ -699,17 +688,3 @@ class VentanaValv(tk.Frame):
         print("[TX] Bypass ->", msg)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(msg)
-
-    # ------------- Peristáltica 1 (ID 7) -------------
-    def _toggle_per1(self):
-        nuevo = not self.per1_on.get()
-        self.per1_on.set(nuevo)
-        estado = "1" if nuevo else "2"
-        msg = f"$;3;6;1;{estado};!"
-        print("[TX]", msg)
-        if hasattr(self.controlador, "enviar_a_arduino"):
-            self.controlador.enviar_a_arduino(msg)
-
-        # --- Notificar cambio de estado de la bomba peristáltica ---
-        if hasattr(self.controlador, '_ventana_principal') and hasattr(self.controlador._ventana_principal, 'actualizar_indicador_valvula'):
-            self.controlador._ventana_principal.actualizar_indicador_valvula("per1", nuevo)
