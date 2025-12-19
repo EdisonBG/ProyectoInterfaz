@@ -77,7 +77,7 @@ class VentanaValv(tk.Frame):
 
     - Conexión equipo 2 (toggle):
       * Al activar: deshabilita Válvula 2; Válvula 1 pasa a $;3;1;8;{1|2};!
-        y se envía una vez $;3;0;8;!
+        y se envía una vez $;3;8;8;!
 
     - Bypass (reemplaza Motor 1/2):
       * Toggle entre Bypass 1 ↔ Bypass 2
@@ -496,7 +496,7 @@ class VentanaValv(tk.Frame):
         
         self._aplicar_estado_conexion()
         if nuevo:
-            msg = "$;3;0;8;!"
+            msg = "$;3;8;8;!"
             print("[TX] Conexión equipo 2 ACTIVADA:", msg)
             if hasattr(self.controlador, "enviar_a_arduino"):
                 self.controlador.enviar_a_arduino(msg)

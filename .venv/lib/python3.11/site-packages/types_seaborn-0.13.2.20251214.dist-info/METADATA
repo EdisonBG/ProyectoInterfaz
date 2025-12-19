@@ -1,0 +1,41 @@
+Metadata-Version: 2.4
+Name: types-seaborn
+Version: 0.13.2.20251214
+Summary: Typing stubs for seaborn
+License-Expression: Apache-2.0
+Project-URL: Homepage, https://github.com/python/typeshed
+Project-URL: GitHub, https://github.com/python/typeshed
+Project-URL: Changes, https://github.com/typeshed-internal/stub_uploader/blob/main/data/changelogs/seaborn.md
+Project-URL: Issue tracker, https://github.com/python/typeshed/issues
+Project-URL: Chat, https://gitter.im/python/typing
+Classifier: Programming Language :: Python :: 3
+Classifier: Typing :: Stubs Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: matplotlib>=3.8
+Requires-Dist: numpy>=1.20
+Requires-Dist: pandas-stubs
+Dynamic: license-file
+
+## Typing stubs for seaborn
+
+This is a [type stub package](https://typing.python.org/en/latest/tutorials/external_libraries.html)
+for the [`seaborn`](https://github.com/mwaskom/seaborn) package. It can be used by type checkers
+to check code that uses `seaborn`. This version of
+`types-seaborn` aims to provide accurate annotations for
+`seaborn==0.13.2`.
+
+This package is part of the [typeshed project](https://github.com/python/typeshed).
+All fixes for types and metadata should be contributed there.
+See [the README](https://github.com/python/typeshed/blob/main/README.md)
+for more details. The source for this package can be found in the
+[`stubs/seaborn`](https://github.com/python/typeshed/tree/main/stubs/seaborn)
+directory.
+
+This package was tested with the following type checkers:
+* [mypy](https://github.com/python/mypy/) 1.18.2
+* [pyright](https://github.com/microsoft/pyright) 1.1.407
+
+It was generated from typeshed commit
+[`2f3c3b7cba70ef65e0dcb907eb30eb7df7684819`](https://github.com/python/typeshed/commit/2f3c3b7cba70ef65e0dcb907eb30eb7df7684819).

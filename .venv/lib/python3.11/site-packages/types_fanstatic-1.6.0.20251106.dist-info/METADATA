@@ -1,0 +1,40 @@
+Metadata-Version: 2.4
+Name: types-fanstatic
+Version: 1.6.0.20251106
+Summary: Typing stubs for fanstatic
+License-Expression: Apache-2.0
+Project-URL: Homepage, https://github.com/python/typeshed
+Project-URL: GitHub, https://github.com/python/typeshed
+Project-URL: Changes, https://github.com/typeshed-internal/stub_uploader/blob/main/data/changelogs/fanstatic.md
+Project-URL: Issue tracker, https://github.com/python/typeshed/issues
+Project-URL: Chat, https://gitter.im/python/typing
+Classifier: Programming Language :: Python :: 3
+Classifier: Typing :: Stubs Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: types-setuptools
+Requires-Dist: types-WebOb
+Dynamic: license-file
+
+## Typing stubs for fanstatic
+
+This is a [type stub package](https://typing.python.org/en/latest/tutorials/external_libraries.html)
+for the [`fanstatic`](https://github.com/zopefoundation/fanstatic) package. It can be used by type checkers
+to check code that uses `fanstatic`. This version of
+`types-fanstatic` aims to provide accurate annotations for
+`fanstatic==1.6.*`.
+
+This package is part of the [typeshed project](https://github.com/python/typeshed).
+All fixes for types and metadata should be contributed there.
+See [the README](https://github.com/python/typeshed/blob/main/README.md)
+for more details. The source for this package can be found in the
+[`stubs/fanstatic`](https://github.com/python/typeshed/tree/main/stubs/fanstatic)
+directory.
+
+This package was tested with the following type checkers:
+* [mypy](https://github.com/python/mypy/) 1.18.2
+* [pyright](https://github.com/microsoft/pyright) 1.1.407
+
+It was generated from typeshed commit
+[`65b8a85e4b775d5465e7fdb7382c181fb7efa958`](https://github.com/python/typeshed/commit/65b8a85e4b775d5465e7fdb7382c181fb7efa958).

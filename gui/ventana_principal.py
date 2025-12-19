@@ -626,7 +626,7 @@ class VentanaPrincipal(tk.Frame):
                 canvas.itemconfig(circle, fill="", outline="")
         
         # Si es modo automático para solenoides
-        if clave in ["sol1", "sol2"] and modo_auto:
+        if clave in ["sol1", "sol2"] and (modo_auto or self._is_auto_running()):
             # En modo automático: mostrar SOLO el indicador verde en AMARILLO, apagar el rojo
             if indicador_abierto in self.indicadores_valvulas:
                 canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]

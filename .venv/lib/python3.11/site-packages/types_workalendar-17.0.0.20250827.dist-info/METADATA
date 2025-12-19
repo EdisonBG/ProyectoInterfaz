@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: types-workalendar
+Version: 17.0.0.20250827
+Summary: Typing stubs for workalendar
+License-Expression: Apache-2.0
+Project-URL: Homepage, https://github.com/python/typeshed
+Project-URL: GitHub, https://github.com/python/typeshed
+Project-URL: Changes, https://github.com/typeshed-internal/stub_uploader/blob/main/data/changelogs/workalendar.md
+Project-URL: Issue tracker, https://github.com/python/typeshed/issues
+Project-URL: Chat, https://gitter.im/python/typing
+Classifier: Programming Language :: Python :: 3
+Classifier: Typing :: Stubs Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+## Typing stubs for workalendar
+
+This is a [type stub package](https://typing.python.org/en/latest/tutorials/external_libraries.html)
+for the [`workalendar`](https://github.com/workalendar/workalendar) package. It can be used by type checkers
+to check code that uses `workalendar`. This version of
+`types-workalendar` aims to provide accurate annotations for
+`workalendar==17.0.*`.
+
+This package is part of the [typeshed project](https://github.com/python/typeshed).
+All fixes for types and metadata should be contributed there.
+See [the README](https://github.com/python/typeshed/blob/main/README.md)
+for more details. The source for this package can be found in the
+[`stubs/workalendar`](https://github.com/python/typeshed/tree/main/stubs/workalendar)
+directory.
+
+This package was tested with the following type checkers:
+* [mypy](https://github.com/python/mypy/) 1.17.1
+* [pyright](https://github.com/microsoft/pyright) 1.1.404
+
+It was generated from typeshed commit
+[`4fa56fbc236c99159c6132254d8f182598469df8`](https://github.com/python/typeshed/commit/4fa56fbc236c99159c6132254d8f182598469df8).

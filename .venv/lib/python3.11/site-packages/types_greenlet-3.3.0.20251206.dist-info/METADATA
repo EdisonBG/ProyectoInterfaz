@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: types-greenlet
+Version: 3.3.0.20251206
+Summary: Typing stubs for greenlet
+License-Expression: Apache-2.0
+Project-URL: Homepage, https://github.com/python/typeshed
+Project-URL: GitHub, https://github.com/python/typeshed
+Project-URL: Changes, https://github.com/typeshed-internal/stub_uploader/blob/main/data/changelogs/greenlet.md
+Project-URL: Issue tracker, https://github.com/python/typeshed/issues
+Project-URL: Chat, https://gitter.im/python/typing
+Classifier: Programming Language :: Python :: 3
+Classifier: Typing :: Stubs Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+## Typing stubs for greenlet
+
+This is a [type stub package](https://typing.python.org/en/latest/tutorials/external_libraries.html)
+for the [`greenlet`](https://github.com/python-greenlet/greenlet) package. It can be used by type checkers
+to check code that uses `greenlet`. This version of
+`types-greenlet` aims to provide accurate annotations for
+`greenlet==3.3.*`.
+
+This package is part of the [typeshed project](https://github.com/python/typeshed).
+All fixes for types and metadata should be contributed there.
+See [the README](https://github.com/python/typeshed/blob/main/README.md)
+for more details. The source for this package can be found in the
+[`stubs/greenlet`](https://github.com/python/typeshed/tree/main/stubs/greenlet)
+directory.
+
+This package was tested with the following type checkers:
+* [mypy](https://github.com/python/mypy/) 1.18.2
+* [pyright](https://github.com/microsoft/pyright) 1.1.407
+
+It was generated from typeshed commit
+[`5d41fd6800407489925bc57d29dd5ffe6f71ce0b`](https://github.com/python/typeshed/commit/5d41fd6800407489925bc57d29dd5ffe6f71ce0b).

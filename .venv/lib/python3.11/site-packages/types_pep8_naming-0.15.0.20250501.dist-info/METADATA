@@ -1,0 +1,43 @@
+Metadata-Version: 2.4
+Name: types-pep8-naming
+Version: 0.15.0.20250501
+Summary: Typing stubs for pep8-naming
+License-Expression: Apache-2.0
+Project-URL: Homepage, https://github.com/python/typeshed
+Project-URL: GitHub, https://github.com/python/typeshed
+Project-URL: Changes, https://github.com/typeshed-internal/stub_uploader/blob/main/data/changelogs/pep8-naming.md
+Project-URL: Issue tracker, https://github.com/python/typeshed/issues
+Project-URL: Chat, https://gitter.im/python/typing
+Classifier: Programming Language :: Python :: 3
+Classifier: Typing :: Stubs Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Dynamic: license-file
+
+## Typing stubs for pep8-naming
+
+This is a [PEP 561](https://peps.python.org/pep-0561/)
+type stub package for the [`pep8-naming`](https://github.com/PyCQA/pep8-naming) package.
+It can be used by type-checking tools like
+[mypy](https://github.com/python/mypy/),
+[pyright](https://github.com/microsoft/pyright),
+[pytype](https://github.com/google/pytype/),
+[Pyre](https://pyre-check.org/),
+PyCharm, etc. to check code that uses `pep8-naming`. This version of
+`types-pep8-naming` aims to provide accurate annotations for
+`pep8-naming==0.15.*`.
+
+This package is part of the [typeshed project](https://github.com/python/typeshed).
+All fixes for types and metadata should be contributed there.
+See [the README](https://github.com/python/typeshed/blob/main/README.md)
+for more details. The source for this package can be found in the
+[`stubs/pep8-naming`](https://github.com/python/typeshed/tree/main/stubs/pep8-naming)
+directory.
+
+This package was tested with
+mypy 1.15.0,
+pyright 1.1.400,
+and pytype 2024.10.11.
+It was generated from typeshed commit
+[`eec809d049d10a5ae9b88780eab15fe36a9768d7`](https://github.com/python/typeshed/commit/eec809d049d10a5ae9b88780eab15fe36a9768d7).
