@@ -500,6 +500,11 @@ class VentanaValv(tk.Frame):
             print("[TX] Conexión equipo 2 ACTIVADA:", msg)
             if hasattr(self.controlador, "enviar_a_arduino"):
                 self.controlador.enviar_a_arduino(msg)
+        else:  # <-- AÑADIR ESTE BLOQUE PARA DESACTIVACIÓN
+            msg = "$;3;9;8;!"
+            print("[TX] Conexión equipo 2 DESACTIVADA:", msg)
+            if hasattr(self.controlador, "enviar_a_arduino"):
+                self.controlador.enviar_a_arduino(msg)
 
     def _aplicar_estado_conexion(self):
         on = self.conexion_equipo2.get()
