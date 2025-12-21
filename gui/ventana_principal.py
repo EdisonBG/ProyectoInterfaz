@@ -247,6 +247,12 @@ class VentanaPrincipal(tk.Frame):
         # --- Llamar inmediatamente después de crear las flechas ---
         self._solicitar_estado_actual_flechas()
 
+        # === Variable para estado de modo auto de bomba ===
+        self._bomba_modo_auto = False
+        
+        # === Registrar callback específico para bomba en modo auto ===
+        self._register_modo_auto_bomba_callback()
+
     def abrir_diagramas(self):
         """Abre la ventana de diagramas del equipo"""
         VentanaDiagramas(self)
@@ -410,6 +416,14 @@ class VentanaPrincipal(tk.Frame):
         self._vars["potencia_horno1"].set(f"E Tot: {p_h1} Wh")
         self._vars["potencia_horno2"].set(f"E Tot: {p_horno2} Wh")
 
+    def _register_modo_auto_callback(self):
+        """Registra callback para cambios de modo automático de bomba peristáltica"""
+        if hasattr(self.controlador, 'registrar_callback_modo_auto'):
+            self.controlador.registrar_callback_modo_auto(
+                "per1",  # Clave específica para bomba peristáltica
+                self._on_modo_auto_bomba_change
+            )
+
     # ======= MÉTODOS PARA INDICADORES DE MFCS =========================
 
     def _crear_indicadores_mfc(self):
@@ -499,6 +513,24 @@ class VentanaPrincipal(tk.Frame):
                 self.controlador.registrar_callback_estado_mfc(mfc_id, actualizar_estado_indicador)
 
     # ======= MÉTODOS PARA INDICADORES DE VÁLVULAS BACKP/BOMBA PERISTÁLTICA =========================
+
+    def _register_modo_auto_bomba_callback(self):
+        """Registra callback específico para bomba en modo automático"""
+        if hasattr(self.controlador, 'registrar_callback_modo_auto_per1'):
+            self.controlador.registrar_callback_modo_auto_per1(
+                self._on_bomba_modo_auto_change
+            )
+
+    def _on_bomba_modo_auto_change(self, modo_auto_activo):
+        """
+        Callback para cambios de modo automático de bomba
+        modo_auto_activo: True (modo auto) / False (modo manual)
+        """
+        self._bomba_modo_auto = modo_auto_activo
+        # Cuando cambia el modo auto, actualizamos el indicador
+        # Usamos el estado actual que ya tenemos almacenado
+        estado_actual = getattr(self, '_ultimo_estado_bomba', False)
+        self.actualizar_indicador_valvula("per1", estado_actual, modo_auto_activo)
 
     def _crear_indicadores_valvulas(self):
         """Crea los indicadores circulares para válvulas y bomba"""
@@ -626,8 +658,15 @@ class VentanaPrincipal(tk.Frame):
                 canvas.itemconfig(circle, fill="", outline="")
         
         # Si es modo automático para solenoides
-        if clave in ["sol1", "sol2"] and (modo_auto or self._is_auto_running()):
+        if clave in ["sol1", "sol2"] and (modo_auto):
             # En modo automático: mostrar SOLO el indicador verde en AMARILLO, apagar el rojo
+            if indicador_abierto in self.indicadores_valvulas:
+                canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]
+                circle = self.indicadores_valvulas[indicador_abierto]["circle"]
+                canvas.itemconfig(circle, fill="yellow", outline="black")
+            # El indicador rojo permanece apagado (invisible)
+        elif clave == "per1" and hasattr(self, '_bomba_modo_auto') and self._bomba_modo_auto:
+            # Bomba peristáltica en modo automático (desde VentanaAuto) -> AMARILLO
             if indicador_abierto in self.indicadores_valvulas:
                 canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]
                 circle = self.indicadores_valvulas[indicador_abierto]["circle"]
@@ -648,6 +687,16 @@ class VentanaPrincipal(tk.Frame):
     def _register_valvulas_callbacks(self):
         """Registra callbacks para cambios de estado de válvulas y bomba"""
         def actualizar_estado_valvula(clave, estado, modo_auto=False):
+            # === Guardar el último estado de la bomba ===
+            if clave == "per1":
+                self._ultimo_estado_bomba = estado
+            
+            if clave == "per1" and hasattr(self, '_bomba_modo_auto') and self._bomba_modo_auto:
+                # Bomba en modo automático: forzar modo_auto=True para mostrar amarillo
+                modo_auto_a_usar = True
+            else:
+                modo_auto_a_usar = modo_auto
+
             """Callback que actualiza el indicador cuando cambia el estado"""
             self.actualizar_indicador_valvula(clave, estado, modo_auto)
         
@@ -734,9 +783,7 @@ class VentanaPrincipal(tk.Frame):
         
         canvas.place(x=x, y=y)
         return canvas
-    
-    
-
+       
     def actualizar_flecha_valvula(self, valvula_id, pos):
         """
         Actualiza la flecha de la v�lvula especificada.
@@ -827,7 +874,6 @@ class VentanaPrincipal(tk.Frame):
         """Obtiene la posici�n de V2 desde el CSV"""
         posiciones = self._leer_posiciones_valvulas_desde_csv()
         return posiciones.get("V2", "A")
-
 
     def _register_flechas_callbacks(self):
         """Registra callbacks para cambios de posición de las válvulas"""

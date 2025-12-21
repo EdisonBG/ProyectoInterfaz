@@ -727,6 +727,11 @@ class VentanaAuto(tk.Frame):
         self.btn_pausar.configure(state="normal")
         self.btn_reanudar.configure(state="disabled")
         self.controlador.set_auto_modo_activo(True)  # Modo auto activo
+
+        # === NUEVO: Notificar que la bomba peristáltica está en modo automático ===
+        if hasattr(self.controlador, 'notificar_cambio_modo_auto_per1'):
+            self.controlador.notificar_cambio_modo_auto_per1(True)
+        
         self._col_ptr = -1
         self._iniciar_siguiente_etapa()
 
@@ -798,6 +803,11 @@ class VentanaAuto(tk.Frame):
             self._tick_id = None
         self.btn_pausar.configure(state="disabled")
         self.btn_reanudar.configure(state="disabled")
+
+        # === NUEVO: Notificar que la bomba peristáltica sale del modo automático ===
+        if hasattr(self.controlador, 'notificar_cambio_modo_auto_per1'):
+            self.controlador.notificar_cambio_modo_auto_per1(False)
+
         self._reset_monitor()
         if msg:
             print("[AUTO]", msg)

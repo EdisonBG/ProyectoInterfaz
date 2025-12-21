@@ -43,6 +43,9 @@ class Aplicacion(tk.Tk):
         self.auto_modo_activo = False  # Variable para modo auto on/off
         self.posicion_valvulas_auto = "A"  # Posicion en modo auto (A o B)
 
+        # --- Callback para el modo auto del GUI ---
+        self._callbacks_modo_auto_per1 = []  # Solo para bomba peristáltica en modo auto
+
         if not os.path.exists(serial_port):
             nuevo_puerto = self._buscar_puerto_arduino()
             if nuevo_puerto is not None:
@@ -200,7 +203,20 @@ class Aplicacion(tk.Tk):
             elif valvula_id == 2:
                 return vvalv.v2_pos.get()
         return None
-        
+
+    # --- Método para manejar callback de modo auto de bomba ---
+    def registrar_callback_modo_auto_per1(self, callback):
+        """Registra un callback para cambios de modo automático de bomba peristáltica"""
+        self._callbacks_modo_auto_per1.append(callback)
+
+    def notificar_cambio_modo_auto_per1(self, estado):
+        """Notifica que la bomba peristáltica está en modo automático"""
+        for callback in self._callbacks_modo_auto_per1:
+            try:
+                callback(estado)
+            except Exception as e:
+                print(f"Error en callback modo auto per1: {e}")
+
     def enviar_a_arduino(self, mensaje: str):
         """
         Envia un mensaje al Arduino por serial si esta conectado.
