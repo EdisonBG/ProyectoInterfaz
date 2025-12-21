@@ -483,7 +483,7 @@ class PanelOmega(ttk.Frame):
             n = int(float(value))
         except Exception:
             return 0
-        return 600 if n > 600 else n
+        return 150 if n > 150 else n
 
     def _guardar_setpoint_int(self, valor_float):
         sp = self._sp_trunc_capped(valor_float)
@@ -620,7 +620,7 @@ class PanelOmega(ttk.Frame):
           - Cambia el modo (PID/Rampa) visualmente
           - Ajusta la memoria (M0..M4)
           - Rellena SVN, P, I, D
-          - Si esta en PID y sp>=0, coloca el setpoint (con truncado/tope 600)
+          - Si esta en PID y sp>=0, coloca el setpoint (con truncado/tope 150)
           - Refresca la disposicion (actualizar_vista) y visibilidad de parametros
         """
         # 1) Modo

@@ -185,8 +185,8 @@ class VentanaValv(tk.Frame):
         secciones = [
             ("v1", "Válvula de 4 vías 1 (Entrada)"),
             ("v2", "Válvula de 4 vías 2 (Salida)"),
-            ("con", "Conexión equipo 2"),
-            ("bp",  "Bypass"),
+            ("con", ""),
+            ("bp",  ""),
             ("sol", "Control Backpressure"),
             ("per", "Presión Límite"),
         ]

@@ -20,7 +20,7 @@ class VentanaRampa(tk.Toplevel):
 
     Reglas:
       - SP y T se envian como enteros por truncado (10.5 -> 10)
-      - SP se limita a max 600
+      - SP se limita a max 150
       - Si un campo esta vacio o no es numero -> 0
       - Paso limite vacio/invalido/fuera de 0..7 -> 0
 
@@ -153,10 +153,10 @@ class VentanaRampa(tk.Toplevel):
             return 0
 
     def _rampa_aplicar_sp(self, entry, valor):
-        """Callback del teclado para SP: truncado y tope 600; refleja en el entry."""
+        """Callback del teclado para SP: truncado y tope 150; refleja en el entry."""
         n = self._trunc_int(valor)
-        if n > 600:
-            n = 600
+        if n > 150:
+            n = 150
         entry.delete(0, tk.END)
         entry.insert(0, str(n))
 
@@ -181,7 +181,7 @@ class VentanaRampa(tk.Toplevel):
         except Exception:
             return 0
 
-    def _sp_int_trunc_capped(self, v, max_sp: int = 600) -> int:
+    def _sp_int_trunc_capped(self, v, max_sp: int = 150) -> int:
         """
         Entero truncado con tope max_sp para SP.
         Acepta str, int, float, None.
@@ -205,13 +205,13 @@ class VentanaRampa(tk.Toplevel):
     def aplicar_rampa(self, sp_list, t_list, paso_lim):
         """
         Carga en los entries los SP/T recibidos (listas o tuplas).
-        Aplica las mismas reglas (truncado, tope 600).
+        Aplica las mismas reglas (truncado, tope 150).
         """
         try:
             for i in range(8):
                 sp_val = sp_list[i] if i < len(sp_list) else 0
                 t_val = t_list[i] if i < len(t_list) else 0
-                sp = self._sp_int_trunc_capped(sp_val, 600)
+                sp = self._sp_int_trunc_capped(sp_val, 150)
                 ti = self._int_trunc_or_zero(t_val)
                 sp_entry, t_entry = self.campos[i]
                 sp_entry.delete(0, tk.END)
@@ -243,16 +243,16 @@ class VentanaRampa(tk.Toplevel):
         Construye y envia:
           $;2;ID_OMEGA;1;3;SP0;SP1;...;SP7;T0;T1;...;T7;PASO_LIM;!
         - SP/T siempre enteros por truncado
-        - SP limitado a 600
+        - SP limitado a 150
         - Vacio/invalido -> 0
         """
         sp_list_int = []
         t_list_int = []
 
-        # recolectar SP y T (truncados; SP con limite 600)
+        # recolectar SP y T (truncados; SP con limite 150)
         for entry_sp, entry_t in self.campos:
             sp_list_int.append(self._sp_int_trunc_capped(
-                entry_sp.get(), max_sp=600))
+                entry_sp.get(), max_sp=150))
             t_list_int.append(self._int_trunc_or_zero(entry_t.get()))
 
         # paso limite
