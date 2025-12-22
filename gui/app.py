@@ -259,7 +259,7 @@ class Aplicacion(tk.Tk):
 
 
             # ---------------- conexion al equipo 2 ----------------
-            if len(partes) == 4 and partes[0] == "6":
+            if len(partes) == 3 and partes[0] == "6":
                 print(f"[RX] Mensaje especial recibido: {partes}")
                 
                 # Guardar estado en el controlador
@@ -430,7 +430,8 @@ class Aplicacion(tk.Tk):
         import os
         
         # Ruta al archivo CSV (misma que en ventana_valv)
-        csv_path = os.path.join(os.path.dirname(__file__), "ventana_valv", "valv_pos.csv")
+        #csv_path = os.path.join(os.path.dirname(__file__), "ventana_valv", "valv_pos.csv")
+        csv_path = os.path.join(os.path.dirname(__file__), "valv_pos.csv")
         
         try:
             # Leer archivo existente
