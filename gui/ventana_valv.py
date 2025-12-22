@@ -300,38 +300,88 @@ class VentanaValv(tk.Frame):
             return
         
         modo_activo = partes[1] == "1"
-        posicion = partes[2]  # "1" para Pos A, "2" para Pos B
+        posicion_codigo = partes[2]  # "1" para Pos A, "2" para Pos B
         
         if modo_activo:
-            # Modo especial activado: deshabilitar botones
-            self._deshabilitar_valvulas_modo_especial()
+            # Modo especial (equipo conectado) activado: Activar conexión
+            print(f"[INFO] Mensaje $;6;1;{posicion_codigo};! recibido - Activar conexión")
             
-            # Actualizar CSV si se especifica posición
-            if posicion in ("1", "2"):
-                nueva_pos = "A" if posicion == "1" else "B"
-                self._actualizar_csv_modo_especial(nueva_pos)
+            # Deshabilitar botones de ambas válvulas
+            self.btn_v1_a.configure(state="disabled")
+            self.btn_v1_b.configure(state="disabled")
+            self.btn_v2_a.configure(state="disabled")
+            self.btn_v2_b.configure(state="disabled")
+            
+            # Establecer nueva posición según el mensaje
+            nueva_pos = "A" if posicion_codigo == "1" else "B"
+            
+            # Actualizar variables internas
+            self.v1_pos.set(nueva_pos)
+            self.v2_pos.set(nueva_pos)
+            
+            # Activar estado de conexión
+            self.conexion_equipo2.set(True)
+            
+            # Actualizar botones visualmente
+            self._refrescar_botones("v1")
+            self._refrescar_botones("v2")
+            
+            # Actualizar CSV
+            self._actualizar_csv_modo_especial(nueva_pos)
+            
+            # Notificar al controlador
+            if hasattr(self.controlador, 'set_equipo2_conectado'):
+                self.controlador.set_equipo2_conectado(True)
+                
+            # Enviar mensaje de conexión activada (simulando botón de conexión)
+            msg = "$;3;0;8;!"
+            print("[TX] Conexión equipo 2 ACTIVADA por mensaje:", msg)
+            if hasattr(self.controlador, "enviar_a_arduino"):
+                self.controlador.enviar_a_arduino(msg)
+            
+            # Notificar cambio de flechas
+            if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
+                self.controlador.notificar_cambio_flecha_valvula(1, nueva_pos)
+                self.controlador.notificar_cambio_flecha_valvula(2, nueva_pos)
+                
         else:
-            # Modo especial desactivado: volver a la normalidad
-            self._habilitar_valvulas_normal()
+            # Modo especial (equipo conectado) desactivado: Desactivar conexión
+            print(f"[INFO] Mensaje $;6;0;{posicion_codigo};! recibido - Desactivar conexión")
+            
+            # Desactivar estado de conexión
+            self.conexion_equipo2.set(False)
+            
+            # Habilitar botones de V1 (siempre)
+            self.btn_v1_a.configure(state="normal")
+            self.btn_v1_b.configure(state="normal")
+            
+            # Habilitar botones de V2 (ya que no está conectado)
+            self.btn_v2_a.configure(state="normal")
+            self.btn_v2_b.configure(state="normal")
+            
+            # V2 toma la misma posición que V1 (como en la lógica original)
+            self.v2_pos.set(self.v1_pos.get())
+            self._refrescar_botones("v2")
+            
+            # Notificar al controlador
+            if hasattr(self.controlador, 'set_equipo2_conectado'):
+                self.controlador.set_equipo2_conectado(False)
+            
+            # Guardar posiciones actualizadas
+            self._guardar_posiciones()
+            
+            # Notificar cambio de flecha para V2
+            if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
+                self.controlador.notificar_cambio_flecha_valvula(2, self.v1_pos.get())
 
     def _deshabilitar_valvulas_modo_especial(self):
-        """Deshabilita los botones de válvulas en modo especial"""
+        """Deshabilita los botones de válvulas en modo especial (cuando está conectado)"""
         self.btn_v1_a.configure(state="disabled")
         self.btn_v1_b.configure(state="disabled")
         self.btn_v2_a.configure(state="disabled")
         self.btn_v2_b.configure(state="disabled")
-
-    def _habilitar_valvulas_normal(self):
-        """Vuelve al estado normal (considerando conexión equipo 2)"""
-        # Válvula 1 siempre habilitada
-        self.btn_v1_a.configure(state="normal")
-        self.btn_v1_b.configure(state="normal")
-        
-        # Válvula 2 depende de conexión equipo 2
-        on = self.conexion_equipo2.get()
-        state_v2 = "disabled" if on else "normal"
-        self.btn_v2_a.configure(state=state_v2)
-        self.btn_v2_b.configure(state=state_v2)
+        # Marcar como conectado
+        self.conexion_equipo2.set(True)
 
     def _actualizar_csv_modo_especial(self, posicion):
         """Actualiza el CSV con la posición del modo especial"""
@@ -373,7 +423,7 @@ class VentanaValv(tk.Frame):
         except Exception as e:
             print(f"[ERROR] No se pudo actualizar CSV en modo especial: {e}")
 
-    # ------------- Persistencia V1/V2/BYP -------------
+
     def _cargar_posiciones(self):
         if not os.path.exists(self._pos_file):
             return
@@ -464,6 +514,11 @@ class VentanaValv(tk.Frame):
         pos_code = "1" if pos == "A" else "2"
 
         if cual == "v1":
+            # Verificar si está en modo conexión (botones deshabilitados)
+            if self.btn_v1_a.cget("state") == "disabled":
+                print("[INFO] Válvula 1 deshabilitada (equipo conectado)")
+                return
+            
             if self.v1_pos.get() == pos:
                 self._refrescar_botones("v1")
                 return
@@ -477,6 +532,11 @@ class VentanaValv(tk.Frame):
                 self.controlador.notificar_cambio_flecha_valvula(1, pos)
 
         elif cual == "v2":
+            # Verificar si está en modo conexión (botones deshabilitados)
+            if self.btn_v2_a.cget("state") == "disabled":
+                print("[INFO] Válvula 2 deshabilitada (equipo conectado)")
+                return
+            
             if self.conexion_equipo2.get():
                 return  # V2 deshabilitada
             if self.v2_pos.get() == pos:
