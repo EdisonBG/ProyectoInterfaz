@@ -43,6 +43,10 @@ class Aplicacion(tk.Tk):
         self.auto_modo_activo = False  # Variable para modo auto on/off
         self.posicion_valvulas_auto = "A"  # Posicion en modo auto (A o B)
 
+        # --- Variables para modo especial (mensaje $;6;1;X;!) ---
+        self.modo_especial_activo = False  # True cuando llega $;6;1;X;!
+        self.posicion_modo_especial = None  # "A" o "B" según el último mensaje
+
         if not os.path.exists(serial_port):
             nuevo_puerto = self._buscar_puerto_arduino()
             if nuevo_puerto is not None:
@@ -253,6 +257,32 @@ class Aplicacion(tk.Tk):
             cuerpo = limpio[1:-1]
             partes = [p for p in cuerpo.split(";") if p != ""]
 
+
+            # ---------------- conexion al equipo 2 ----------------
+            if len(partes) == 4 and partes[0] == "6":
+                print(f"[RX] Mensaje especial recibido: {partes}")
+                
+                # Guardar estado en el controlador
+                self.modo_especial_activo = (partes[1] == "1")
+                
+                # Si es mensaje de activación ($;6;1;X;!), guardar posición
+                if self.modo_especial_activo:
+                    self.posicion_modo_especial = "A" if partes[2] == "1" else "B"
+                
+                # Notificar a barra navegación
+                self._notificar_modo_especial(self.modo_especial_activo)
+                
+                # Notificar a ventana valv (si existe)
+                vvalv = self._ventanas.get("VentanaValv")
+                if vvalv is not None:
+                    # Usar after para ejecutar en el hilo principal de tkinter
+                    self.after(0, vvalv._manejar_mensaje_especial, partes)
+                
+                # Si la ventana_valv no existe aún, actualizar CSV directamente
+                if self.modo_especial_activo and vvalv is None:
+                    self._actualizar_csv_directo(self.posicion_modo_especial)
+                return
+        
             # ---------------- Presión de seguridad superada ----------------
             # Formato exacto: $;1;4;!
             if len(partes) == 2 and partes[0] == "1" and partes[1] == "4":
@@ -384,6 +414,50 @@ class Aplicacion(tk.Tk):
 
         except Exception as e:
             print(f"[RX ERROR] {e}")
+
+    def _notificar_modo_especial(self, modo_activo):
+        """
+        Notifica a barra navegación sobre el modo especial
+        """
+        # Buscar barra navegación en todas las ventanas
+        for ventana in self._ventanas.values():
+            if hasattr(ventana, '_actualizar_modo_especial'):
+                ventana._actualizar_modo_especial(modo_activo)
+
+    def _actualizar_csv_directo(self, posicion):
+        """Actualiza el CSV de válvulas directamente (cuando ventana_valv no existe)"""
+        import csv
+        import os
+        
+        # Ruta al archivo CSV (misma que en ventana_valv)
+        csv_path = os.path.join(os.path.dirname(__file__), "ventana_valv", "valv_pos.csv")
+        
+        try:
+            # Leer archivo existente
+            data = {}
+            if os.path.exists(csv_path):
+                with open(csv_path, newline="", encoding="utf-8") as f:
+                    for nombre, pos in csv.reader(f):
+                        key = (nombre or "").strip().upper()
+                        val = (pos or "").strip().upper()
+                        data[key] = val
+            
+            # Actualizar ambas válvulas con la nueva posición
+            data["V1"] = posicion
+            data["V2"] = posicion
+            
+            # Guardar archivo
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["V1", data["V1"]])
+                w.writerow(["V2", data["V2"]])
+                if "BYP" in data:
+                    w.writerow(["BYP", data["BYP"]])
+            
+            print(f"[INFO] CSV actualizado directamente con posición {posicion}")
+            
+        except Exception as e:
+            print(f"[ERROR] No se pudo actualizar CSV directamente: {e}")
 
     def _on_close(self):
         """

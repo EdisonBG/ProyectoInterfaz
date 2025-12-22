@@ -84,6 +84,7 @@ class BarraNavegacion(ttk.Frame):
             btn.grid(row=ro, column=0, pady=5, sticky="ew")
             if imagen:
                 btn.image = imagen  # evitar GC
+        
     def _cerrar_app(self):
         #Enviar mensaje antes de cerrar
         mensaje = "$7;0;2;0;!"
@@ -101,6 +102,21 @@ class BarraNavegacion(ttk.Frame):
         self.controlador.mostrar_ventana("VentanaValv")
         if hasattr(self.controlador, '_ventana_valv'):
             self.controlador._ventana_valv.actualizar_desde_csv()
+
+    def _actualizar_modo_especial(self, modo_activo):
+        """Actualiza el estado del botón VentanaAuto según modo especial"""
+        # Buscar el botón de VentanaAuto (es el quinto botón, índice 4)
+        for widget in self.winfo_children():
+            if isinstance(widget, ttk.Button):
+                # El botón de VentanaAuto es el que tiene el comando para mostrar VentanaAuto
+                if hasattr(widget, 'command'):
+                    cmd = widget.command
+                    # Verificar si el comando es para mostrar VentanaAuto
+                    if cmd and 'VentanaAuto' in str(cmd):
+                        estado = "disabled" if modo_activo else "normal"
+                        widget.configure(state=estado)
+                        print(f"[INFO] Botón VentanaAuto {estado}")
+                        break
 
     def _real_cerrar_app(self):
         top = self.winfo_toplevel()

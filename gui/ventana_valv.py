@@ -129,6 +129,12 @@ class VentanaValv(tk.Frame):
         self._refrescar_botones("v1")
         self._refrescar_botones("v2")
 
+        # --- Verificar si el modo especial está activo al crear la ventana ---
+        if hasattr(self.controlador, 'modo_especial_activo') and self.controlador.modo_especial_activo:
+            # Si el modo especial está activo, deshabilitar las válvulas
+            self._deshabilitar_valvulas_modo_especial()
+            print("[INFO] VentanaValv creada con modo especial activo")
+
         # --- Notificar estado inicial de las flechas ---
         self._notificar_estado_actual_flechas()
 
@@ -286,6 +292,86 @@ class VentanaValv(tk.Frame):
             self.btn_enviar_presiones.place(x=POS[sec_id]["btn_enviar_presiones"][0], y=POS[sec_id]["btn_enviar_presiones"][1])
 
         return frame
+
+    # ------- Definiciones relaciondas con la conexion al equipo 2: deshabilitar botones --------
+    def _manejar_mensaje_especial(self, partes):
+        """Maneja mensajes especiales $;6;X;X;! del Arduino"""
+        if len(partes) != 4 or partes[0] != "6":
+            return
+        
+        modo_activo = partes[1] == "1"
+        posicion = partes[2]  # "1" para Pos A, "2" para Pos B
+        
+        if modo_activo:
+            # Modo especial activado: deshabilitar botones
+            self._deshabilitar_valvulas_modo_especial()
+            
+            # Actualizar CSV si se especifica posición
+            if posicion in ("1", "2"):
+                nueva_pos = "A" if posicion == "1" else "B"
+                self._actualizar_csv_modo_especial(nueva_pos)
+        else:
+            # Modo especial desactivado: volver a la normalidad
+            self._habilitar_valvulas_normal()
+
+    def _deshabilitar_valvulas_modo_especial(self):
+        """Deshabilita los botones de válvulas en modo especial"""
+        self.btn_v1_a.configure(state="disabled")
+        self.btn_v1_b.configure(state="disabled")
+        self.btn_v2_a.configure(state="disabled")
+        self.btn_v2_b.configure(state="disabled")
+
+    def _habilitar_valvulas_normal(self):
+        """Vuelve al estado normal (considerando conexión equipo 2)"""
+        # Válvula 1 siempre habilitada
+        self.btn_v1_a.configure(state="normal")
+        self.btn_v1_b.configure(state="normal")
+        
+        # Válvula 2 depende de conexión equipo 2
+        on = self.conexion_equipo2.get()
+        state_v2 = "disabled" if on else "normal"
+        self.btn_v2_a.configure(state=state_v2)
+        self.btn_v2_b.configure(state=state_v2)
+
+    def _actualizar_csv_modo_especial(self, posicion):
+        """Actualiza el CSV con la posición del modo especial"""
+        try:
+            # Leer archivo existente
+            data = {}
+            if os.path.exists(self._pos_file):
+                with open(self._pos_file, newline="", encoding="utf-8") as f:
+                    for nombre, pos in csv.reader(f):
+                        key = (nombre or "").strip().upper()
+                        val = (pos or "").strip().upper()
+                        data[key] = val
+            
+            # Actualizar ambas válvulas con la nueva posición
+            data["V1"] = posicion
+            data["V2"] = posicion
+            
+            # Guardar archivo
+            with open(self._pos_file, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["V1", data["V1"]])
+                w.writerow(["V2", data["V2"]])
+                if "BYP" in data:
+                    w.writerow(["BYP", data["BYP"]])
+            
+            # Actualizar variables internas y UI
+            self.v1_pos.set(posicion)
+            self.v2_pos.set(posicion)
+            self._refrescar_botones("v1")
+            self._refrescar_botones("v2")
+            
+            # Notificar cambio de flechas
+            if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
+                self.controlador.notificar_cambio_flecha_valvula(1, posicion)
+                self.controlador.notificar_cambio_flecha_valvula(2, posicion)
+                
+            print(f"[INFO] CSV actualizado con posición {posicion} desde modo especial")
+            
+        except Exception as e:
+            print(f"[ERROR] No se pudo actualizar CSV en modo especial: {e}")
 
     # ------------- Persistencia V1/V2/BYP -------------
     def _cargar_posiciones(self):
