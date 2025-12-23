@@ -39,6 +39,8 @@ class Aplicacion(tk.Tk):
 
         self._callback_presion_etapa_auto = None
 
+        self._callbacks_estado_auto = {}  # id_omega: [callbacks]
+
         # --- variable para verificar la conexion al equipo 2 ---
         self.equipo2_conectado = False  # Variable nueva
 
@@ -184,7 +186,27 @@ class Aplicacion(tk.Tk):
                 callback(mfc_id, estado)
             except Exception as e:
                 print(f"Error en callback estado MFC{mfc_id}: {e}")
+
+    def registrar_callback_estado_auto(self, id_omega, callback):
+        """Registra un callback para cambios de estado en modo auto para un omega espec�fico"""
+        if id_omega not in self._callbacks_estado_auto:
+            self._callbacks_estado_auto[id_omega] = []
+        self._callbacks_estado_auto[id_omega].append(callback)
+
+    def notificar_cambio_estado_auto(self, id_omega, estado):
+        """Notifica el cambio de estado en modo auto para un omega espec�fico"""
+        if id_omega in self._callbacks_estado_auto:
+            for callback in self._callbacks_estado_auto[id_omega]:
+                try:
+                    callback(estado)
+                except Exception as e:
+                    print(f"Error en callback estado auto Omega {id_omega}: {e}")
     
+    def obtener_estado_auto_actual(self, id_omega):
+        """Obtiene el estado actual del modo auto para un omega espec�fico"""
+        # Si hay un estado espec�fico por omega, puedes manejarlo
+        # Por ahora, asumimos que todos los omegas tienen el mismo estado
+        return self.auto_modo_activo
     # --- Métodos para manejar callbacks de estado válvulas solenoides BackPressure y bomba peristáltica ---
 
     def registrar_callback_estado_valvula(self, clave, callback):

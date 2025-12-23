@@ -186,7 +186,7 @@ class VentanaPrincipal(tk.Frame):
         frame_botones_superiores = tk.Frame(self.area_grafica, bg="white")
         frame_botones_superiores.place(relx=1.0, x=-10, y=10, anchor="ne")  # Esquina superior derecha
         
-        # Botón "Equipo" - abre ventana de diagramas
+        '''# Botón "Equipo" - abre ventana de diagramas
         btn_equipo = TouchButton(
             frame_botones_superiores, 
             text="Equipo", 
@@ -204,7 +204,7 @@ class VentanaPrincipal(tk.Frame):
             width=6,
             style="SelBtn.TButton"
         )
-        btn_info.pack(side=tk.LEFT)
+        btn_info.pack(side=tk.LEFT)'''
 
         # crear labels de variables
         self._vars = {}
