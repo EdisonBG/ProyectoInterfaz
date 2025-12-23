@@ -24,17 +24,17 @@ FUENTE_VALORES = ("Calibri", 12)
 
 # ========================= POSICIONES DE LOS LABELS =========================
 LABEL_POS = {
-    "potencia_horno1":    (375, 100),
-    "temp_omega1":       (375, 160),
-    "temp_horno1":       (375, 210),
+    "potencia_horno1":    (360, 124),
+    "temp_omega1":       (377, 210),
+    "temp_horno1":       (377, 270),
 
-    "potencia_horno2":    (680, 100),
-    "temp_omega2":       (680, 160),
-    "temp_horno2":       (680, 210),
+    "potencia_horno2":    (695, 138),
+    "temp_omega2":       (695, 207),
+    "temp_horno2":       (695, 273),
 
     "presion_mezcla":    (65, 160),
     "presion_h2":        (220, 165),
-    "presion_salida":    (695, 490),
+    "presion_salida":    (670, 510),
     # Posiciones para nombres MFC - SOLO N2
     "mfc_n2_nombre":     (112, 440),
     # Posiciones para valores MFC - SOLO N2
