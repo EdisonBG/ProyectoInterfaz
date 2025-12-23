@@ -296,10 +296,10 @@ class Aplicacion(tk.Tk):
                     if hasattr(ventana, 'barra_navegacion'):
                         ventana.barra_navegacion._actualizar_modo_especial(self.modo_especial_activo)
             # Notificar a ventana valv (si existe)
-            vvalv = self._ventanas.get("VentanaValv")
-            if vvalv is not None:
-                self.after(0, vvalv._manejar_mensaje_especial, partes)
-            return
+                vvalv = self._ventanas.get("VentanaValv")
+                if vvalv is not None:
+                    self.after(0, vvalv._manejar_mensaje_especial, partes)
+                return
         
             # ---------------- Presión de seguridad superada ----------------
             # Formato exacto: $;1;4;!
