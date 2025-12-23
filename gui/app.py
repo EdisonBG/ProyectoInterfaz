@@ -36,6 +36,8 @@ class Aplicacion(tk.Tk):
         # --- Callbacks para flechas de válvulas ---
         self._callbacks_flechas_valvulas = {1: [], 2: []}
 
+        self._callback_presion_etapa_auto = None
+
         # --- variable para verificar la conexion al equipo 2 ---
         self.equipo2_conectado = False  # Variable nueva
 
@@ -138,6 +140,18 @@ class Aplicacion(tk.Tk):
         self.posicion_valvulas_auto = posicion
         self.notificar_cambio_flecha_valvula(1, posicion)
 
+    def registrar_callback_presion_etapa_auto(self, callback):
+        """Registra un callback para cambios de presi�n en modo auto"""
+        self._callback_presion_etapa_auto = callback
+
+    def notificar_cambio_presion_etapa_auto(self, presion):
+        """Notifica el cambio de presi�n en modo auto"""
+        if self._callback_presion_etapa_auto is not None:
+            try:
+                self._callback_presion_etapa_auto(presion)
+            except Exception as e:
+                print(f"Error en callback presi�n etapa auto: {e}")
+                
     # --- Métodos para manejar callbacks de estado MFC ---
     def registrar_callback_estado_mfc(self, mfc_id, callback):
         """Registra un callback para cambios de estado de un MFC"""

@@ -864,6 +864,10 @@ class VentanaAuto(tk.Frame):
         if not self._paused:
             self._tick()
 
+        # notificar cambio de presi�n a ventana_valv
+        if hasattr(self.controlador, 'notificar_cambio_presion_etapa_auto'):
+            self.controlador.notificar_cambio_presion_etapa_auto(datos['pres_bar'])
+
     def _tick(self):
         if not self._run_active or self._paused:
             return

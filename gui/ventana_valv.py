@@ -150,6 +150,10 @@ class VentanaValv(tk.Frame):
         else:
             self.controlador._ventana_valv = self
 
+        # Registrar callback para cambios de presi�n en modo auto
+        if hasattr(self.controlador, 'registrar_callback_presion_etapa_auto'):
+            self.controlador.registrar_callback_presion_etapa_auto(self.actualizar_presion_deseada)
+
     # ------------- Estilos -------------
     def _configurar_estilos(self):
         style = ttk.Style(self)
@@ -728,6 +732,17 @@ class VentanaValv(tk.Frame):
         if hasattr(self.controlador, 'notificar_cambio_estado_valvula'):
             self.controlador.notificar_cambio_estado_valvula("sol2", nuevo, False)
 
+    def actualizar_presion_deseada(self, presion):
+        """Actualiza el campo de presi�n deseada con el valor de la etapa auto"""
+        # Actualizar la variable interna
+        self.sol_presion = presion
+        # Actualizar el campo de entrada
+        self.entry_p_seg.delete(0, tk.END)
+        self.entry_p_seg.insert(0, f"{presion:.1f}")
+        
+        # Notificar que estamos en modo autom�tico
+        self._activar_control_presion_automatico(True)
+        
     # ------------- Bypass (CMD 3; Valvs motor; manual; 1/2) -------------
     def _toggle_bypass(self):
         nuevo = 2 if self.bypass_sel.get() == 1 else 1
