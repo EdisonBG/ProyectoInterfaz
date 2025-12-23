@@ -68,6 +68,8 @@ INDICADOR_POS = {
 VALVULA_INDICADOR_POS = {
     "sol1_abierto":   (690, 443),   # Solenoide 1 - abierto
     "sol1_cerrado":   (718, 443),   # Solenoide 1 - cerrado
+    "sol2_abierto":   (410, 420),   # Solenoide 2 - abierto
+    "sol2_cerrado":   (438, 420),   # Solenoide 2 - cerrado
 }
 
 # ========================= POSICIONES FLECHAS VÁLVULAS 4VÍAS =========================
@@ -487,6 +489,31 @@ class VentanaPrincipal(tk.Frame):
             "canvas": canvas_sol1_cerrado,
             "circle": canvas_sol1_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
         }
+
+        # Solenoide 2 - INICIALMENTE CERRADO (ROJO)
+        canvas_sol2_abierto = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        canvas_sol2_cerrado = tk.Canvas(
+            self.area_grafica, 
+            width=12, 
+            height=12, 
+            bg="white", 
+            highlightthickness=0
+        )
+        
+        self.indicadores_valvulas["sol2_abierto"] = {
+            "canvas": canvas_sol2_abierto,
+            "circle": canvas_sol2_abierto.create_oval(2, 2, 10, 10, fill="", outline="")
+        }
+        self.indicadores_valvulas["sol2_cerrado"] = {
+            "canvas": canvas_sol2_cerrado,
+            "circle": canvas_sol2_cerrado.create_oval(2, 2, 10, 10, fill="red", outline="black")
+        }
         
         # Posicionar solo el indicador de sol1
         for key, pos in VALVULA_INDICADOR_POS.items():
@@ -508,6 +535,10 @@ class VentanaPrincipal(tk.Frame):
             "sol1": {
                 True: "sol1_abierto",   # Abierto -> verde o amarillo
                 False: "sol1_cerrado"   # Cerrado -> rojo
+            },
+            "sol2": {
+                True: "sol2_abierto",
+                False: "sol2_cerrado"
             }
         }
         
@@ -526,7 +557,7 @@ class VentanaPrincipal(tk.Frame):
                 canvas.itemconfig(circle, fill="", outline="")
         
         # Si es modo automático para solenoide
-        if clave in ["sol1"] and modo_auto:
+        if clave in ["sol1", "sol2"] and modo_auto:
             # En modo automático: mostrar SOLO el indicador verde en AMARILLO, apagar el rojo
             if indicador_abierto in self.indicadores_valvulas:
                 canvas = self.indicadores_valvulas[indicador_abierto]["canvas"]
@@ -553,9 +584,9 @@ class VentanaPrincipal(tk.Frame):
         
         # Registrar para recibir actualizaciones de estado
         if hasattr(self.controlador, 'registrar_callback_estado_valvula'):
-            # Solo registrar para sol1
-            self.controlador.registrar_callback_estado_valvula("sol1", actualizar_estado_valvula)
-                
+            for clave in ["sol1", "sol2"]:
+                self.controlador.registrar_callback_estado_valvula(clave, actualizar_estado_valvula)
+                  
     # =========== MÉTODOS PARA INDICADORES DE FLUJO VÁLVULAS 4 VÍAS ===========
 
     def _crear_flechas_valvulas(self):
