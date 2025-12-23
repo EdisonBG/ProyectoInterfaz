@@ -60,8 +60,8 @@ POS = {
     },
     "per": {
         
-        "bomba_per_lbl":    (30,  130),
-        "btn_per1":    (220,  123),
+        "bomba_per_lbl":    (60,  132),
+        "btn_per1":    (210,  123),
         "campo_presion_limite": (5, 7),      # Movido a sección per
         "btn_enviar_presiones": (150, 60),    # Movido a sección per
     },
