@@ -218,14 +218,14 @@ class VentanaPrincipal(tk.Frame):
         btn_equipo.pack(side=tk.LEFT, padx=(0, 5))
         
         # Botón "Info" - abre ventana del manual
-        btn_info = TouchButton(
+        '''btn_info = TouchButton(
             frame_botones_superiores, 
             text="Info", 
             command=self.abrir_manual,
             width=6,
             style="SelBtn.TButton"
         )
-        btn_info.pack(side=tk.LEFT)
+        btn_info.pack(side=tk.LEFT)'''
 
         # crear labels de variables
         self._vars = {}

@@ -50,7 +50,7 @@ POS = {
     },
     "bp": {
         "btn_bypass":   (45, 80),
-        "btn_info_byp": (320, 6),
+        #"btn_info_byp": (320, 6),
     },
     "sol": {
         "campo_presion_seguridad": (5,  38), 
@@ -251,7 +251,7 @@ class VentanaValv(tk.Frame):
             self.btn_info_con.configure(
                 command=lambda: messagebox.showinfo(
                 "Información de conexión",
-                "Cómo funcionan las válvulas, cable de conexion al equipo, \nprocedimiento de conexion/desconexion."
+                "Antes de activar el sistema, conecte ambos equipos utilizando el cable provisto, en la parte posterior de cada uno. \nEn este modo, las valvulas de ambos equipos seran controladas automaticamente por el Equipo 1, por lo que esta conexion debe realizarse solo si va a trabajar en el modo automatico.  \nSi desea operar el equipo 2 de forma manual, presione el boton 'Desconectar equipo'."
                 )
             )
 
@@ -260,14 +260,9 @@ class VentanaValv(tk.Frame):
             self.btn_bypass = TouchButton(frame, text=self._texto_bypass(),style="AB.TButton", command=self._toggle_bypass)
             self.btn_bypass.place(x=POS[sec_id]["btn_bypass"][0], y=POS[sec_id]["btn_bypass"][1])
 
-            self.btn_info_byp = TouchButton(frame, text="?")
-            self.btn_info_byp.place(x=POS[sec_id]["btn_info_byp"][0], y=POS[sec_id]["btn_info_byp"][1])
-            self.btn_info_byp.configure(
-                command=lambda: messagebox.showinfo(
-                "Información del proceso",
-                "Cómo es la mezcla de gases en ON y en OFF. Si esta en bypass 1 el gas del MFC1 y el MFC3 es el mismo, \n entonces si se cambia uno en la ventana MFCS, el otro también cambia."
-                )
-            )
+            #self.btn_info_byp = TouchButton(frame, text="?")
+            #self.btn_info_byp.place(x=POS[sec_id]["btn_info_byp"][0], y=POS[sec_id]["btn_info_byp"][1])
+            #self.btn_info_byp.configure(command=lambda: messagebox.showinfo())
 
         elif sec_id == "sol":
             # --- Tarjeta: Solenoide (seguridad) ---
