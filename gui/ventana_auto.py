@@ -740,7 +740,7 @@ class VentanaAuto(tk.Frame):
         self._tick()
 
     def _cmd_detener(self):
-        self._tx("$;4;2;!")
+        self._tx("$;4;5;!")
         self._stop_all("Proceso detenido por el usuario.")
         self.controlador.set_auto_modo_activo(False)  # Modo auto inactivo
 
@@ -810,6 +810,10 @@ class VentanaAuto(tk.Frame):
         # arrancar loop 1 Hz
         if not self._paused:
             self._tick()
+
+        # notificar cambio de presi�n a ventana_valv
+        if hasattr(self.controlador, 'notificar_cambio_presion_etapa_auto'):
+            self.controlador.notificar_cambio_presion_etapa_auto(datos['pres_bar'])
 
     def _tick(self):
         if not self._run_active or self._paused:
