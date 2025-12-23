@@ -226,9 +226,9 @@ class VentanaGraph(tk.Frame):
         self.grid_columnconfigure(1, weight=1)
 
         # Barra navegación (ahora fija a 149 px en la clase de barra)
-        barra = BarraNavegacion(self, self.controlador)
-        barra.grid(row=0, column=0, sticky="ns")
-        barra.grid_propagate(False)
+        self.barra_navegacion = BarraNavegacion(self, self.controlador)
+        self.barra_navegacion.grid(row=0, column=0, sticky="ns")
+        self.barra_navegacion.grid_propagate(False)
 
         # Contenido principal: panel izquierdo mínimo para controles; resto la gráfica
         wrap = ttk.Frame(self)

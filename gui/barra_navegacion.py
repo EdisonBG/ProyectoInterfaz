@@ -44,7 +44,7 @@ class BarraNavegacion(ttk.Frame):
         )
         style.map("BotonMenu.TButton", background=[('active', "#7F89AF"), ('pressed', "#7F89AF")])
 
-        # Imágenes (opcionales)
+        # Im�genes (opcionales)
         img_path = os.path.join(_app_base_dir(), "img")
         def _img(name):
             p = os.path.join(img_path, name)
@@ -58,19 +58,22 @@ class BarraNavegacion(ttk.Frame):
         self.img_graph = _img("graph.png")
         self.img_folder = _img("folder.png")
 
+        # Diccionario para guardar referencias a botones importantes
+        self.botones = {}
+
         # Botones (incluye Registros SIN separadores)
-        botones = [
-            ("", self.img_home, "VentanaPrincipal", None),
-            ("", self.img_mfc, "VentanaMfc", None),
-            ("", self.img_omega, "VentanaOmega", None),
-            ("", self.img_valv, None, self._ir_a_valv_actualizada),
-            ("", self.img_auto, "VentanaAuto", None),
-            ("", self.img_graph, "VentanaGraph", None),
-            ("Cerrar", self.img_folder, None, self._cerrar_app),
-            ("Minimizar", self.img_folder, None, self._minimizar_app)
+        botones_def = [
+            ("", self.img_home, "VentanaPrincipal", None, "home"),
+            ("", self.img_mfc, "VentanaMfc", None, "mfc"),
+            ("", self.img_omega, "VentanaOmega", None, "omega"),
+            ("", self.img_valv, None, self._ir_a_valv_actualizada, "valv"),
+            ("", self.img_auto, "VentanaAuto", None, "auto"),
+            ("", self.img_graph, "VentanaGraph", None, "graph"),
+            ("Cerrar", self.img_folder, None, self._cerrar_app, "cerrar"),
+            ("Minimizar", self.img_folder, None, self._minimizar_app, "minimizar")
         ]
 
-        for ro, (texto, imagen, destino, cmd_alt) in enumerate(botones):
+        for ro, (texto, imagen, destino, cmd_alt, clave) in enumerate(botones_def):
             cmd = (lambda d=destino: self.controlador.mostrar_ventana(d)) if destino else cmd_alt
             btn_style = "CerrarMenu.TButton" if texto == "Cerrar" else "BotonMenu.TButton"
             btn = ttk.Button(
@@ -84,7 +87,17 @@ class BarraNavegacion(ttk.Frame):
             btn.grid(row=ro, column=0, pady=5, sticky="ew")
             if imagen:
                 btn.image = imagen  # evitar GC
-        
+            
+            # Guardar referencia para botones importantes
+            self.botones[clave] = btn
+
+        if hasattr(self.controlador, 'registrar_barra_navegacion'):
+            self.controlador.registrar_barra_navegacion(self)
+            
+        # Inicializar con el estado actual del modo especial
+        if hasattr(self.controlador, 'modo_especial_activo'):
+            self._actualizar_modo_especial(self.controlador.modo_especial_activo)
+            
     def _cerrar_app(self):
         #Enviar mensaje antes de cerrar
         mensaje = "$7;0;2;0;!"
@@ -104,19 +117,17 @@ class BarraNavegacion(ttk.Frame):
             self.controlador._ventana_valv.actualizar_desde_csv()
 
     def _actualizar_modo_especial(self, modo_activo):
-        """Actualiza el estado del botón VentanaAuto según modo especial"""
-        # Buscar el botón de VentanaAuto (es el quinto botón, índice 4)
-        for widget in self.winfo_children():
-            if isinstance(widget, ttk.Button):
-                # El botón de VentanaAuto es el que tiene el comando para mostrar VentanaAuto
-                if hasattr(widget, 'command'):
-                    cmd = widget.command
-                    # Verificar si el comando es para mostrar VentanaAuto
-                    if cmd and 'VentanaAuto' in str(cmd):
-                        estado = "disabled" if modo_activo else "normal"
-                        widget.configure(state=estado)
-                        print(f"[INFO] Botón VentanaAuto {estado}")
-                        break
+        """Actualiza el estado de los botones seg�n el modo especial"""
+        # Solo deshabilitar el bot�n de Auto cuando el modo especial est� activo
+        if 'auto' in self.botones:
+            if modo_activo:
+                self.botones['auto'].configure(state="disabled")
+            else:
+                self.botones['auto'].configure(state="normal")
+        
+        # El bot�n de v�lvulas SIEMPRE debe estar habilitado para poder ver el estado
+        if 'valv' in self.botones:
+            self.botones['valv'].configure(state="normal")
 
     def _real_cerrar_app(self):
         top = self.winfo_toplevel()
@@ -138,3 +149,4 @@ class BarraNavegacion(ttk.Frame):
             top.iconify()
         except Exception:
             pass
+            

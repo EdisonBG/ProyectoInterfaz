@@ -277,8 +277,8 @@ class VentanaMfc(tk.Frame):
         self.grid_columnconfigure(0, weight=0, minsize=140)
         self.grid_columnconfigure(1, weight=1)
 
-        barra = BarraNavegacion(self, self.controlador)
-        barra.grid(row=0, column=0, sticky="nsw")
+        self.barra_navegacion = BarraNavegacion(self, self.controlador)
+        self.barra_navegacion.grid(row=0, column=0, sticky="nsw")
 
         cont = ttk.Frame(self)
         cont.grid(row=0, column=1, sticky="nsew", padx=0, pady=3)

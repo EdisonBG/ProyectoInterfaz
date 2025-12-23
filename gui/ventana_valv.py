@@ -107,6 +107,8 @@ class VentanaValv(tk.Frame):
         # Conexión equipo 2
         self.conexion_equipo2 = tk.BooleanVar(value=False)
 
+        
+
         # Solenoide 1
         self.sol_abierta = tk.BooleanVar(value=False)
         self.sol_presion = 20.0  # bar
@@ -124,25 +126,28 @@ class VentanaValv(tk.Frame):
         self._configurar_estilos()
         self._build_ui()
 
+        # Verificar si hay modo especial activo en el controlador
+        if hasattr(self.controlador, 'modo_especial_activo') and self.controlador.modo_especial_activo:
+            posicion = getattr(self.controlador, 'posicion_modo_especial', 'A')
+            self.v1_pos.set(posicion)
+            self.v2_pos.set(posicion)
+            # Aplicar estado (esto deshabilitar� TODOS los botones)
+            self._aplicar_estado_conexion()
+            # Refrescar botones visualmente
+            self._refrescar_botones("v1")
+            self._refrescar_botones("v2")
+            
         # Cargar y reflejar V1/V2/BYP guardadas
         self._cargar_posiciones()
         self._refrescar_botones("v1")
         self._refrescar_botones("v2")
 
-        # --- Verificar si el modo especial está activo al crear la ventana ---
-        if hasattr(self.controlador, 'modo_especial_activo') and self.controlador.modo_especial_activo:
-            # Si el modo especial está activo, deshabilitar las válvulas
-            self._deshabilitar_valvulas_modo_especial()
-            print("[INFO] VentanaValv creada con modo especial activo")
-
         # --- Notificar estado inicial de las flechas ---
         self._notificar_estado_actual_flechas()
 
         # para que barra_navegacion pueda acceder a esta instancia
-        if hasattr(self.controlador, '_ventana_valv'):
-            print("[DEBUG] VentanaValv ya existe en controlador")
-        else:
-            self.controlador._ventana_valv = self
+        
+        self.controlador._ventana_valv = self
 
     # ------------- Estilos -------------
     def _configurar_estilos(self):
@@ -174,8 +179,8 @@ class VentanaValv(tk.Frame):
         self.grid_columnconfigure(1, weight=1)
 
         # Barra navegación
-        barra = BarraNavegacion(self, self.controlador)
-        barra.grid(row=0, column=0, sticky="nsw")
+        self.barra_navegacion = BarraNavegacion(self, self.controlador)
+        self.barra_navegacion.grid(row=0, column=0, sticky="nsw")
 
         # Contenedor derecho
         cont = ttk.Frame(self)
@@ -296,7 +301,7 @@ class VentanaValv(tk.Frame):
     # ------- Definiciones relaciondas con la conexion al equipo 2: deshabilitar botones --------
     def _manejar_mensaje_especial(self, partes):
         """Maneja mensajes especiales $;6;X;X;! del Arduino"""
-        if len(partes) != 4 or partes[0] != "6":
+        if len(partes) != 3:
             return
         
         modo_activo = partes[1] == "1"
@@ -305,12 +310,6 @@ class VentanaValv(tk.Frame):
         if modo_activo:
             # Modo especial (equipo conectado) activado: Activar conexión
             print(f"[INFO] Mensaje $;6;1;{posicion_codigo};! recibido - Activar conexión")
-            
-            # Deshabilitar botones de ambas válvulas
-            self.btn_v1_a.configure(state="disabled")
-            self.btn_v1_b.configure(state="disabled")
-            self.btn_v2_a.configure(state="disabled")
-            self.btn_v2_b.configure(state="disabled")
             
             # Establecer nueva posición según el mensaje
             nueva_pos = "A" if posicion_codigo == "1" else "B"
@@ -322,6 +321,9 @@ class VentanaValv(tk.Frame):
             # Activar estado de conexión
             self.conexion_equipo2.set(True)
             
+            # Aplicar estado de conexi�n (esto deshabilitar� los botones)
+            self._aplicar_estado_conexion()
+
             # Actualizar botones visualmente
             self._refrescar_botones("v1")
             self._refrescar_botones("v2")
@@ -332,12 +334,6 @@ class VentanaValv(tk.Frame):
             # Notificar al controlador
             if hasattr(self.controlador, 'set_equipo2_conectado'):
                 self.controlador.set_equipo2_conectado(True)
-                
-            # Enviar mensaje de conexión activada (simulando botón de conexión)
-            msg = "$;3;0;8;!"
-            print("[TX] Conexión equipo 2 ACTIVADA por mensaje:", msg)
-            if hasattr(self.controlador, "enviar_a_arduino"):
-                self.controlador.enviar_a_arduino(msg)
             
             # Notificar cambio de flechas
             if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
@@ -351,37 +347,36 @@ class VentanaValv(tk.Frame):
             # Desactivar estado de conexión
             self.conexion_equipo2.set(False)
             
-            # Habilitar botones de V1 (siempre)
-            self.btn_v1_a.configure(state="normal")
-            self.btn_v1_b.configure(state="normal")
-            
-            # Habilitar botones de V2 (ya que no está conectado)
-            self.btn_v2_a.configure(state="normal")
-            self.btn_v2_b.configure(state="normal")
-            
-            # V2 toma la misma posición que V1 (como en la lógica original)
-            self.v2_pos.set(self.v1_pos.get())
+            # Aplicar estado de conexi�n (esto habilitar� los botones)
+            self._aplicar_estado_conexion()
+
+            # Cargar posici�n actual desde CSV (que ya fue actualizado por modo especial)
+            self._cargar_posiciones()
+            self._refrescar_botones("v1")
             self._refrescar_botones("v2")
             
             # Notificar al controlador
             if hasattr(self.controlador, 'set_equipo2_conectado'):
                 self.controlador.set_equipo2_conectado(False)
             
-            # Guardar posiciones actualizadas
-            self._guardar_posiciones()
-            
-            # Notificar cambio de flecha para V2
+            # Notificar cambio de flechas con la posici�n actual del CSV
             if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
-                self.controlador.notificar_cambio_flecha_valvula(2, self.v1_pos.get())
+                self.controlador.notificar_cambio_flecha_valvula(1, self.v1_pos.get())
+                self.controlador.notificar_cambio_flecha_valvula(2, self.v2_pos.get())
 
-    def _deshabilitar_valvulas_modo_especial(self):
-        """Deshabilita los botones de válvulas en modo especial (cuando está conectado)"""
-        self.btn_v1_a.configure(state="disabled")
-        self.btn_v1_b.configure(state="disabled")
-        self.btn_v2_a.configure(state="disabled")
-        self.btn_v2_b.configure(state="disabled")
-        # Marcar como conectado
-        self.conexion_equipo2.set(True)
+    def _aplicar_estado_conexion(self):
+        """Aplica el estado de conexi�n a todos los botones de v�lvulas"""
+        # Determinar el estado basado �nicamente en el modo especial
+        modo_especial_activo = hasattr(self.controlador, 'modo_especial_activo') and self.controlador.modo_especial_activo
+    
+        # MISMO ESTADO PARA AMBAS V�LVULAS
+        estado = "disabled" if modo_especial_activo else "normal"
+        
+        # Aplicar el mismo estado a TODOS los botones de AMBAS v�lvulas
+        self.btn_v1_a.configure(state=estado)
+        self.btn_v1_b.configure(state=estado)
+        self.btn_v2_a.configure(state=estado)
+        self.btn_v2_b.configure(state=estado)
 
     def _actualizar_csv_modo_especial(self, posicion):
         """Actualiza el CSV con la posición del modo especial"""
@@ -556,50 +551,6 @@ class VentanaValv(tk.Frame):
         print("[TX]", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(mensaje)
-
-    # ------------- Conexión equipo 2 -------------
-    def _toggle_conexion(self):
-        nuevo = not self.conexion_equipo2.get()
-        self.conexion_equipo2.set(nuevo)
-
-        if nuevo:
-            # 1. Al activar conexión: ambas válvulas en posición A
-            self.v1_pos.set("A")
-            self.v2_pos.set("A")
-            self._refrescar_botones("v1")
-            self._refrescar_botones("v2")
-            # --- Notificar cambio de flechas para ambas válvulas ---
-            if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
-                self.controlador.notificar_cambio_flecha_valvula(1, "A")
-                self.controlador.notificar_cambio_flecha_valvula(2, "A")
-
-            self.controlador.set_equipo2_conectado(True)  # equipo 2 conectado
-        else:
-            # 2. Al desactivar conexión: v2 queda en la misma posición que v1
-            self.v2_pos.set(self.v1_pos.get())
-            self._refrescar_botones("v2")
-            # --- Notificar cambio de flecha para válvula 2 ---
-            if hasattr(self.controlador, 'notificar_cambio_flecha_valvula'):
-                self.controlador.notificar_cambio_flecha_valvula(2, self.v1_pos.get())
-            
-            self.controlador.set_equipo2_conectado(False)  #equipo 2 desconectado
-
-        self._guardar_posiciones()
-        
-        self._aplicar_estado_conexion()
-        if nuevo:
-            msg = "$;3;0;8;!"
-            print("[TX] Conexión equipo 2 ACTIVADA:", msg)
-            if hasattr(self.controlador, "enviar_a_arduino"):
-                self.controlador.enviar_a_arduino(msg)
-
-    def _aplicar_estado_conexion(self):
-        on = self.conexion_equipo2.get()
-        state_v2 = ("disabled" if on else "normal")
-        self.btn_v2_a.configure(state=state_v2)
-        self.btn_v2_b.configure(state=state_v2)
-        self.btn_v1_a.configure(state="normal")
-        self.btn_v1_b.configure(state="normal")
 
     # ------------- Nuevas funciones para manejar presiones -------------
     def _actualizar_presion_seguridad(self, valor):

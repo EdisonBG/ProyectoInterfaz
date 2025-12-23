@@ -26,9 +26,9 @@ class VentanaOmega(tk.Frame):
             pass
 
         # Barra (NO uses bd/highlightthickness si es ttk.Frame)
-        barra = BarraNavegacion(self, self.controlador)
+        self.barra_navegacion = BarraNavegacion(self, self.controlador)
         # nada de: barra.configure(bd=0, highlightthickness=0) -> rompe si es ttk
-        barra.grid(row=0, column=0, sticky="nsw")
+        self.barra_navegacion.grid(row=0, column=0, sticky="nsw")
 
         # Contenedor a la derecha, igual que en MFC
         cont = ttk.Frame(self, style="Omega.TFrame")

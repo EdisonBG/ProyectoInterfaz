@@ -8,6 +8,7 @@ from .ventana_valv import VentanaValv
 from .ventana_auto import VentanaAuto
 from .ventana_graph import VentanaGraph
 
+from .barra_navegacion import BarraNavegacion
 from .serial_manager import SerialManager
 import queue  # para Empty en el poll de RX
 import glob
@@ -128,6 +129,24 @@ class Aplicacion(tk.Tk):
     def get_equipo2_conectado(self):
         """Obtiene el estado actual de conexi�n del equipo 2"""
         return self.equipo2_conectado
+    
+    def actualizar_botones_modo_especial(self):
+        """Actualiza los botones de todas las barras de navegaci�n seg�n el modo especial actual"""
+        for ventana in self._ventanas.values():
+            try:
+                # Buscar cualquier frame hijo que sea una BarraNavegacion
+                for widget in ventana.winfo_children():
+                    if isinstance(widget, BarraNavegacion):
+                        widget._actualizar_modo_especial(self.modo_especial_activo)
+            except Exception as e:
+                print(f"[ERROR] Actualizando barra en {ventana}: {e}")
+        
+        # Tambi�n actualizar la barra de la ventana activa actual si existe
+        if hasattr(self, '_ventana_activa') and self._ventana_activa in self._ventanas:
+            ventana_activa = self._ventanas[self._ventana_activa]
+            for widget in ventana_activa.winfo_children():
+                if isinstance(widget, BarraNavegacion):
+                    widget._actualizar_modo_especial(self.modo_especial_activo)
     
     # --- Metodos para cuando el equipo se encuentra en modo auto --
     def set_auto_modo_activo(self, estado):
@@ -268,20 +287,19 @@ class Aplicacion(tk.Tk):
                 # Si es mensaje de activación ($;6;1;X;!), guardar posición
                 if self.modo_especial_activo:
                     self.posicion_modo_especial = "A" if partes[2] == "1" else "B"
-                
-                # Notificar a barra navegación
-                self._notificar_modo_especial(self.modo_especial_activo)
-                
-                # Notificar a ventana valv (si existe)
-                vvalv = self._ventanas.get("VentanaValv")
-                if vvalv is not None:
-                    # Usar after para ejecutar en el hilo principal de tkinter
-                    self.after(0, vvalv._manejar_mensaje_especial, partes)
-                
-                # Si la ventana_valv no existe aún, actualizar CSV directamente
-                if self.modo_especial_activo and vvalv is None:
                     self._actualizar_csv_directo(self.posicion_modo_especial)
-                return
+
+                self.actualizar_botones_modo_especial()
+                self._ultimo_estado_modo_especial = self.modo_especial_activo
+                
+                for ventana in self._ventanas.values():
+                    if hasattr(ventana, 'barra_navegacion'):
+                        ventana.barra_navegacion._actualizar_modo_especial(self.modo_especial_activo)
+            # Notificar a ventana valv (si existe)
+            vvalv = self._ventanas.get("VentanaValv")
+            if vvalv is not None:
+                self.after(0, vvalv._manejar_mensaje_especial, partes)
+            return
         
             # ---------------- Presión de seguridad superada ----------------
             # Formato exacto: $;1;4;!
@@ -421,8 +439,12 @@ class Aplicacion(tk.Tk):
         """
         # Buscar barra navegación en todas las ventanas
         for ventana in self._ventanas.values():
-            if hasattr(ventana, '_actualizar_modo_especial'):
-                ventana._actualizar_modo_especial(modo_activo)
+        # Si la ventana tiene una barra de navegaci�n, actualizarla
+            if hasattr(ventana, 'barra_navegacion'):
+                ventana.barra_navegacion._actualizar_modo_especial(modo_activo)
+        # Tambi�n notificar a la barra de navegaci�n de la ventana principal si existe
+        if hasattr(self, '_ventana_principal') and hasattr(self._ventana_principal, 'barra_navegacion'):
+            self._ventana_principal.barra_navegacion._actualizar_modo_especial(modo_activo)                
 
     def _actualizar_csv_directo(self, posicion):
         """Actualiza el CSV de válvulas directamente (cuando ventana_valv no existe)"""
@@ -488,6 +510,18 @@ class Aplicacion(tk.Tk):
             # Coloca todas las ventanas en la misma celda del grid
             frame.grid(row=0, column=0, sticky="nsew")
             self._ventanas[nombre] = frame
+
+            # Si estamos en modo especial y es la ventana de v�lvulas o auto, actualizar estado
+            if hasattr(self, 'modo_especial_activo') and self.modo_especial_activo:
+                if nombre == "VentanaValv" and hasattr(frame, '_aplicar_estado_conexion'):
+                    frame.v1_pos.set(self.posicion_modo_especial)
+                    frame.v2_pos.set(self.posicion_modo_especial)
+                    frame._refrescar_botones("v1")
+                    frame._refrescar_botones("v2")
+                # Luego aplicar estado
+                frame._aplicar_estado_conexion()
+                
+
         return self._ventanas[nombre]
 
     def mostrar_ventana(self, nombre):
@@ -507,6 +541,9 @@ class Aplicacion(tk.Tk):
         frame_objetivo.tkraise()    # al frente
 
         self._ventana_activa = nombre
+
+        if hasattr(frame_objetivo, 'barra_navegacion') and hasattr(self, 'modo_especial_activo'):
+            frame_objetivo.barra_navegacion._actualizar_modo_especial(self.modo_especial_activo)
 
         # --- Enviar identificador al entrar a Temperatura ---
         if nombre == "VentanaOmega":

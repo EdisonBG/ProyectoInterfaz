@@ -128,6 +128,9 @@ class VentanaPrincipal(tk.Frame):
         # Registrar callbacks para cambios de gas
         self._register_gas_callbacks()
 
+        self.barra_navegacion = BarraNavegacion(self, self.controlador)
+        self.barra_navegacion.grid(row=0, column=0, sticky="nsw")
+
     def _configurar_estilos(self):
 
         st = ttk.Style(self)
