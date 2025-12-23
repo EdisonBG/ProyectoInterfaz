@@ -732,6 +732,11 @@ class VentanaAuto(tk.Frame):
         if hasattr(self.controlador, 'notificar_cambio_modo_auto_per1'):
             self.controlador.notificar_cambio_modo_auto_per1(True)
         
+        # Notificar a los omegas que el modo auto est� activo
+        if hasattr(self.controlador, 'notificar_cambio_estado_auto'):
+            self.controlador.notificar_cambio_estado_auto(1, True)  # Omega 1
+            self.controlador.notificar_cambio_estado_auto(2, True)  # Omega 2
+
         self._col_ptr = -1
         self._iniciar_siguiente_etapa()
 
@@ -791,7 +796,11 @@ class VentanaAuto(tk.Frame):
         self._tx("$;4;5;!")
         self._stop_all("Proceso detenido por el usuario.")
         self.controlador.set_auto_modo_activo(False)  # Modo auto inactivo
-
+        # Notificar a los omegas que el modo auto se detuvo
+        if hasattr(self.controlador, 'notificar_cambio_estado_auto'):
+            self.controlador.notificar_cambio_estado_auto(1, False)  # Omega 1
+            self.controlador.notificar_cambio_estado_auto(2, False)  # Omega 2
+            
     def _stop_all(self, msg: str = ""):
         self._run_active = False
         self._paused = False

@@ -184,6 +184,19 @@ class PanelOmega(ttk.Frame):
         self._modo_inicializado = True
         self._ultimo_modo_enviado = self.modo_control.get()
 
+        # Registrar callback para cambios de estado en modo auto
+        if hasattr(self.controlador, 'registrar_callback_estado_auto'):
+            self.controlador.registrar_callback_estado_auto(self.id_omega, self.actualizar_estado_desde_auto)
+
+        # Consultar estado actual del modo auto para este omega
+        if hasattr(self.controlador, 'obtener_estado_auto_actual'):
+            estado_actual = self.controlador.obtener_estado_auto_actual(self.id_omega)
+            if estado_actual:
+                # Si el modo auto ya est� activo, actualizar el estado
+                self.estado_omega.set(True)
+                self.btn_toggle.configure(text=self._texto_toggle())
+                self.btn_toggle.configure(state="disabled")
+
     def set_contenedor_inferior(self, parent):
 
         self._contenedor_inferior = parent
@@ -367,6 +380,20 @@ class PanelOmega(ttk.Frame):
         print("Mensaje toggle Omega:", mensaje)
         if hasattr(self.controlador, "enviar_a_arduino"):
             self.controlador.enviar_a_arduino(mensaje)
+
+    def actualizar_estado_desde_auto(self, estado):
+        """Actualiza el estado del omega desde el modo auto"""
+        # Solo actualizamos si el estado es diferente
+        current_state = self.estado_omega.get()
+        if current_state != estado:
+            self.estado_omega.set(estado)
+            self.btn_toggle.configure(text=self._texto_toggle())
+        
+        # Siempre actualizar el estado del bot�n seg�n el modo auto
+        if estado:
+            self.btn_toggle.configure(state="disabled")
+        else:
+            self.btn_toggle.configure(state="normal")
 
     def ui_set_omega_started(self):
         if not self.estado_omega.get():
