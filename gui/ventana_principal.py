@@ -255,10 +255,10 @@ class VentanaPrincipal(tk.Frame):
     def _create_all_labels(self):
         # Definición para variables normales (sin temp_cond1 y temp_cond2)
         campos_normales = {
-            "temp_omega1":      ("Ω1",      "°C"),
-            "temp_omega2":      ("Ω2",      "°C"),
-            "temp_horno1":      ("H1",      "°C"),
-            "temp_horno2":      ("H2",      "°C"),
+            "temp_omega1":      ("H1",      "°C"),
+            "temp_omega2":      ("H2",      "°C"),
+            "temp_horno1":      ("R1",      "°C"),
+            "temp_horno2":      ("R2",      "°C"),
             "presion_mezcla":   ("P Mez",""),
             "presion_salida":   ("P Out",""),
             "potencia_horno1":   ("P h1",   "W"),
