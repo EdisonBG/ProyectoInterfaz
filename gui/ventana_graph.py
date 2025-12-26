@@ -18,10 +18,10 @@ from ui.widgets import TouchButton, TouchEntry, LabeledEntryNum
 
 # ====== Definición de variables que graficamos / registramos ======
 SERIES_DEF = {
-    "T_horno1": ("Temp. horno 1", "°C", 3, 1.0),
-    "T_horno2": ("Temp. horno 2", "°C", 4, 1.0),
-    "T_omega1": ("Temp. omega 1", "°C", 1, 1.0),
-    "T_omega2": ("Temp. omega 2", "°C", 2, 1.0),
+    "T_horno1": ("Temp. react 1", "°C", 3, 1.0),
+    "T_horno2": ("Temp. react 2", "°C", 4, 1.0),
+    "T_omega1": ("Temp. horno 1", "°C", 1, 1.0),
+    "T_omega2": ("Temp. horno 2", "°C", 2, 1.0),
     "T_cond1":  ("Temp. cond. 1", "°C", 5, 1.0),
     "T_cond2":  ("Temp. cond. 2", "°C", 6, 1.0),
     "P_mezcla": ("Presión mezcla", "bar", 7, 0.1),
